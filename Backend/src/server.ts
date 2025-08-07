@@ -1433,7 +1433,7 @@ app.get('/api/bills', isAuthenticated, async (req: Request, res: Response) => {
     }
 });
  
- 
+  
 app.get('/api/bills-for-prize-check', isAuthenticated, async (req: Request, res: Response) => {
     const loggedInUser = req.user!;
     const { startDate, endDate, status, billRef, note, username, lottoType, selectedLottoName } = req.query;
@@ -1499,10 +1499,10 @@ app.get('/api/bills-for-prize-check', isAuthenticated, async (req: Request, res:
             query += ` AND u.username = $${queryParams.length}`;
         }
         
+        // GROUP BY ต้องมี lr.id ด้วยเพื่อให้ Subquery อ้างอิงได้
         query += ` GROUP BY b.id, u.username, lr.id ORDER BY b.id DESC`;
 
         const result = await db.query(query, queryParams);
-        console.log(res.json(result.rows));
         res.json(result.rows);
 
     } catch (err: any) {
@@ -1631,6 +1631,79 @@ app.put('/api/bet-items/:itemId/status', async (req: Request, res: Response) => 
         client.release();
     }
 });
+
+// ✅✅✅  วางโค้ด API ใหม่นี้เข้าไปใน server.ts ✅✅✅
+app.get('/api/bills/all-details', isAuthenticated, async (req: Request, res: Response) => {
+    const loggedInUser = req.user!;
+    const { startDate, endDate, status, billRef, note, username, lottoType, selectedLottoName } = req.query;
+
+    try {
+        let query = `
+            SELECT 
+                b.id, 
+                b.bill_ref as "billRef", 
+                b.created_at as "createdAt",
+                b.bet_name as "lottoName", 
+                b.total_amount as "totalAmount",
+                b.status, 
+                b.note, 
+                lr.cutoff_datetime AS "lottoDrawDate", 
+                u.username,
+                lr.winning_numbers AS "winningNumbers",
+                lr.status AS "lottoRoundStatus",
+                lr.id AS "lottoRoundId",
+                -- --- ⬇️ ส่วนสำคัญ: ดึงรายละเอียดทั้งหมดมาเป็น JSON ⬇️ ---
+                (
+                    SELECT json_agg(
+                        json_build_object(
+                            'bet_type', be.bet_type,
+                            'items', (
+                                SELECT json_agg(bi.*)
+                                FROM bet_items bi
+                                WHERE bi.bill_entry_id = be.id
+                            )
+                        )
+                    )
+                    FROM bill_entries be
+                    WHERE be.bill_id = b.id
+                ) as "detailEntries"
+            FROM bills b
+            JOIN users u ON b.user_id = u.id
+            LEFT JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
+            WHERE 1=1
+        `;
+        const queryParams: any[] = [];
+
+        // --- ส่วนการกรองข้อมูล (เหมือนเดิม) ---
+        if (startDate) { queryParams.push(startDate); query += ` AND b.created_at::date >= $${queryParams.length}`; }
+        if (endDate) { queryParams.push(endDate); query += ` AND b.created_at::date <= $${queryParams.length}`; }
+        if (status) { queryParams.push(status); query += ` AND b.status = $${queryParams.length}`; }
+        if (billRef) { queryParams.push(`%${billRef}%`); query += ` AND b.bill_ref ILIKE $${queryParams.length}`; }
+        if (note) { queryParams.push(`%${note}%`); query += ` AND b.note ILIKE $${queryParams.length}`; }
+        if (selectedLottoName) { queryParams.push(selectedLottoName); query += ` AND b.bet_name = $${queryParams.length}`; }
+        if (lottoType === 'หวย') { query += ` AND b.bet_name NOT ILIKE '%หุ้น%'`; }
+        if (lottoType === 'หุ้น') { query += ` AND b.bet_name ILIKE '%หุ้น%'`; }
+
+        if (loggedInUser.role === 'user') {
+            queryParams.push(loggedInUser.id);
+            query += ` AND b.user_id = $${queryParams.length}`;
+        } else if (username) {
+            queryParams.push(username);
+            query += ` AND u.username = $${queryParams.length}`;
+        }
+        
+        query += ` GROUP BY b.id, u.username, lr.id ORDER BY b.id DESC`;
+
+        const result = await db.query(query, queryParams);
+        res.json(result.rows);
+
+    } catch (err: any) {
+        console.error('Error fetching all bill details:', err);
+        res.status(500).json({ error: 'เกิดข้อผิดพลาดในการดึงข้อมูลบิลทั้งหมด', details: err.message });
+    }
+});
+
+
 
 app.post('/api/bills/:billId/update-all-items', async (req: Request, res: Response) => {
     const { billId } = req.params;
