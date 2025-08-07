@@ -1,0 +1,86 @@
+<tbody>
+  {isLoading ? (
+    <tr><td colSpan={11} className="text-center py-16">กำลังโหลดข้อมูล...</td></tr>
+  ) : orders.length === 0 ? (
+    <tr><td colSpan={11} className="text-center py-16"><NoDataIcon /><p>ไม่พบข้อมูล</p></td></tr>
+  ) : (
+    orders.map((order, index) => (
+      <React.Fragment key={order.id}>
+        {/* --- แถวหลักของข้อมูล (คลิกเพื่อเปิด/ปิด) --- */}
+        <tr onClick={() => handleRowClick(order.id)} className="bg-white border-b hover:bg-gray-50 cursor-pointer">
+            <td className="px-2 py-4 text-center">
+                <button className="text-blue-500 font-bold text-lg">{expandedRowId === order.id ? '−' : '+'}</button>
+            </td>
+            <td className="px-3 py-4">{index + 1}</td>
+            <td className="px-6 py-4 font-medium text-blue-600">{order.billRef}</td>
+            <td className="px-6 py-4">{new Date(order.createdAt).toLocaleString('th-TH')}</td>
+            <td className="px-6 py-4">{order.lottoType ?? '(รอติดตาม...)'}</td>
+            <td className="px-6 py-4">{order.lottoName}</td>
+            <td className="px-6 py-4">{order.itemCount ?? '(รอติดตาม...)'}</td>
+            <td className="px-6 py-4 text-green-600 font-semibold">{Number(order.totalAmount).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+            <td className="px-6 py-4 text-red-600 font-semibold">{order.netAmount != null ? Number(order.netAmount).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : "(รอติดตาม...)"}</td>
+            <td className="px-6 py-4">{order.note ?? ''}</td>
+            <td className="px-6 py-4">
+                <span className={`px-2 py-1 rounded-full text-xs font-semibold ${order.status === 'ยืนยันแล้ว' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                    {order.status}
+                </span>
+            </td>
+        </tr>
+
+        {/* --- ส่วนแสดงรายการย่อย (จะแสดงเมื่อแถวถูกขยาย) --- */}
+        {expandedRowId === order.id && (
+          <tr>
+            <td colSpan={11} className="p-4 bg-gray-100">
+              {isDetailLoading ? (
+                <p className="text-center py-4">กำลังโหลดรายการ...</p>
+              ) : (
+                <div className="space-y-4">
+                  {/* 1. วนลูปแสดง "กลุ่ม" การแทง */}
+                  {detailEntries.map(entryGroup => (
+                    <div key={entryGroup.id} className="border border-gray-300 rounded-lg overflow-hidden">
+                      <div className="font-bold bg-blue-100 p-2 text-sm text-left">
+                        กลุ่ม: {entryGroup.bet_type}, 
+                        ราคา: {(entryGroup.price_top + entryGroup.price_bottom).toLocaleString()} บาท, 
+                        อัตราจ่าย: บาทละ {entryGroup.baht_per}
+                      </div>
+                      <table className="w-full text-sm text-center bg-white">
+                        <thead className="bg-gray-200">
+                          <tr>
+                            <th className="p-2">หมายเลข</th>
+                            <th className="p-2 w-40">สถานะ</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {/* 2. วนลูปแสดง "หมายเลข" แต่ละตัวในกลุ่ม */}
+                          {entryGroup.items.map((item: BetItem) => (
+                            <tr key={item.id} className="border-t">
+                              <td className="p-2 font-mono">{item.bet_number}</td>
+                              <td className="p-2">
+                                {item.status === null ? (
+                                  <div className="flex justify-center gap-2">
+                                    <button onClick={() => handleUpdateEntryStatus(item.id, 'ยืนยัน')} className="px-2 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600">ยืนยัน</button>
+                                    <button onClick={() => handleUpdateEntryStatus(item.id, 'คืนเลข')} className="px-2 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600">คืนเลข</button>
+                                  </div>
+                                ) : (
+                                  <span className={`font-semibold ${item.status === 'ยืนยัน' ? 'text-green-600' : 'text-red-600'}`}>{item.status}</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ))}
+                  <div className="flex justify-end gap-2 mt-2">
+                    <button onClick={() => handleUpdateAllEntries(order.id, 'ยืนยัน')} className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 text-sm">ยืนยันทั้งหมด</button>
+                    <button onClick={() => handleUpdateAllEntries(order.id, 'คืนเลข')} className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm">คืนเลขทั้งหมด</button>
+                  </div>
+                </div>
+              )}
+            </td>
+          </tr>
+        )}
+      </React.Fragment>
+    ))
+  )}
+</tbody>
