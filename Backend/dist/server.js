@@ -457,7 +457,7 @@ app.get("/api/lotto-rounds/:id", (req, res) => __awaiter(void 0, void 0, void 0,
         if (result.rowCount === 0) {
             return res.status(404).json({ error: "ไม่พบข้อมูลงวดหวยนี้" });
         }
-        console.log(`data curereunt ======> ${result.rows}`);
+        // console.log(`data curereunt ======> ${result.rows}`);
         res.json({
             round: result.rows[0],
             serverTime: new Date().toISOString()
@@ -1213,7 +1213,7 @@ app.get('/api/bills', isAuthenticated, (req, res) => __awaiter(void 0, void 0, v
     `;
     try {
         const result = yield db.query(query, queryParams);
-        console.log(`result bill => ${JSON.stringify(result)}`);
+        // console.log(`result bill => ${JSON.stringify(result)}`);
         res.json(result.rows);
     }
     catch (err) {
@@ -1367,7 +1367,7 @@ app.get("/api/bills/:billId/details", (req, res) => __awaiter(void 0, void 0, vo
         `, [billId]);
         const responseData = entriesResult.rows.map((entry) => (Object.assign(Object.assign({}, entry), { items: itemsResult.rows.filter((item) => item.bill_entry_id === entry.id) })));
         res.json(responseData);
-        console.log(`result bill detail => ${JSON.stringify(responseData)}`);
+        // console.log(`result bill detail => ${JSON.stringify(responseData)}`);
     }
     catch (err) {
         console.error("Error fetching bill details:", err);

@@ -539,7 +539,7 @@ app.get("/api/lotto-rounds/:id", async (req: Request, res: Response) => {
     if (result.rowCount === 0) {
       return res.status(404).json({ error: "ไม่พบข้อมูลงวดหวยนี้" });
     }
-    console.log(`data curereunt ======> ${result.rows}`);
+    // console.log(`data curereunt ======> ${result.rows}`);
     res.json({
       round: result.rows[0],
       serverTime: new Date().toISOString() 
@@ -1424,7 +1424,7 @@ app.get('/api/bills', isAuthenticated, async (req: Request, res: Response) => {
 
     try {
         const result = await db.query(query, queryParams);
-        console.log(`result bill => ${JSON.stringify(result)}`);
+        // console.log(`result bill => ${JSON.stringify(result)}`);
         res.json(result.rows);
     } catch (err: any) {
         console.error('Error fetching bills:', err);
@@ -1602,7 +1602,7 @@ app.get("/api/bills/:billId/details", async (req: Request, res: Response) => {
       items: itemsResult.rows.filter((item) => item.bill_entry_id === entry.id),
     }));
     res.json(responseData);
-    console.log(`result bill detail => ${JSON.stringify(responseData)}`);
+    // console.log(`result bill detail => ${JSON.stringify(responseData)}`);
   } catch (err: any) {
     console.error("Error fetching bill details:", err);
     res
