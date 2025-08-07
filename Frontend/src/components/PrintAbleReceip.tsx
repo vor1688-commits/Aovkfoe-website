@@ -1,7 +1,7 @@
 // src/components/PrintableReceipt.tsx
 
 import React from 'react';
-import { formatFullThaiDate } from '../services/BetService';
+import { formatDateBasicString, formatDateString, formatFullThaiDate } from '../services/BetService';
 
 // --- Interfaces (คงเดิม) ---
 interface BillEntry {
@@ -144,7 +144,7 @@ const PrintableReceipt = React.forwardRef<HTMLDivElement, Props>(
       <div ref={ref} className="p-2 bg-gray-100 font-sans w-[600px]">
         <div className="bg-green-600 text-white p-2 rounded-t-md text-sm text-center whitespace-nowrap">
           <span>
-            เลขที่บิล #{bill.billRef} | {bill.betName} | งวด {formatDate(bill.billLottoDraw)}
+            เลขที่บิล #{bill.billRef} | {bill.betName} | งวด {formatDateBasicString(bill.billLottoDraw, 'long')}
           </span>
         </div>
         

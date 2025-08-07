@@ -33,6 +33,7 @@ import { formatDateString, getBetTypeName } from "../services/BetService";
 import { FullScreenLoader } from "../components/LoadingScreen";
 import { useModal } from "../components/Modal";
 import api from "../api/axiosConfig";
+import { MagnifyingGlassIcon } from "@heroicons/react/24/solid";
 
 ChartJS.register(
   CategoryScale,
@@ -257,6 +258,7 @@ const AccountPage: React.FC = () => {
   const [status, setStatus] = useState("all");
   const [userList, setUserList] = useState<User[]>([]);
   const { alert, confirm, showStatus, hideStatus } = useModal();
+  const [betSummarySearch, setBetSummarySearch] = useState('');
 
   const [lottoOptions, setLottoOptions] = useState<
     Record<
@@ -832,14 +834,80 @@ const groupedBetSummary = useMemo(() => {
               </div>
             </div>
 
-            <div className="p-4 bg-gray-900 text-white">
-              <div className="kpi-card bg-gray-800 p-4 rounded-lg shadow-lg">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="kpi-card">
+    <div className="flex justify-between items-center mb-4">
+        <h3 className="chart-title mb-0"><TableCellsIcon className="h-6 w-6" />สรุปยอดแทงตามตัวเลข</h3>
+        {/* --- ✅ เพิ่มช่องค้นหา --- */}
+        <div className="relative">
+            <input 
+                type="text"
+                value={betSummarySearch}
+                onChange={e => setBetSummarySearch(e.target.value.replace(/[^0-9]/g, ''))}
+                maxLength={3}
+                placeholder="ค้นหาเลข..."
+                className="input-dark w-32 !pl-8"
+            />
+            <MagnifyingGlassIcon className="h-5 w-5 text-gray-500 absolute top-1/2 left-2 -translate-y-1/2"/>
+        </div>
+    </div>
+    <div className="space-y-3 max-h-90 sm:min-h-50 overflow-y-auto custom-scrollbar pr-2">
+        {/* ✅ แก้ไข: กรองข้อมูลก่อนแสดงผล */}
+        {Object.entries(groupedBetSummary)
+            .filter(([number]) => number.includes(betSummarySearch))
+            .length > 0 ? (
+            Object.entries(groupedBetSummary)
+                .filter(([number]) => number.includes(betSummarySearch))
+                .map(([number, data]) => (
+                    <div key={number} className="bg-gray-800/50 p-3 rounded-lg">
+                        {/* --- แถวสรุปรวมของแต่ละเลข --- */}
+                        <div className="flex justify-between items-center mb-2 pb-2 border-b border-gray-700">
+                            <div className="flex items-center gap-3">
+                                <span className="font-mono text-xl text-cyan-400">{number}</span>
+                                <span className="text-sm font-semibold text-white">{data.totalCount.toLocaleString()} ชุด</span>
+                            </div>
+                            <div className="font-bold text-base text-white text-right">
+                                {formatCurrency(data.totalAmount)}
+                                <span className="text-xs text-gray-500 ml-1">บาท</span>
+                            </div>
+                        </div> 
+                        <div className="space-y-1">
+                            {data.styles.map((styleItem: any, styleIndex: number) => (
+                                <div key={styleIndex} className="flex justify-between items-center text-md pl-2"> 
+                                <span className="text-gray-300 capitalize"> 
+                                    <span className="font-mono text-cyan-400">{number}</span> 
+                                    <span className={`
+                                        ${(styleItem.style ==='บน' || styleItem.style ==='ตรง') ? "text-green-500"
+                                        : (styleItem.style ==='ล่าง') ? "text-red-500" 
+                                        : "text-orange-400"}
+                                    `}>
+                                        {' '}{styleItem.style}
+                                    </span> 
+                                    <span className="text-gray-500"> ({styleItem.count} ชุด)</span>
+                                </span>
+
+                                <span className="text-sm font-semibold font-mono text-gray-300">{formatCurrency(styleItem.totalAmount)} บาท</span>
+                            </div>
+                            ))}
+                        </div>
+                    </div>
+                ))
+        ) : ( 
+            <p className="text-gray-500 italic text-center py-4">
+                {betSummarySearch ? `ไม่พบข้อมูลเลข "${betSummarySearch}"` : "ไม่พบข้อมูล"}
+            </p> 
+        )}
+    </div>
+    
+</div>
+        <div className="p-0 bg-gray-900 text-white">
+              <div className="kpi-card bg-gray-800 rounded-lg shadow-lg">
                 <h3 className="chart-title flex items-center text-lg font-semibold mb-4">
                   <PresentationChartLineIcon className="h-6 w-6 mr-2" />
                   อันดับเลขที่มียอดแทงสูงสุด
                 </h3>
                 {isMediumScreenOrLarger ? (
-                  <div className="relative h-[200px]">
+                  <div className="relative h-[400px]">
                     <Bar
                       data={topBetNumbersChartData}
                       options={chartOptions2("ยอดแทงรวม", chartAxis)}
@@ -863,35 +931,7 @@ const groupedBetSummary = useMemo(() => {
                 )}
               </div>
             </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="kpi-card">
-                                <h3 className="chart-title"><TableCellsIcon className="h-6 w-6" />สรุปยอดแทงตามตัวเลข</h3>
-                                <div className="space-y-4 max-h-60 overflow-y-auto custom-scrollbar pr-2">
-                                    {Object.entries(groupedBetSummary).length > 0 ? (
-                                        Object.entries(groupedBetSummary).map(([number, data]) => (
-                                            <div key={number} className="bg-gray-800/50 p-3 rounded-lg">
-                                                <div className="flex justify-between items-center mb-2">
-                                                    <span className="font-mono text-xl text-cyan-400">{number}</span>
-                                                    <div className="text-right">
-                                                        <div className="font-bold text-white">{formatCurrency(data.totalAmount)} บาท</div>
-                                                        <div className="text-xs text-gray-400">{data.totalCount.toLocaleString()} ครั้ง</div>
-                                                    </div>
-                                                </div>
-                                                <div className="space-y-1 pl-4 border-l-2 border-gray-700">
-                                                    {data.styles.map((styleItem: any, styleIndex: number) => (
-                                                        <div key={styleIndex} className="flex justify-between items-center text-xs">
-                                                            <span className="text-gray-400 capitalize">{styleItem.style} ({styleItem.count} ครั้ง)</span>
-                                                            <span className="font-semibold font-mono">{formatCurrency(styleItem.totalAmount)}</span>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        ))
-                                    ) : ( <p className="text-gray-500 italic text-center py-4">ไม่พบข้อมูล</p> )}
-                                </div>
-                            </div>
-              <div className="kpi-card">
+              {/* <div className="kpi-card">
                 <h3 className="chart-title">
                   <TrophyIcon className="h-6 w-6" />
                   ยอดชนะตามประเภทการแทง
@@ -917,7 +957,7 @@ const groupedBetSummary = useMemo(() => {
                     </p>
                   )}
                 </div>
-              </div>
+              </div> */}
             </div>
 
             {winningItems.length > 0 && (

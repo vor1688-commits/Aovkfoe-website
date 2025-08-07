@@ -462,3 +462,14 @@ export const getDatePart = (isoString: string | null | undefined): string => {
     // ใช้ .split('T') เพื่อแยกวันที่ออกจากเวลา และดึงเฉพาะส่วนแรก (วันที่)
     return isoString.split('T')[0];
 };
+
+
+ 
+
+export const formatDateToDDMMYYYY = (isoString: string | null | undefined): string => {
+    if (!isoString || typeof isoString !== 'string' || !isoString.includes('-')) {
+      return 'วว/ดด/ปปปป'; // ข้อความเริ่มต้น
+    }
+    const [year, month, day] = isoString.split('-');
+    return `${day}/${month}/${year}`;
+};

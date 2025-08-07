@@ -5,7 +5,9 @@ import {
   getBetTypeName, 
   type Order, 
   type BillEntryDetail,
-  type BetItem // ✅ นำ BetItem เข้ามาเพื่อใช้ type ของ status
+  type BetItem, // ✅ นำ BetItem เข้ามาเพื่อใช้ type ของ status
+  formatDateString,
+  formatDateBasicString
 } from '../services/BetService';
 
 // Props Interface (เหมือนเดิม)
@@ -88,7 +90,7 @@ const PrintableBill2 = React.forwardRef<HTMLDivElement, Props>(({ order, details
     <div ref={ref} className="p-2 bg-gray-100 font-sans w-[650px]">
       <div className="bg-blue-600 text-white p-2 rounded-t-md text-sm text-center whitespace-nowrap">
         <span>
-          เลขที่บิล #{order.billRef} | {order.lottoName} | งวด {formatDate(order.bill_lotto_draw)}
+          เลขที่บิล #{order.billRef} | {order.lottoName} | งวด {formatDateBasicString(order.bill_lotto_draw, 'long')}
         </span>
       </div>
       
