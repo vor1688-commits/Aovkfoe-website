@@ -260,6 +260,8 @@ const AccountPage: React.FC = () => {
   const { alert, confirm, showStatus, hideStatus } = useModal();
   const [betSummarySearch, setBetSummarySearch] = useState('');
 
+  const [selectedBillIds, setSelectedBillIds] = useState<number[]>([]);
+
   const [lottoOptions, setLottoOptions] = useState<
     Record<
       string,
@@ -360,6 +362,73 @@ const AccountPage: React.FC = () => {
       }
     }
   };
+
+
+  // ฟังก์ชันจัดการการเลือกทีละรายการ
+const handleSelectOne = (billId: number) => {
+    setSelectedBillIds(prevSelected => {
+        if (prevSelected.includes(billId)) {
+            return prevSelected.filter(id => id !== billId);
+        } else {
+            return [...prevSelected, billId];
+        }
+    });
+};
+
+// ฟังก์ชันจัดการการเลือกทั้งหมด
+const handleSelectAll = () => {
+    // ใช้ optional chaining '?' เพื่อป้องกัน error หาก summaryData เป็น null
+    const recentBills = summaryData?.recentBills ?? [];
+    
+    if (selectedBillIds.length === recentBills.length) {
+        setSelectedBillIds([]);
+    } else {
+        const allBillIds = recentBills.map(bill => bill.id);
+        setSelectedBillIds(allBillIds);
+    }
+};
+
+// ฟังก์ชันสำหรับลบรายการที่เลือก
+const handleDeleteSelected = async () => {
+    if (selectedBillIds.length === 0) return;
+
+    const isConfirmed = await confirm(
+        "ยืนยันการลบ",
+        `คุณต้องการลบ ${selectedBillIds.length} บิลที่เลือกใช่หรือไม่?`,
+        'light'
+    );
+
+    if (isConfirmed) {
+        showStatus("loading", "กำลังลบ...", "");
+        try {
+            await api.post('/api/bills/batch-delete', { billIds: selectedBillIds });
+            
+            // ✅ แก้ไขส่วนอัปเดต State ให้ปลอดภัยจากค่า null
+            setSummaryData(prevData => {
+                // ถ้า prevData เป็น null ให้ return null กลับไปเลย
+                if (!prevData) {
+                    return null;
+                }
+                
+                // ถ้าไม่ null ก็ทำงานตามปกติ
+                return {
+                    ...prevData,
+                    recentBills: prevData.recentBills.filter(bill => !selectedBillIds.includes(bill.id))
+                };
+            });
+            
+            await fetchAllData();  
+            setSelectedBillIds([]); // ล้างรายการที่เลือก
+            hideStatus(); 
+            showStatus("success", `ลบ ${selectedBillIds.length} บิลเรียบร้อยแล้ว`, "");
+
+        } catch (error) {
+            hideStatus();
+            console.error("Failed to delete selected bills:", error);
+            showStatus("success","เกิดข้อผิดพลาด ไม่สามารถลบรายการที่เลือกได้", ""); 
+        }
+    }
+}; 
 
   const {
     winningItems,
@@ -986,81 +1055,128 @@ const groupedBetSummary = useMemo(() => {
                 </div>
               </div>
             )}
-            <div className="kpi-card">
-              <h2 className="text-xl font-bold mb-4">บิลล่าสุด</h2>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left">
-                  <thead className="text-gray-400">
-                    <tr className="border-b border-gray-700">
-                      <th className="p-3 whitespace-nowrap">เลขที่บิล</th>
-                      {(user?.role === "owner" || user?.role === 'admin') && (
+           <div className="kpi-card">
+    <div className="flex justify-between items-center mb-4">
+        <h2 className="text-xl font-bold">บิลล่าสุด</h2>
+        
+        {selectedBillIds.length > 0 && (
+            <button
+                onClick={handleDeleteSelected}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-500 transition-colors text-sm font-bold flex items-center gap-2"
+            >
+                <TrashIcon className="h-4 w-4" />
+                ลบ {selectedBillIds.length} รายการที่เลือก
+            </button>
+        )}
+    </div>
+
+    <div className="overflow-x-auto">
+        <table className="w-full text-sm text-left">
+            <thead className="text-gray-400">
+                <tr className="border-b border-gray-700">
+                   <th className="p-3">
+                        {/* ✨ [ปรับปรุง] เปลี่ยนเป็น Checkbox วงกลมแบบ Custom */}
+                        <label htmlFor="select-all-checkbox" className="relative flex items-center justify-center cursor-pointer p-2">
+                            <input
+                                id="select-all-checkbox"
+                                type="checkbox"
+                                className="peer sr-only" // ซ่อน checkbox เดิม
+                                checked={(summaryData?.recentBills.length ?? 0) > 0 && selectedBillIds.length === summaryData?.recentBills.length}
+                                onChange={handleSelectAll}
+                                disabled={(summaryData?.recentBills.length ?? 0) === 0}
+                            />
+                            {/* วงกลมด้านนอก */}
+                            <div className="w-5 h-5 rounded-full border-2 border-gray-500 peer-checked:border-blue-500 peer-checked:bg-blue-500 transition-all duration-200"></div>
+                            {/* วงกลมด้านใน (จะแสดงเมื่อถูกเลือก) */}
+                            <div className="absolute w-2 h-2 rounded-full bg-gray-900 opacity-0 peer-checked:opacity-100 transition-opacity duration-200"></div>
+                        </label>
+                    </th>
+                    <th className="p-3 whitespace-nowrap">เลขที่บิล</th>
+                    {(user?.role === "owner" || user?.role === 'admin') && (
                         <th className="p-3 whitespace-nowrap">ผู้ใช้งาน</th>
-                      )}
-                      <th className="p-3 whitespace-nowrap">วันที่บันทึก</th>
-                      <th className="p-3 whitespace-nowrap">ประเภทหวย</th>
-                      <th className="p-3 whitespace-nowrap">งวดวันที่</th>
-                      <th className="p-3 text-center whitespace-nowrap">ยอดรวม</th>
-                      <th className="p-3 whitespace-nowrap">บันทึกช่วยจำ</th>
-                      <th className="p-3 text-center whitespace-nowrap">สถานะ</th>
-                      <th className="p-3 text-right whitespace-nowrap">จัดการ</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {summaryData.recentBills.map((bill) => (
-                      <tr
+                    )}
+                    <th className="p-3 whitespace-nowrap">วันที่บันทึก</th>
+                    <th className="p-3 whitespace-nowrap">ประเภทหวย</th>
+                    <th className="p-3 whitespace-nowrap">งวดวันที่</th>
+                    <th className="p-3 text-center whitespace-nowrap">ยอดรวม</th>
+                    <th className="p-3 whitespace-nowrap">บันทึกช่วยจำ</th>
+                    <th className="p-3 text-center whitespace-nowrap">สถานะ</th>
+                    <th className="p-3 text-right whitespace-nowrap">จัดการ</th>
+                </tr>
+            </thead>
+            <tbody>
+                {/* ✅ แก้ไขการ map ข้อมูล ให้ปลอดภัยจาก null */}
+                {summaryData?.recentBills.map((bill) => (
+                    <tr
                         key={bill.id}
-                        className="border-b border-gray-800 hover:bg-gray-800/50"
-                      >
+                        className={`border-b border-gray-800 transition-colors ${selectedBillIds.includes(bill.id) ? 'bg-blue-900/50' : 'hover:bg-gray-800/50'}`}
+                    >
+                        <td className="p-3">
+                            {/* ✨ [ปรับปรุง] เปลี่ยนเป็น Checkbox วงกลมแบบ Custom */}
+                            <label htmlFor={`select-bill-${bill.id}`} className="relative flex items-center justify-center cursor-pointer p-2">
+                                <input
+                                    id={`select-bill-${bill.id}`}
+                                    type="checkbox"
+                                    className="peer sr-only" // ซ่อน checkbox เดิม
+                                    checked={selectedBillIds.includes(bill.id)}
+                                    onChange={() => handleSelectOne(bill.id)}
+                                />
+                                {/* วงกลมด้านนอก */}
+                                <div className="w-5 h-5 rounded-full border-2 border-gray-500 peer-checked:border-blue-500 peer-checked:bg-blue-500 transition-all duration-200"></div>
+                                {/* วงกลมด้านใน (จะแสดงเมื่อถูกเลือก) */}
+                                <div className="absolute w-2 h-2 rounded-full bg-gray-900 opacity-0 peer-checked:opacity-100 transition-opacity duration-200"></div>
+                            </label>
+                        </td>
                         <td className="p-3 font-mono text-blue-400 whitespace-nowrap">
-                          {bill.billRef}
+                            {bill.billRef}
                         </td>
                         {(user?.role === "owner" || user?.role === 'admin') && (
-                          <td className="p-3 text-gray-300">{bill.username}</td>
+                            <td className="p-3 text-gray-300">{bill.username}</td>
                         )}
                         <td className="p-3 text-gray-400 whitespace-nowrap">
-                          {new Date(bill.createdAt).toLocaleString("th-TH")}
+                            {new Date(bill.createdAt).toLocaleString("th-TH")}
                         </td>
                         <td className="p-3 text-gray-300 whitespace-nowrap">{bill.lottoName}</td>
                         <td className="p-3 text-gray-400 whitespace-nowrap">
-                          {bill.billLottoDraw
-                            ? formatDateString(bill.billLottoDraw, 'short')
-                            : "-"}
+                            {bill.billLottoDraw
+                                ? formatDateString(bill.billLottoDraw, 'short')
+                                : "-"}
                         </td>
                         <td className="p-3 text-center font-semibold whitespace-nowrap">
-                          {formatCurrency(bill.totalAmount)}
+                            {formatCurrency(bill.totalAmount)}
                         </td>
                         <td className="p-3 text-gray-400 whitespace-nowrap">
-                          {bill.note ?? "-"}
+                            {bill.note ?? "-"}
                         </td>
                         <td className="p-3 text-center whitespace-nowrap">
-                          <span
-                            className={`px-2 py-1 text-xs rounded-full bg-gray-700`}
-                          >
-                            {bill.status}
-                          </span>
+                            <span
+                                className={`px-2 py-1 text-xs rounded-full bg-gray-700`}
+                            >
+                                {bill.status}
+                            </span>
                         </td>
                         <td className="p-3 text-right whitespace-nowrap">
-                          <button
-                            onClick={() =>
-                              handleDeleteBill(bill.id, bill.billRef)
-                            }
-                            disabled={deletingBillId === bill.id}
-                            className="text-red-500 hover:text-red-400 disabled:text-gray-500 disabled:cursor-wait"
-                            aria-label={`ลบบิล ${bill.billRef}`}
-                          >
-                            {deletingBillId === bill.id ? (
-                              "กำลังลบ..."
-                            ) : (
-                              <TrashIcon className="h-5 w-5" />
-                            )}
-                          </button>
+                            <button
+                                onClick={() =>
+                                    handleDeleteBill(bill.id, bill.billRef)
+                                }
+                                disabled={deletingBillId === bill.id}
+                                className="text-red-500 hover:text-red-400 disabled:text-gray-500 disabled:cursor-wait"
+                                aria-label={`ลบบิล ${bill.billRef}`}
+                            >
+                                {deletingBillId === bill.id ? (
+                                    "กำลังลบ..."
+                                ) : (
+                                    <TrashIcon className="h-5 w-5" />
+                                )}
+                            </button>
                         </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+                    </tr>
+                ))}
+            </tbody>
+        </table>
+    </div>
+</div>
           </motion.div>
         )}
       </AnimatePresence>

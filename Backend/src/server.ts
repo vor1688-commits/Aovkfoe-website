@@ -552,99 +552,106 @@ app.get("/api/lotto-rounds/:id", async (req: Request, res: Response) => {
 }); 
 
 
-//savebill old ใส่ราคา บา่ทละ แบบเต็ม แม้ว่าจะเป็นเลขครึ่ง
+//savebill old ใส่ราคา บา่ทละ แบบเต็ม แม้ว่าจะเป็นเลขครึ่ง 
 app.post("/api/savebills", async (req: Request, res: Response) => {
-  const { billRef, userId, lottoRoundId, note, totalAmount, billEntries } = req.body;
-  const client = await db.connect();
+    const { billRef, userId, lottoRoundId, note, totalAmount, billEntries } = req.body;
+    const client = await db.connect();
 
-  try {
-    await client.query("BEGIN");
+    try {
+        await client.query("BEGIN");
 
-    const lottoRoundResult = await client.query(
-      "SELECT cutoff_datetime, lotto_type_id, closed_numbers, half_pay_numbers FROM lotto_rounds WHERE id = $1",
-      [lottoRoundId]
-    );
-    if (lottoRoundResult.rowCount === 0) throw new Error("Lotto Round ID ไม่ถูกต้อง");
-    
-    const { 
-        cutoff_datetime: billLottoDraw, 
-        lotto_type_id: lottoTypeId,
-        closed_numbers: closedNumbers,
-        half_pay_numbers: halfPayNumbers
-    } = lottoRoundResult.rows[0];
-
-    const ratesResult = await client.query("SELECT * FROM lotto_types WHERE id = $1", [lottoTypeId]);
-    if (ratesResult.rowCount === 0) throw new Error(`ไม่พบอัตราจ่ายสำหรับ Lotto Type ID: ${lottoTypeId}`);
-    const lottoTypeDetails = ratesResult.rows[0];
-
-    const billResult = await client.query(
-      `INSERT INTO bills (bill_ref, user_id, lotto_round_id, note, total_amount, bet_name, status, bill_lotto_draw) 
-       VALUES ($1, $2, $3, $4, $5, $6, 'รอผล', $7) RETURNING id`,
-      [billRef, userId, lottoRoundId, note, totalAmount, lottoTypeDetails.name, billLottoDraw]
-    );
-    const newBillId = billResult.rows[0].id;
-
-    for (const entry of billEntries) {
-      let betTypeToSave = entry.betTypes;
-      if (entry.betTypes === '6d') betTypeToSave = '3d';
-      if (entry.betTypes === '19d') betTypeToSave = '2d';
-
-      const entryResult = await client.query(
-        `INSERT INTO bill_entries (bill_id, bet_type, total) VALUES ($1, $2, $3) RETURNING id`,
-        [newBillId, betTypeToSave, entry.total]
-      );
-      const newBillEntryId = entryResult.rows[0].id;
-
-      const isThreeDigitMode = entry.betTypes === '3d' || entry.betTypes === '6d';
-
-      const processBetItems = async (originalPrice: number, style: string, standardRate: number) => {
-        if (originalPrice <= 0) return;
+        const lottoRoundResult = await client.query(
+            "SELECT cutoff_datetime, lotto_type_id, closed_numbers, half_pay_numbers FROM lotto_rounds WHERE id = $1",
+            [lottoRoundId]
+        );
+        if (lottoRoundResult.rowCount === 0) throw new Error("Lotto Round ID ไม่ถูกต้อง");
         
-        for (const betNumber of entry.bets) {
-          if (closedNumbers.includes(betNumber)) {
-            throw new Error(`เลข "${betNumber}" เป็นเลขปิดรับในงวดนี้`);
-          }
- 
-          const isHalfPay = halfPayNumbers.includes(betNumber);
-           
-          const effectivePriceForPayout = isHalfPay ? originalPrice / 2 : originalPrice;
-           
-          const payoutRate = standardRate; 
-          const finalPayoutAmount = effectivePriceForPayout * payoutRate;
+        const { 
+            cutoff_datetime: billLottoDraw, 
+            lotto_type_id: lottoTypeId,
+            closed_numbers: closedNumbers, // เลขปิดจากฐานข้อมูล
+            half_pay_numbers: halfPayNumbers
+        } = lottoRoundResult.rows[0];
 
-          await client.query(
-            `INSERT INTO bet_items (bill_entry_id, bet_number, price, bet_style, rate, payout_amount, baht_per) 
-             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-            [
-              newBillEntryId, 
-              betNumber, 
-              originalPrice,       
-              style, 
-              effectivePriceForPayout,  
-              finalPayoutAmount,         
-              payoutRate                
-            ]
-          );
+        const ratesResult = await client.query("SELECT * FROM lotto_types WHERE id = $1", [lottoTypeId]);
+        if (ratesResult.rowCount === 0) throw new Error(`ไม่พบอัตราจ่ายสำหรับ Lotto Type ID: ${lottoTypeId}`);
+        const lottoTypeDetails = ratesResult.rows[0];
+
+        const billResult = await client.query(
+            `INSERT INTO bills (bill_ref, user_id, lotto_round_id, note, total_amount, bet_name, status, bill_lotto_draw) 
+             VALUES ($1, $2, $3, $4, $5, $6, 'รอผล', $7) RETURNING id`,
+            [billRef, userId, lottoRoundId, note, totalAmount, lottoTypeDetails.name, billLottoDraw]
+        );
+        const newBillId = billResult.rows[0].id;
+
+        for (const entry of billEntries) {
+            let betTypeToSave = entry.betTypes;
+            if (entry.betTypes === '6d') betTypeToSave = '3d';
+            if (entry.betTypes === '19d') betTypeToSave = '2d';
+
+            const entryResult = await client.query(
+                `INSERT INTO bill_entries (bill_id, bet_type, total) VALUES ($1, $2, $3) RETURNING id`,
+                [newBillId, betTypeToSave, entry.total]
+            );
+            const newBillEntryId = entryResult.rows[0].id;
+
+            const isThreeDigitMode = entry.betTypes === '3d' || entry.betTypes === '6d';
+
+            // ✨ --- [เริ่ม] Logic ที่แก้ไขใหม่ --- ✨
+            const processBetItems = async (originalPrice: number, style: string, standardRate: number) => {
+                if (originalPrice <= 0) return;
+                
+                for (const betNumber of entry.bets) {
+                    const isClosed = closedNumbers.includes(betNumber);
+
+                    if (isClosed) {
+                        // ถ้าเป็นเลขปิด: บันทึกทุกอย่างเป็น 0 และสถานะเป็น 'คืนเลข'
+                        await client.query(
+                            `INSERT INTO bet_items (bill_entry_id, bet_number, price, bet_style, rate, payout_amount, baht_per, status) 
+                             VALUES ($1, $2, 0, $3, 0, 0, 0, 'คืนเลข')`,
+                            [newBillEntryId, betNumber, style]
+                        );
+                    } else {
+                        // ถ้าไม่ใช่เลขปิด: ใช้ Logic เดิมในการคำนวณเลขจ่ายครึ่ง
+                        const isHalfPay = halfPayNumbers.includes(betNumber);
+                        const effectivePriceForPayout = isHalfPay ? originalPrice / 2 : originalPrice;
+                        const payoutRate = standardRate; 
+                        const finalPayoutAmount = effectivePriceForPayout * payoutRate;
+
+                        await client.query(
+                            `INSERT INTO bet_items (bill_entry_id, bet_number, price, bet_style, rate, payout_amount, baht_per) 
+                             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+                            [
+                                newBillEntryId, 
+                                betNumber, 
+                                originalPrice,
+                                style, 
+                                effectivePriceForPayout,
+                                finalPayoutAmount,
+                                payoutRate
+                            ]
+                        );
+                    }
+                }
+            };
+            // ✨ --- [สิ้นสุด] Logic ที่แก้ไขใหม่ --- ✨
+
+            await processBetItems(Number(entry.priceTop), isThreeDigitMode ? 'ตรง' : 'บน', isThreeDigitMode ? lottoTypeDetails.rate_3_top : lottoTypeDetails.rate_2_top);
+            if(isThreeDigitMode) {
+                await processBetItems(Number(entry.priceTote), 'โต๊ด', lottoTypeDetails.rate_3_tote);
+            }
+            await processBetItems(Number(entry.priceBottom), 'ล่าง', isThreeDigitMode ? lottoTypeDetails.rate_3_bottom : lottoTypeDetails.rate_2_bottom);
         }
-      };
 
-      // --- เรียกใช้ฟังก์ชันสำหรับแต่ละประเภทการแทง ---
-      await processBetItems(Number(entry.priceTop), isThreeDigitMode ? 'ตรง' : 'บน', isThreeDigitMode ? lottoTypeDetails.rate_3_top : lottoTypeDetails.rate_2_top);
-      if(isThreeDigitMode) {
-        await processBetItems(Number(entry.priceTote), 'โต๊ด', lottoTypeDetails.rate_3_tote);
-      }
-      await processBetItems(Number(entry.priceBottom), 'ล่าง', isThreeDigitMode ? lottoTypeDetails.rate_3_bottom : lottoTypeDetails.rate_2_bottom);
+        await client.query("COMMIT");
+        res.status(201).json({ message: "บันทึกสำเร็จ", billId: newBillId });
+    } catch (err: any) {
+        await client.query("ROLLBACK");
+        console.error("Error saving bill:", err);
+        res.status(500).json({ error: "ไม่สามารถบันทึกบิลได้", details: err.message });
+    } finally {
+        client.release();
     }
-
-    await client.query("COMMIT");
-    res.status(201).json({ message: "บันทึกสำเร็จ", billId: newBillId });
-  } catch (err: any) {
-    await client.query("ROLLBACK");
-    console.error("Error saving bill:", err);
-    res.status(500).json({ error: "ไม่สามารถบันทึกบิลได้", details: err.message });
-  } finally {
-    client.release();
-  }
 });
  
 //saveBill ใส่ราคาบาทละ แบบจ่ายครึ่ง ถ้าเป็นเลขจ่ายครึ่ง NEW 

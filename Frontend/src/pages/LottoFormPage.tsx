@@ -301,7 +301,7 @@ const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
     let isValid = false;
     const isNumericOnly = /^\d+$/.test(token);
     
-    if (isNumericOnly && !specialNumbers?.closed_numbers?.includes(token)) {
+    if (isNumericOnly) {
       if (subTab === '2d' && token.length === 2) {
         isValid = true;
       } else if (subTab === '3d' && token.length === 3) {
@@ -680,52 +680,100 @@ const handleAddBillEntry = async () => {
   };
 
   const handleNumberChange = (
-    e: React.ChangeEvent<HTMLInputElement>,
-    type: string
-  ) => {
-    const value = e.target.value;
-    if (!/^\d*$/.test(value)) return;
-    setNumber(value);
-    const add = (list: string[]) => {
-      const allowed = list.filter(
-        (n) => !specialNumbers?.closed_numbers?.includes(n)
-      );
-      const blocked = list.filter((n) =>
-        specialNumbers?.closed_numbers?.includes(n)
-      );
-      if (blocked.length > 0) alert(`เลขปิดรับ: ${blocked.join(", ")}`, "","light");
-      if (allowed.length > 0)
-        setBets((prev) => [
-          ...prev,
-          ...allowed.map((v) => ({ value: v, selected: true, isValid: true })),
-        ]);
-      setNumber("");
-    };
-    if (type === "2d" && value.length === 2) add([value]);
-    if (type === "3d" && value.length === 3) add([value]);
-    if (type === "run" && value.length === 1) add([value]);
-    if (type === "6d" && value.length === 3) add(generate6Glab(value));
-    if (type === "19d" && value.length === 1)
-      add(generate19Doors(value, doorMode));
+  e: React.ChangeEvent<HTMLInputElement>,
+  type: string
+) => {
+  const value = e.target.value;
+  // อนุญาตให้กรอกเฉพาะตัวเลขเท่านั้น
+  if (!/^\d*$/.test(value)) return;
+
+  setNumber(value);
+
+  // ฟังก์ชันภายในสำหรับเพิ่มเลขเข้ารายการ
+  const add = (list: string[]) => {
+    // ไม่มีการกรองเลขปิด (closed_numbers) ออกจากส่วนนี้แล้ว
+    if (list.length > 0) {
+      setBets((prev) => [
+        ...prev,
+        ...list.map((v) => ({ value: v, selected: true, isValid: true })),
+      ]);
+    }
+    // เคลียร์ช่องใส่เลขหลังเพิ่มรายการสำเร็จ
+    setNumber("");
   };
+
+  // ตรวจสอบความยาวของตัวเลขและประเภทการแทงเพื่อเรียกใช้ฟังก์ชัน 'add'
+  if (type === "2d" && value.length === 2) add([value]);
+  if (type === "3d" && value.length === 3) add([value]);
+  if (type === "run" && value.length === 1) add([value]);
+  if (type === "6d" && value.length === 3) add(generate6Glab(value));
+  if (type === "19d" && value.length === 1) add(generate19Doors(value, doorMode));
+};
   
-const handleClickReverseNumbers = () => {
-    // 1. กรองเอาเฉพาะรายการที่ "ถูกต้อง" และ "ถูกเลือก" เท่านั้น
+// const handleClickReverseNumbers = () => {
+//     // 1. กรองเอาเฉพาะรายการที่ "ถูกต้อง" และ "ถูกเลือก" เท่านั้น
+//     const validSelectedBets = bets.filter(bet => bet.isValid && bet.selected);
+
+//     // 2. สร้างลิสต์ของเลขกลับทั้งหมด โดยประมวลผลแต่ละเลขที่เลือก
+//     const newReversedValues: string[] = [];
+//     validSelectedBets.forEach(bet => {
+//         const num = bet.value;
+//         if (num.length === 2) {
+//             const reversed = num.split('').reverse().join('');
+//             if (num !== reversed) { // ป้องกันการกลับเลขเบิ้ล (เช่น 11 -> 11)
+//                 newReversedValues.push(reversed);
+//             }
+//         } else if (num.length === 3) {
+//             // เรียกใช้ฟังก์ชัน 6 กลับ
+//             const permutations = generatePermutations(num);
+//             // เพิ่มเลข 6 กลับทั้งหมด (ยกเว้นเลขเดิม) เข้าไปในลิสต์
+//             permutations.forEach(p => {
+//                 if (p !== num) {
+//                     newReversedValues.push(p);
+//                 }
+//             });
+//         }
+//     });
+
+//     // 3. กรองเลขซ้ำและเลขปิดรับ
+//     const existingBetsSet = new Set(bets.map(b => b.value));
+//     const closedNumbers = specialNumbers?.closed_numbers || [];
+
+//     const finalBetsToAdd = newReversedValues
+//         .filter(num => !existingBetsSet.has(num)) // กรองเอาเฉพาะเลขใหม่ที่ยังไม่มีในรายการ
+//         .filter(num => !closedNumbers.includes(num)); // กรองเอาเลขปิดรับออก
+
+//     const blockedBets = newReversedValues
+//         .filter(num => !existingBetsSet.has(num))
+//         .filter(num => closedNumbers.includes(num));
+
+//     if (blockedBets.length > 0) {
+//       alert(`เลขปิดรับ: ${[...new Set(blockedBets)].join(', ')}`,`ถูกตัดออกจากรายการ`, "light");
+//     }
+
+//     // 4. เพิ่มเลขใหม่ที่ผ่านการตรวจสอบทั้งหมดลงใน State
+//     if (finalBetsToAdd.length > 0) {
+//       const newBetsToAddObjects = finalBetsToAdd.map(value => ({ value, selected: true, isValid: true }));
+//       setBets(prevBets => [...prevBets, ...newBetsToAddObjects]);
+//     }
+// };
+
+
+  const handleClickReverseNumbers = () => {
+    // 1. กรองเอาเฉพาะรายการที่ "ถูกต้อง" และ "ถูกเลือก" (เหมือนเดิม)
     const validSelectedBets = bets.filter(bet => bet.isValid && bet.selected);
 
-    // 2. สร้างลิสต์ของเลขกลับทั้งหมด โดยประมวลผลแต่ละเลขที่เลือก
+    // 2. สร้างลิสต์ของเลขกลับทั้งหมด (เหมือนเดิม)
     const newReversedValues: string[] = [];
     validSelectedBets.forEach(bet => {
         const num = bet.value;
         if (num.length === 2) {
             const reversed = num.split('').reverse().join('');
-            if (num !== reversed) { // ป้องกันการกลับเลขเบิ้ล (เช่น 11 -> 11)
+            if (num !== reversed) {
                 newReversedValues.push(reversed);
             }
         } else if (num.length === 3) {
-            // เรียกใช้ฟังก์ชัน 6 กลับ
             const permutations = generatePermutations(num);
-            // เพิ่มเลข 6 กลับทั้งหมด (ยกเว้นเลขเดิม) เข้าไปในลิสต์
             permutations.forEach(p => {
                 if (p !== num) {
                     newReversedValues.push(p);
@@ -734,47 +782,50 @@ const handleClickReverseNumbers = () => {
         }
     });
 
-    // 3. กรองเลขซ้ำและเลขปิดรับ
+    // ✨ [แก้ไข] ลบ Logic การกรองเลขปิดออกทั้งหมด ✨
     const existingBetsSet = new Set(bets.map(b => b.value));
-    const closedNumbers = specialNumbers?.closed_numbers || [];
-
-    const finalBetsToAdd = newReversedValues
-        .filter(num => !existingBetsSet.has(num)) // กรองเอาเฉพาะเลขใหม่ที่ยังไม่มีในรายการ
-        .filter(num => !closedNumbers.includes(num)); // กรองเอาเลขปิดรับออก
-
-    const blockedBets = newReversedValues
-        .filter(num => !existingBetsSet.has(num))
-        .filter(num => closedNumbers.includes(num));
-
-    if (blockedBets.length > 0) {
-      alert(`เลขปิดรับ: ${[...new Set(blockedBets)].join(', ')}`,`ถูกตัดออกจากรายการ`, "light");
-    }
-
-    // 4. เพิ่มเลขใหม่ที่ผ่านการตรวจสอบทั้งหมดลงใน State
+    
+    // กรองเอาเฉพาะเลขที่ยังไม่มีในรายการเท่านั้น (แต่ไม่กรองเลขปิดแล้ว)
+    const finalBetsToAdd = [...new Set(newReversedValues)] // ใช้ Set เพื่อกรองค่าซ้ำกันเองก่อน
+                           .filter(num => !existingBetsSet.has(num)); 
+ 
     if (finalBetsToAdd.length > 0) {
-      const newBetsToAddObjects = finalBetsToAdd.map(value => ({ value, selected: true, isValid: true }));
-      setBets(prevBets => [...prevBets, ...newBetsToAddObjects]);
+        const newBetsToAddObjects = finalBetsToAdd.map(value => ({ value, selected: true, isValid: true }));
+        setBets(prevBets => [...prevBets, ...newBetsToAddObjects]);
     }
 };
 
+  // const handleAddDoubleAndTripleNumber = (mode: string) => {
+  //   const numbles = getNumble(mode);
+  //   if (!specialNumbers?.closed_numbers || specialNumbers.closed_numbers.length === 0) {
+  //     const newBets: BetNumber[] = numbles.map(value => ({ value, selected: true, isValid: true }));
+  //     setBets(prevBets => [...prevBets, ...newBets]);
+  //     return;
+  //   }
+  //   const closedNumbers = specialNumbers.closed_numbers;
+  //   const allowedBets = numbles.filter(num => !closedNumbers.includes(num));
+  //   const blockedBets = numbles.filter(num => closedNumbers.includes(num));
+  //   if (blockedBets.length > 0) {
+  //     alert(`เลขปิดรับ: ${blockedBets.join(', ')}`, "ถูกตัดออกจากรายการ", "light");
+  //   }
+  //   if (allowedBets.length > 0) {
+  //     const newBets: BetNumber[] = allowedBets.map(value => ({ value, selected: true, isValid: true }));
+  //     setBets(prevBets => [...prevBets, ...newBets]);
+  //   }
+  // };
+
   const handleAddDoubleAndTripleNumber = (mode: string) => {
     const numbles = getNumble(mode);
-    if (!specialNumbers?.closed_numbers || specialNumbers.closed_numbers.length === 0) {
-      const newBets: BetNumber[] = numbles.map(value => ({ value, selected: true, isValid: true }));
-      setBets(prevBets => [...prevBets, ...newBets]);
-      return;
-    }
-    const closedNumbers = specialNumbers.closed_numbers;
-    const allowedBets = numbles.filter(num => !closedNumbers.includes(num));
-    const blockedBets = numbles.filter(num => closedNumbers.includes(num));
-    if (blockedBets.length > 0) {
-      alert(`เลขปิดรับ: ${blockedBets.join(', ')}`, "ถูกตัดออกจากรายการ", "light");
-    }
+    const existingBetsSet = new Set(bets.map(b => b.value));
+ 
+    const allowedBets = numbles.filter(num => !existingBetsSet.has(num));
+
     if (allowedBets.length > 0) {
-      const newBets: BetNumber[] = allowedBets.map(value => ({ value, selected: true, isValid: true }));
-      setBets(prevBets => [...prevBets, ...newBets]);
+        const newBets: BetNumber[] = allowedBets.map(value => ({ value, selected: true, isValid: true }));
+        setBets(prevBets => [...prevBets, ...newBets]);
     }
-  };
+};
+
 
   // --- UI Rendering ---
   if (isLoading) return <FullScreenLoader isLoading={isLoading} />;
