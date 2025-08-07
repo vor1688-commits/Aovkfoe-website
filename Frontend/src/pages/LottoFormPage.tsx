@@ -1060,6 +1060,7 @@ const handleAddBillEntry = async () => {
                 entryIndex={index}
                 onRemove={handleRemoveEntry}
                 onEdit={handleEditEntry}
+                specialNumbers={specialNumbers}
               />
             ))}
           </div>

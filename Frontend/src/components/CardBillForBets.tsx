@@ -1,34 +1,40 @@
-import React from "react";
-import { getBetTypeName } from "../services/BetService";
+import React from 'react';
+import { getBetTypeName } from '../services/BetService';
 import { PencilSquareIcon, TrashIcon } from '@heroicons/react/24/outline';
 
+interface SpecialNumbers {
+  closed_numbers: string[];
+  half_pay_numbers: string[];
+}
 interface CardBillForBetProps {
   bets: string[];
   betType: string;
-  bahtPer: number;
+  bahtPer: number; // ✨ [แก้ไข] เพิ่ม prop ที่ลืมไป
   priceTop: number;
-  priceTote: number; // เพิ่ม prop ใหม่
+  priceTote: number;
   priceBottom: number; 
   entryIndex: number;
   onRemove: (index: number) => void;
   onEdit: (index: number) => void;
+  specialNumbers: SpecialNumbers | null;
 }
 
 const CardBillForBets: React.FC<CardBillForBetProps> = ({
   bets,
   betType,
+  bahtPer, // ✨ [แก้ไข] รับ prop เข้ามา (แม้จะไม่ได้ใช้)
   priceTop,
   priceTote,
   priceBottom,
   entryIndex,
   onRemove, 
   onEdit,
+  specialNumbers
 }) => {
   const calculatedTotal = (priceTop + priceTote + priceBottom) * bets.length;
-
   const isThreeDigitMode = betType === '3d' || betType === '6d';
+  const closedNumbersSet = new Set(specialNumbers?.closed_numbers || []);
 
-  // สร้าง Array สำหรับเก็บส่วนของราคาที่จะแสดงผล
   const priceParts = [];
   if (priceTop > 0) {
     const label = isThreeDigitMode ? 'ตรง' : 'บน';
@@ -38,7 +44,7 @@ const CardBillForBets: React.FC<CardBillForBetProps> = ({
     priceParts.push(<span key="tote" className="text-orange-600">โต๊ด {priceTote}</span>);
   }
   if (priceBottom > 0) {
-    const label = isThreeDigitMode ? 'ล่าง' : 'ล่าง';
+    const label = 'ล่าง';
     priceParts.push(<span key="bottom" className="text-red-600">{label} {priceBottom}</span>);
   }
 
@@ -59,8 +65,12 @@ const CardBillForBets: React.FC<CardBillForBetProps> = ({
       </div>
 
       <div className="flex-grow min-w-0">
-        <div className="flex flex-wrap gap-x-3 gap-y-1 text-gray-800 font-mono text-base leading-relaxed">
-          {bets.map((betNumber, index) => (<span key={index}>{betNumber}</span>))}
+        <div className="flex flex-wrap gap-x-3 gap-y-1 font-mono text-base leading-relaxed">
+          {bets.map((betNumber, index) => (
+            <span key={index} className={closedNumbersSet.has(betNumber) ? 'text-red-500 font-bold' : 'text-gray-800'}>
+              {betNumber}
+            </span>
+          ))}
         </div>
         <div className="text-xs text-gray-500 mt-1">
           {bets.length} ตัว x {priceTop + priceTote + priceBottom} บาท = 
@@ -69,8 +79,8 @@ const CardBillForBets: React.FC<CardBillForBetProps> = ({
       </div>
 
       <div className="flex items-center space-x-1">
-          <button onClick={() => onEdit(entryIndex)} className="p-2 text-gray-500 rounded-full hover:bg-yellow-100 hover:text-yellow-600"><PencilSquareIcon className="h-5 w-5" /></button>
-          <button onClick={() => onRemove(entryIndex)} className="p-2 text-gray-500 rounded-full hover:bg-red-100 hover:text-red-600"><TrashIcon className="h-5 w-5" /></button>
+        <button onClick={() => onEdit(entryIndex)} className="p-2 text-gray-500 rounded-full hover:bg-yellow-100 hover:text-yellow-600"><PencilSquareIcon className="h-5 w-5" /></button>
+        <button onClick={() => onRemove(entryIndex)} className="p-2 text-gray-500 rounded-full hover:bg-red-100 hover:text-red-600"><TrashIcon className="h-5 w-5" /></button>
       </div>
     </div>
   );
