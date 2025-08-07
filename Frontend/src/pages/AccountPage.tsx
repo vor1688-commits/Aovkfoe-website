@@ -111,6 +111,11 @@ interface SummaryApiResponse {
   users: User[];
 }
 
+
+interface AllBetItemsSummary { number: string; style: string; count: string; totalAmount: number; }
+interface SummaryApiResponse { summary: SummaryData; breakdown: BreakdownData; allBetItemsSummary: AllBetItemsSummary[]; recentBills: RecentBill[]; users: User[]; }
+
+
 // --- Helper Functions (เหมือนเดิม) ---
 const formatCurrency = (amount: number, decimals = 2) =>
   amount.toLocaleString("th-TH", {
@@ -440,49 +445,64 @@ const AccountPage: React.FC = () => {
     );
   }, [lottoOptions, selectedLottoName]);
 
-  const topBetNumbersChartData = useMemo(() => {
-    if (!summaryData || !summaryData.allBetItemsSummary) {
-      return { labels: [], datasets: [] };
-    }
 
-    // 1. เรียงข้อมูลทั้งหมดตามยอดแทงรวมจากมากไปน้อย (ไม่จำกัดจำนวน)
-    const allItemsSorted = [...summaryData.allBetItemsSummary].sort(
-      (a, b) => b.totalAmount - a.totalAmount
-    );
 
-    // 2. สร้างชุดสีสำหรับใช้ในกราฟ
-    const colorPalette = [
-      "rgba(59, 130, 246, 0.7)", // Blue
-      "rgba(16, 185, 129, 0.7)", // Green
-      "rgba(239, 68, 68, 0.7)", // Red
-      "rgba(245, 158, 11, 0.7)", // Amber
-      "rgba(147, 51, 234, 0.7)", // Purple
-      "rgba(219, 39, 119, 0.7)", // Pink
-      "rgba(20, 184, 166, 0.7)", // Teal
-    ];
+const groupedBetSummary = useMemo(() => {
+        if (!summaryData || !summaryData.allBetItemsSummary) {
+            return {};
+        }
+        
+        // จัดกลุ่มข้อมูลตาม 'number'
+        const grouped = summaryData.allBetItemsSummary.reduce((acc, item) => {
+            if (!acc[item.number]) {
+                acc[item.number] = {
+                    totalAmount: 0,
+                    totalCount: 0,
+                    styles: []
+                };
+            }
+            acc[item.number].totalAmount += item.totalAmount;
+            acc[item.number].totalCount += Number(item.count);
+            acc[item.number].styles.push({
+                style: item.style,
+                count: Number(item.count),
+                totalAmount: item.totalAmount
+            });
+            return acc;
+        }, {} as Record<string, { totalAmount: number, totalCount: number, styles: { style: string, count: number, totalAmount: number }[] }>);
+        
+        // เรียงลำดับกลุ่มจากยอดรวมสูงสุดไปน้อยสุด
+        return Object.entries(grouped)
+            .sort(([, a], [, b]) => b.totalAmount - a.totalAmount)
+            .reduce((acc, [key, value]) => {
+                acc[key] = value;
+                return acc;
+            }, {} as Record<string, any>);
 
-    // 3. กำหนดสีให้แต่ละแท่ง โดยวนซ้ำจากชุดสีที่สร้างไว้
-    const backgroundColors = allItemsSorted.map(
-      (_, index) => colorPalette[index % colorPalette.length]
-    );
+    }, [summaryData]);
 
-    const borderColors = backgroundColors.map((color) =>
-      color.replace("0.7", "1")
-    );
 
-    return {
-      labels: allItemsSorted.map((item) => item.number),
-      datasets: [
-        {
-          label: "ยอดแทงรวม",
-          data: allItemsSorted.map((item) => item.totalAmount),
-          backgroundColor: backgroundColors,
-          borderColor: borderColors,
-          borderWidth: 1,
-        },
-      ],
-    };
-  }, [summaryData]);
+ const topBetNumbersChartData = useMemo(() => {
+        const sortedNumbers = Object.entries(groupedBetSummary);
+        if (sortedNumbers.length === 0) {
+            return { labels: [], datasets: [] };
+        }
+
+        const colorPalette = [ 'rgba(59, 130, 246, 0.7)', 'rgba(16, 185, 129, 0.7)', 'rgba(239, 68, 68, 0.7)', 'rgba(245, 158, 11, 0.7)', 'rgba(147, 51, 234, 0.7)', 'rgba(219, 39, 119, 0.7)', 'rgba(20, 184, 166, 0.7)' ];
+        const backgroundColors = sortedNumbers.map((_, index) => colorPalette[index % colorPalette.length]);
+        const borderColors = backgroundColors.map(color => color.replace('0.7', '1'));
+
+        return {
+            labels: sortedNumbers.map(([number]) => number),
+            datasets: [{
+                label: 'ยอดแทงรวม',
+                data: sortedNumbers.map(([, data]) => data.totalAmount),
+                backgroundColor: backgroundColors,
+                borderColor: borderColors,
+                borderWidth: 1,
+            }],
+        };
+    }, [groupedBetSummary]);
 
   const dataCount = topBetNumbersChartData.labels.length;
   const chartHeight = dataCount * 35;
@@ -846,37 +866,31 @@ const AccountPage: React.FC = () => {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="kpi-card">
-                <h3 className="chart-title">
-                  <TableCellsIcon className="h-6 w-6" />
-                  สรุปยอดแทงตามตัวเลข
-                </h3>
-                <div className="space-y-3 max-h-60 overflow-y-auto custom-scrollbar pr-2">
-                  {summaryData.allBetItemsSummary.length > 0 ? (
-                    summaryData.allBetItemsSummary.map((item, index) => (
-                      <div
-                        key={index}
-                        className="flex items-center justify-between text-sm hover:bg-gray-700/50 p-2 rounded-md"
-                      >
-                        <div className="flex items-center">
-                          <span className="font-mono text-lg text-cyan-400 mr-4 w-12 text-center">
-                            {item.number}
-                          </span>
-                          <span className="text-gray-400">
-                            {Number(item.count).toLocaleString()} ครั้ง
-                          </span>
-                        </div>
-                        <span className="font-semibold">
-                          {formatCurrency(item.totalAmount)} บาท
-                        </span>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-gray-500 italic text-center py-4">
-                      ไม่พบข้อมูล
-                    </p>
-                  )}
-                </div>
-              </div>
+                                <h3 className="chart-title"><TableCellsIcon className="h-6 w-6" />สรุปยอดแทงตามตัวเลข</h3>
+                                <div className="space-y-4 max-h-60 overflow-y-auto custom-scrollbar pr-2">
+                                    {Object.entries(groupedBetSummary).length > 0 ? (
+                                        Object.entries(groupedBetSummary).map(([number, data]) => (
+                                            <div key={number} className="bg-gray-800/50 p-3 rounded-lg">
+                                                <div className="flex justify-between items-center mb-2">
+                                                    <span className="font-mono text-xl text-cyan-400">{number}</span>
+                                                    <div className="text-right">
+                                                        <div className="font-bold text-white">{formatCurrency(data.totalAmount)} บาท</div>
+                                                        <div className="text-xs text-gray-400">{data.totalCount.toLocaleString()} ครั้ง</div>
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-1 pl-4 border-l-2 border-gray-700">
+                                                    {data.styles.map((styleItem: any, styleIndex: number) => (
+                                                        <div key={styleIndex} className="flex justify-between items-center text-xs">
+                                                            <span className="text-gray-400 capitalize">{styleItem.style} ({styleItem.count} ครั้ง)</span>
+                                                            <span className="font-semibold font-mono">{formatCurrency(styleItem.totalAmount)}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))
+                                    ) : ( <p className="text-gray-500 italic text-center py-4">ไม่พบข้อมูล</p> )}
+                                </div>
+                            </div>
               <div className="kpi-card">
                 <h3 className="chart-title">
                   <TrophyIcon className="h-6 w-6" />
