@@ -1221,100 +1221,6 @@ app.get('/api/bills', isAuthenticated, (req, res) => __awaiter(void 0, void 0, v
         res.status(500).json({ error: 'เกิดข้อผิดพลาดในการดึงข้อมูลบิล', details: err.message });
     }
 }));
-app.get('/api/bills-for-prize-check', isAuthenticated, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    const loggedInUser = req.user;
-    const { startDate, endDate, status, billRef, note, username, lottoType, selectedLottoName } = req.query;
-    try {
-        let query = `
-            SELECT 
-                b.id, 
-                b.bill_ref as "billRef", 
-                b.created_at as "createdAt",
-                b.bet_name as "lottoName", 
-                b.total_amount as "totalAmount",
-                b.status, 
-                b.note, 
-                lr.cutoff_datetime AS "lottoDrawDate", 
-                u.username,
-                lr.winning_numbers AS "winningNumbers",
-                lr.status AS "lottoRoundStatus",
-                lr.id AS "lottoRoundId",
-                (
-                    SELECT COUNT(bi_sub.id) 
-                    FROM bet_items bi_sub 
-                    JOIN bill_entries be_sub ON bi_sub.bill_entry_id = be_sub.id 
-                    WHERE be_sub.bill_id = b.id AND bi_sub.status = 'ยืนยัน'
-                ) as "itemCount",
-                -- --- ⬇️ LOGIC การคำนวณยอดรางวัลที่แก้ไขใหม่ทั้งหมด ⬇️ ---
-                (
-                    SELECT COALESCE(SUM(bi_win.payout_amount), 0)
-                    FROM bet_items bi_win
-                    JOIN bill_entries be_win ON bi_win.bill_entry_id = be_win.id
-                    WHERE be_win.bill_id = b.id -- ลิงก์กับบิลหลัก
-                      AND lr.status IN ('closed', 'manual_closed') -- ใช้ lotto_round จาก query หลัก
-                      AND bi_win.status = 'ยืนยัน'
-                      AND (
-                          (be_win.bet_type IN ('3d', '6d') AND bi_win.bet_style = 'ตรง' AND lr.winning_numbers->>'3top' = bi_win.bet_number) OR
-                          (be_win.bet_type IN ('3d', '6d') AND bi_win.bet_style = 'โต๊ด' AND lr.winning_numbers->'3tote' @> to_jsonb(bi_win.bet_number::text)) OR
-                          (be_win.bet_type IN ('2d', '19d') AND bi_win.bet_style = 'บน' AND lr.winning_numbers->>'2top' = bi_win.bet_number) OR
-                          (be_win.bet_type IN ('2d', '19d') AND bi_win.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' = bi_win.bet_number)
-                      )
-                )::float AS "totalWinnings"
-            FROM bills b
-            JOIN users u ON b.user_id = u.id
-            LEFT JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
-            WHERE 1=1
-        `;
-        const queryParams = [];
-        // --- ส่วนการกรองข้อมูล (เหมือนเดิม) ---
-        if (startDate) {
-            queryParams.push(startDate);
-            query += ` AND b.created_at::date >= $${queryParams.length}`;
-        }
-        if (endDate) {
-            queryParams.push(endDate);
-            query += ` AND b.created_at::date <= $${queryParams.length}`;
-        }
-        if (status) {
-            queryParams.push(status);
-            query += ` AND b.status = $${queryParams.length}`;
-        }
-        if (billRef) {
-            queryParams.push(`%${billRef}%`);
-            query += ` AND b.bill_ref ILIKE $${queryParams.length}`;
-        }
-        if (note) {
-            queryParams.push(`%${note}%`);
-            query += ` AND b.note ILIKE $${queryParams.length}`;
-        }
-        if (selectedLottoName) {
-            queryParams.push(selectedLottoName);
-            query += ` AND b.bet_name = $${queryParams.length}`;
-        }
-        if (lottoType === 'หวย') {
-            query += ` AND b.bet_name NOT ILIKE '%หุ้น%'`;
-        }
-        if (lottoType === 'หุ้น') {
-            query += ` AND b.bet_name ILIKE '%หุ้น%'`;
-        }
-        if (loggedInUser.role === 'user') {
-            queryParams.push(loggedInUser.id);
-            query += ` AND b.user_id = $${queryParams.length}`;
-        }
-        else if (username) {
-            queryParams.push(username);
-            query += ` AND u.username = $${queryParams.length}`;
-        }
-        // GROUP BY ต้องมี lr.id ด้วยเพื่อให้ Subquery อ้างอิงได้
-        query += ` GROUP BY b.id, u.username, lr.id ORDER BY b.id DESC`;
-        const result = yield db.query(query, queryParams);
-        res.json(result.rows);
-    }
-    catch (err) {
-        console.error('Error fetching bills for prize check:', err);
-        res.status(500).json({ error: 'เกิดข้อผิดพลาดในการดึงข้อมูลบิล', details: err.message });
-    }
-}));
 app.delete('/api/delete-bills/:id', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { id } = req.params;
     try {
@@ -1404,123 +1310,53 @@ app.put('/api/bet-items/:itemId/status', (req, res) => __awaiter(void 0, void 0,
         client.release();
     }
 }));
-// ✅✅✅  วางโค้ด API ใหม่นี้เข้าไปใน server.ts ✅✅✅
-app.get('/api/bills/all-details', isAuthenticated, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    const loggedInUser = req.user;
-    const { startDate, endDate, status, billRef, note, username, lottoType, selectedLottoName } = req.query;
-    try {
-        let query = `
-            SELECT 
-                b.id, 
-                b.bill_ref as "billRef", 
-                b.created_at as "createdAt",
-                b.bet_name as "lottoName", 
-                b.total_amount as "totalAmount",
-                b.status, 
-                b.note, 
-                lr.cutoff_datetime AS "lottoDrawDate", 
-                u.username,
-                lr.winning_numbers AS "winningNumbers",
-                lr.status AS "lottoRoundStatus",
-                lr.id AS "lottoRoundId",
-                -- --- ⬇️ ส่วนสำคัญ: ดึงรายละเอียดทั้งหมดมาเป็น JSON ⬇️ ---
-                (
-                    SELECT json_agg(
-                        json_build_object(
-                            'bet_type', be.bet_type,
-                            'items', (
-                                SELECT json_agg(bi.*)
-                                FROM bet_items bi
-                                WHERE bi.bill_entry_id = be.id
-                            )
-                        )
-                    )
-                    FROM bill_entries be
-                    WHERE be.bill_id = b.id
-                ) as "detailEntries"
-            FROM bills b
-            JOIN users u ON b.user_id = u.id
-            LEFT JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
-            WHERE 1=1
-        `;
-        const queryParams = [];
-        // --- ส่วนการกรองข้อมูล (เหมือนเดิม) ---
-        if (startDate) {
-            queryParams.push(startDate);
-            query += ` AND b.created_at::date >= $${queryParams.length}`;
-        }
-        if (endDate) {
-            queryParams.push(endDate);
-            query += ` AND b.created_at::date <= $${queryParams.length}`;
-        }
-        if (status) {
-            queryParams.push(status);
-            query += ` AND b.status = $${queryParams.length}`;
-        }
-        if (billRef) {
-            queryParams.push(`%${billRef}%`);
-            query += ` AND b.bill_ref ILIKE $${queryParams.length}`;
-        }
-        if (note) {
-            queryParams.push(`%${note}%`);
-            query += ` AND b.note ILIKE $${queryParams.length}`;
-        }
-        if (selectedLottoName) {
-            queryParams.push(selectedLottoName);
-            query += ` AND b.bet_name = $${queryParams.length}`;
-        }
-        if (lottoType === 'หวย') {
-            query += ` AND b.bet_name NOT ILIKE '%หุ้น%'`;
-        }
-        if (lottoType === 'หุ้น') {
-            query += ` AND b.bet_name ILIKE '%หุ้น%'`;
-        }
-        if (loggedInUser.role === 'user') {
-            queryParams.push(loggedInUser.id);
-            query += ` AND b.user_id = $${queryParams.length}`;
-        }
-        else if (username) {
-            queryParams.push(username);
-            query += ` AND u.username = $${queryParams.length}`;
-        }
-        query += ` GROUP BY b.id, u.username, lr.id ORDER BY b.id DESC`;
-        const result = yield db.query(query, queryParams);
-        res.json(result.rows);
-    }
-    catch (err) {
-        console.error('Error fetching all bill details:', err);
-        res.status(500).json({ error: 'เกิดข้อผิดพลาดในการดึงข้อมูลบิลทั้งหมด', details: err.message });
-    }
-}));
+// ในไฟล์ server.ts
 app.post('/api/bills/:billId/update-all-items', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b, _c;
     const { billId } = req.params;
-    const { status } = req.body;
+    const { status: newItemStatus } = req.body; // รับสถานะที่ต้องการอัปเดต เช่น 'ยืนยัน' หรือ 'คืนเลข'
     const client = yield db.connect();
     try {
         yield client.query('BEGIN');
-        const result = yield client.query(`
+        // 1. อัปเดตรายการที่ยังเป็น NULL (รอการตัดสินใจ) ให้เป็นสถานะใหม่
+        const updateItemsResult = yield client.query(`
             UPDATE bet_items SET status = $1 
             WHERE status IS NULL AND bill_entry_id IN (SELECT id FROM bill_entries WHERE bill_id = $2)
-            RETURNING *`, [status, billId]);
+            RETURNING *`, [newItemStatus, billId]);
         let newBillStatus = null;
-        if (((_a = result.rowCount) !== null && _a !== void 0 ? _a : 0) > 0) {
-            const billUpdateResult = yield client.query(`UPDATE bills SET status = 'ยืนยันแล้ว' WHERE id = $1 AND status = 'รอผล' RETURNING status`, [billId]);
-            if (((_b = billUpdateResult.rowCount) !== null && _b !== void 0 ? _b : 0) > 0) {
-                newBillStatus = billUpdateResult.rows[0].status;
+        // 2. ดึงข้อมูล "ทุก" รายการในบิลนี้มาตรวจสอบอีกครั้ง
+        const allItemsResult = yield client.query(`SELECT status FROM bet_items WHERE bill_entry_id IN (SELECT id FROM bill_entries WHERE bill_id = $1)`, [billId]);
+        const allItems = allItemsResult.rows;
+        // 3. Logic ใหม่ในการตัดสินใจสถานะของบิล
+        if (allItems.length > 0) {
+            const areAllItemsReturned = allItems.every(item => item.status === 'คืนเลข');
+            const areAllItemsProcessed = allItems.every(item => item.status === 'ยืนยัน' || item.status === 'คืนเลข');
+            if (areAllItemsReturned) {
+                // ✨ ถ้าทุกรายการถูก 'คืนเลข' -> สถานะบิลหลักจะเป็น 'ยกเลิก'
+                const billUpdateResult = yield client.query(`UPDATE bills SET status = 'ยกเลิก' WHERE id = $1 RETURNING status`, [billId]);
+                if ((_a = billUpdateResult.rowCount) !== null && _a !== void 0 ? _a : 0 > 0) {
+                    newBillStatus = billUpdateResult.rows[0].status;
+                }
+            }
+            else if (areAllItemsProcessed) {
+                // ✨ ถ้าทุกรายการถูกจัดการแล้ว (ไม่มีรายการที่รอผล) -> สถานะบิลหลักจะเป็น 'ยืนยันแล้ว'
+                const billUpdateResult = yield client.query(`UPDATE bills SET status = 'ยืนยันแล้ว' WHERE id = $1 AND status = 'รอผล' RETURNING status`, [billId]);
+                if ((_b = billUpdateResult.rowCount) !== null && _b !== void 0 ? _b : 0 > 0) {
+                    newBillStatus = billUpdateResult.rows[0].status;
+                }
             }
         }
         yield client.query('COMMIT');
         res.json({
-            message: `อัปเดต ${(_c = result.rowCount) !== null && _c !== void 0 ? _c : 0} รายการสำเร็จ`,
-            updatedRows: result.rows,
+            message: `อัปเดต ${(_c = updateItemsResult.rowCount) !== null && _c !== void 0 ? _c : 0} รายการสำเร็จ`,
+            updatedRows: updateItemsResult.rows,
             newBillStatus
         });
     }
     catch (err) {
         yield client.query('ROLLBACK');
         console.error('Error bulk updating items:', err);
-        res.status(500).json({ error: 'เกิดข้อผิดพลาด' + err.message, details: err.message });
+        res.status(500).json({ error: 'เกิดข้อผิดพลาดในการอัปเดตรายการทั้งหมด', details: err.message });
     }
     finally {
         client.release();
