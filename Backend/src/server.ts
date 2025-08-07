@@ -1505,6 +1505,7 @@ app.get("/api/bills/:billId/details", async (req: Request, res: Response) => {
 });
 
 
+// ในไฟล์ server.ts
 app.put('/api/bet-items/:itemId/status', async (req: Request, res: Response) => {
     const { itemId } = req.params;
     const { status } = req.body;
@@ -1522,26 +1523,43 @@ app.put('/api/bet-items/:itemId/status', async (req: Request, res: Response) => 
 
         const entryResult = await client.query('SELECT bill_id FROM bill_entries WHERE id = $1', [updatedItem.bill_entry_id]);
         const billId = entryResult.rows[0].bill_id;
-
-        const checkResult = await client.query(
-            `SELECT COUNT(*) FROM bet_items bi
-             JOIN bill_entries be ON bi.bill_entry_id = be.id
-             WHERE be.bill_id = $1 AND bi.status IS NULL`,
-            [billId]
-        );
-        const pendingCount = parseInt(checkResult.rows[0].count, 10);
-
+        
         let newBillStatus = null;
 
-        if (pendingCount === 0) {
-            const billUpdateResult = await client.query(
-                `UPDATE bills SET status = 'ยืนยันแล้ว' WHERE id = $1 AND status = 'รอผล' RETURNING status`,
-                [billId]
-            );
-            if ((billUpdateResult.rowCount ?? 0) > 0) {
-                newBillStatus = billUpdateResult.rows[0].status;
+        // ✨ --- [เริ่ม] Logic ที่แก้ไขใหม่ --- ✨
+        // 1. ดึงข้อมูล "ทุก" รายการในบิลนี้มาตรวจสอบสถานะ
+        const allItemsResult = await client.query(
+            `SELECT status FROM bet_items WHERE bill_entry_id IN (SELECT id FROM bill_entries WHERE bill_id = $1)`,
+            [billId]
+        );
+        const allItems = allItemsResult.rows;
+
+        // 2. ตรวจสอบเงื่อนไขเพื่อตัดสินใจสถานะของบิล
+        if (allItems.length > 0) {
+            const areAllItemsReturned = allItems.every(item => item.status === 'คืนเลข');
+            const areAllItemsProcessed = allItems.every(item => item.status === 'ยืนยัน' || item.status === 'คืนเลข');
+
+            if (areAllItemsReturned) {
+                // ถ้าทุกรายการเป็น 'คืนเลข' -> บิลนี้จะถูก 'ยกเลิก'
+                const billUpdateResult = await client.query(
+                    `UPDATE bills SET status = 'ยกเลิก' WHERE id = $1 RETURNING status`,
+                    [billId]
+                );
+                if (billUpdateResult.rowCount ?? 0 > 0) {
+                    newBillStatus = billUpdateResult.rows[0].status;
+                }
+            } else if (areAllItemsProcessed) {
+                // ถ้าทุกรายการถูกจัดการแล้ว (ไม่มีรายการรอผล) -> บิลนี้จะถูก 'ยืนยันแล้ว'
+                const billUpdateResult = await client.query(
+                    `UPDATE bills SET status = 'ยืนยันแล้ว' WHERE id = $1 AND status = 'รอผล' RETURNING status`,
+                    [billId]
+                );
+                if (billUpdateResult.rowCount ?? 0 > 0) {
+                    newBillStatus = billUpdateResult.rows[0].status;
+                }
             }
         }
+        // ✨ --- [สิ้นสุด] Logic ที่แก้ไขใหม่ --- ✨
 
         await client.query('COMMIT');
         
