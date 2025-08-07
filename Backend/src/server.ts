@@ -5,6 +5,7 @@ import cors from "cors";
 import "dotenv/config";
 import pg from "pg";
 import { startLottoRoundGenerationJob, generateLottoRoundsJob } from './services/lottoRoundGenerator'; 
+import { log } from 'console';
 
 const { Pool } = pg;
 const app = express();
@@ -1501,6 +1502,7 @@ app.get('/api/bills-for-prize-check', isAuthenticated, async (req: Request, res:
         query += ` GROUP BY b.id, u.username, lr.id ORDER BY b.id DESC`;
 
         const result = await db.query(query, queryParams);
+        console.log(res.json(result.rows));
         res.json(result.rows);
 
     } catch (err: any) {

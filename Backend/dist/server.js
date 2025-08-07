@@ -1307,6 +1307,7 @@ app.get('/api/bills-for-prize-check', isAuthenticated, (req, res) => __awaiter(v
         }
         query += ` GROUP BY b.id, u.username, lr.id ORDER BY b.id DESC`;
         const result = yield db.query(query, queryParams);
+        console.log(res.json(result.rows));
         res.json(result.rows);
     }
     catch (err) {
