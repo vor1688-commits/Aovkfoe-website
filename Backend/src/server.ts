@@ -1138,6 +1138,46 @@ app.post("/api/savebills", async (req: Request, res: Response) => {
 //     }
 // });
 
+
+// ในไฟล์ server.ts (เพิ่ม Endpoint นี้เข้าไป)
+
+app.post('/api/bills/batch-delete', async (req, res) => {
+    // 1. รับ Array ของ billIds จาก request body
+    const { billIds } = req.body;
+
+    // 2. ตรวจสอบข้อมูลเบื้องต้น
+    if (!Array.isArray(billIds) || billIds.length === 0) {
+        return res.status(400).json({ error: 'billIds ต้องเป็น Array ที่ไม่ว่าง' });
+    }
+
+    const client = await db.connect();
+    try {
+        // 3. ใช้ Transaction เพื่อความปลอดภัย
+        await client.query('BEGIN');
+
+        // 4. สร้าง Query เพื่อลบข้อมูล โดยใช้ WHERE id = ANY($1) ของ PostgreSQL
+        // ซึ่งเหมาะสำหรับการลบข้อมูลจาก Array ของ ID
+        const result = await client.query('DELETE FROM bills WHERE id = ANY($1)', [billIds]);
+
+        await client.query('COMMIT');
+
+        // 5. ส่งผลลัพธ์กลับไป
+        res.status(200).json({ 
+            message: `ลบข้อมูลจำนวน ${result.rowCount} บิลสำเร็จ`,
+            deletedCount: result.rowCount 
+        });
+
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('เกิดข้อผิดพลาดในการลบหลายบิล:', err);
+        res.status(500).json({ error: 'เกิดข้อผิดพลาดบนเซิร์ฟเวอร์' });
+    } finally {
+        client.release();
+    }
+});
+
+
+
 // ในไฟล์ server.ts
 app.post('/api/batch-check-bet-limits', async (req: Request, res: Response) => {
     // ... (ส่วนการตรวจสอบ exemption เหมือนเดิม) ...

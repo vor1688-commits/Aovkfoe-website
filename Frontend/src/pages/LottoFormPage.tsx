@@ -537,7 +537,7 @@ const handleAddBillEntry = async () => {
         alert("ไม่มีเลขที่ถูกเลือก", "กรุณาเลือกตัวเลขที่ถูกต้องอย่างน้อย 1 รายการ", "light");
         return;
     }
-    if (priceTop === "0" && priceTote === "0" && priceBottom === "0") {
+    if (!Number(priceTop) && !Number(priceTote) && !Number(priceBottom)) {
         alert("ยังไม่ได้ใส่ราคา", "กรุณาใส่ราคาอย่างน้อย 1 ช่อง", "light");
         return;
     }

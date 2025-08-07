@@ -931,33 +931,7 @@ const groupedBetSummary = useMemo(() => {
                 )}
               </div>
             </div>
-              {/* <div className="kpi-card">
-                <h3 className="chart-title">
-                  <TrophyIcon className="h-6 w-6" />
-                  ยอดชนะตามประเภทการแทง
-                </h3>
-                <div className="space-y-3 max-h-60 overflow-y-auto custom-scrollbar pr-2">
-                  {winningsByBetType.length > 0 ? (
-                    winningsByBetType.map((item) => (
-                      <div
-                        key={item.name}
-                        className="flex items-center justify-between text-sm hover:bg-gray-700/50 p-2 rounded-md"
-                      >
-                        <span className="text-gray-300">
-                          {getBetTypeName(item.name)}
-                        </span>
-                        <span className="font-semibold text-green-400">
-                          {formatCurrency(item.total)} บาท
-                        </span>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-gray-500 italic text-center py-4">
-                      ไม่พบรายการที่ชนะ
-                    </p>
-                  )}
-                </div>
-              </div> */}
+              
             </div>
 
             {winningItems.length > 0 && (
@@ -969,40 +943,40 @@ const groupedBetSummary = useMemo(() => {
                   <table className="w-full text-sm text-left">
                     <thead className="text-gray-400 sticky top-0 bg-gray-900">
                       <tr className="border-b border-gray-700">
-                        <th className="p-3">เลขบิล</th>
+                        <th className="p-3 whitespace-nowrap">เลขบิล</th>
                         {(user?.role === "owner" || user?.role === 'admin') && (
-                          <th className="p-3">ผู้ใช้</th>
+                          <th className="p-3 whitespace-nowrap">ผู้ใช้</th>
                         )}
-                        <th className="p-3">งวดหวย</th>
-                        <th className="p-3">ประเภท</th>
-                        <th className="p-3">เลข</th>
-                        <th className="p-3 text-right">เงินรางวัล</th>
+                        <th className="p-3 whitespace-nowrap">งวดหวย</th>
+                        <th className="p-3 whitespace-nowrap">ประเภท</th>
+                        <th className="p-3 whitespace-nowrap">เลข</th>
+                        <th className="p-3 text-right whitespace-nowrap">เงินรางวัล</th>
                       </tr>
                     </thead>
                     <tbody>
                       {winningItems.map((item) => (
                         <tr
                           key={item.id}
-                          className="border-b border-gray-800 hover:bg-gray-800/50"
+                          className="border-b border-gray-800 hover:bg-gray-800/50 whitespace-nowrap"
                         >
-                          <td className="p-3 font-mono text-blue-400">
+                          <td className="p-3 font-mono text-blue-400 whitespace-nowrap">
                             {item.billRef}
                           </td>
                           {(user?.role === "owner" || user?.role === 'admin') && (
-                            <td className="p-3">{item.username}</td>
+                            <td className="p-3 whitespace-nowrap">{item.username}</td>
                           )}
-                          <td className="p-3">
+                          <td className="p-3 whitespace-nowrap">
                             {item.lottoName}
                             <br />
-                            <span className="text-xs text-gray-500">
+                            <span className="text-xs text-gray-500 whitespace-nowrap">
                               {formatDateString(item.lottoDrawDate, 'short')}
                             </span>
                           </td>
-                          <td className="p-3">
+                          <td className="p-3 whitespace-nowrap">
                             {getBetTypeName(item.bet_type)} ({item.bet_style})
                           </td>
-                          <td className="p-3 font-mono">{item.bet_number}</td>
-                          <td className="p-3 text-right font-semibold text-green-400">
+                          <td className="p-3 font-mono whitespace-nowrap">{item.bet_number}</td>
+                          <td className="p-3 text-right font-semibold text-green-400 whitespace-nowrap">
                             {formatCurrency(item.payoutAmount)}
                           </td>
                         </tr>
@@ -1018,17 +992,17 @@ const groupedBetSummary = useMemo(() => {
                 <table className="w-full text-sm text-left">
                   <thead className="text-gray-400">
                     <tr className="border-b border-gray-700">
-                      <th className="p-3">เลขที่บิล</th>
+                      <th className="p-3 whitespace-nowrap">เลขที่บิล</th>
                       {(user?.role === "owner" || user?.role === 'admin') && (
-                        <th className="p-3">ผู้ใช้งาน</th>
+                        <th className="p-3 whitespace-nowrap">ผู้ใช้งาน</th>
                       )}
-                      <th className="p-3">วันที่บันทึก</th>
-                      <th className="p-3">ประเภทหวย</th>
-                      <th className="p-3">งวดวันที่</th>
-                      <th className="p-3 text-center">ยอดรวม</th>
-                      <th className="p-3">บันทึกช่วยจำ</th>
-                      <th className="p-3 text-center">สถานะ</th>
-                      <th className="p-3 text-right">จัดการ</th>
+                      <th className="p-3 whitespace-nowrap">วันที่บันทึก</th>
+                      <th className="p-3 whitespace-nowrap">ประเภทหวย</th>
+                      <th className="p-3 whitespace-nowrap">งวดวันที่</th>
+                      <th className="p-3 text-center whitespace-nowrap">ยอดรวม</th>
+                      <th className="p-3 whitespace-nowrap">บันทึกช่วยจำ</th>
+                      <th className="p-3 text-center whitespace-nowrap">สถานะ</th>
+                      <th className="p-3 text-right whitespace-nowrap">จัดการ</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1037,35 +1011,35 @@ const groupedBetSummary = useMemo(() => {
                         key={bill.id}
                         className="border-b border-gray-800 hover:bg-gray-800/50"
                       >
-                        <td className="p-3 font-mono text-blue-400">
+                        <td className="p-3 font-mono text-blue-400 whitespace-nowrap">
                           {bill.billRef}
                         </td>
                         {(user?.role === "owner" || user?.role === 'admin') && (
                           <td className="p-3 text-gray-300">{bill.username}</td>
                         )}
-                        <td className="p-3 text-gray-400">
+                        <td className="p-3 text-gray-400 whitespace-nowrap">
                           {new Date(bill.createdAt).toLocaleString("th-TH")}
                         </td>
-                        <td className="p-3 text-gray-300">{bill.lottoName}</td>
-                        <td className="p-3 text-gray-400">
+                        <td className="p-3 text-gray-300 whitespace-nowrap">{bill.lottoName}</td>
+                        <td className="p-3 text-gray-400 whitespace-nowrap">
                           {bill.billLottoDraw
                             ? formatDateString(bill.billLottoDraw, 'short')
                             : "-"}
                         </td>
-                        <td className="p-3 text-center font-semibold">
+                        <td className="p-3 text-center font-semibold whitespace-nowrap">
                           {formatCurrency(bill.totalAmount)}
                         </td>
-                        <td className="p-3 text-gray-400">
+                        <td className="p-3 text-gray-400 whitespace-nowrap">
                           {bill.note ?? "-"}
                         </td>
-                        <td className="p-3 text-center">
+                        <td className="p-3 text-center whitespace-nowrap">
                           <span
                             className={`px-2 py-1 text-xs rounded-full bg-gray-700`}
                           >
                             {bill.status}
                           </span>
                         </td>
-                        <td className="p-3 text-right">
+                        <td className="p-3 text-right whitespace-nowrap">
                           <button
                             onClick={() =>
                               handleDeleteBill(bill.id, bill.billRef)

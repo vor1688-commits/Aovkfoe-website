@@ -737,12 +737,12 @@ useEffect(() => {
   <table className="w-full text-sm text-left text-gray-600">
     <thead className="text-xs text-gray-700 uppercase bg-gray-100">
       <tr>
-        <th className="px-4 py-3">เลขที่ใบสั่งซื้อ</th>
-        <th className="px-4 py-3">ประเภทหวย</th>
-        <th className="px-4 py-3">งวด</th>
-        <th className="px-4 py-3">บันทึกโดย</th>
-        <th className="px-4 py-3 text-right">เงินรางวัลรวม</th>
-        <th className="px-4 py-3">บันทึกช่วยจำ</th>
+        <th className="px-4 py-3 whitespace-nowrap">เลขที่ใบสั่งซื้อ</th>
+        <th className="px-4 py-3 whitespace-nowrap">ประเภทหวย</th>
+        <th className="px-4 py-3 whitespace-nowrap">งวด</th>
+        <th className="px-4 py-3 whitespace-nowrap">บันทึกโดย</th>
+        <th className="px-4 py-3 whitespace-nowrap">บันทึกช่วยจำ</th>
+        <th className="px-4 py-3 text-center whitespace-nowrap">เงินรางวัลรวม</th>
       </tr>
     </thead>
     <tbody>
@@ -819,25 +819,25 @@ useEffect(() => {
                 className={`border-b cursor-pointer transition-colors duration-300 ${rowClass}`}
                 onClick={() => toggleRow(currentBillRef)}
               >
-                <td className="px-4 py-3 font-medium text-blue-600">
+                <td className="px-4 py-3 font-medium text-blue-600 whitespace-nowrap">
                   {currentBillRef}
                 </td>
-                <td className="px-4 py-3">{firstItem.lottoName}</td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-3 whitespace-nowrap">{firstItem.lottoName}</td>
+                <td className="px-4 py-3 whitespace-nowrap">
                   {formatDateString(firstItem.lottoDrawDate, "short")}
                 </td>
-                <td className="px-4 py-3">{firstItem.username}</td>
+                <td className="px-4 py-3 whitespace-nowrap">{firstItem.username}</td>
+                <td className="px-4 py-3 whitespace-nowrap">{firstItem.note}</td>
                 <td
-                  className={`px-4 py-3 text-right font-semibold ${
+                  className={`px-4 py-3 text-center font-semibold whitespace-nowrap ${
                     totalPrizeForBill > 0 ? "text-green-700" : "text-gray-500"
                   }`}
                 >
                   {totalPrizeForBill.toLocaleString("en-US", {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
-                  })}
+                  })} บาท
                 </td>
-                <td className="px-4 py-3">{firstItem.note}</td>
               </tr>
               {isExpanded && (
                 <tr className="bg-gray-50">
@@ -846,22 +846,22 @@ useEffect(() => {
                       <table className="w-full text-sm text-left text-gray-600">
                         <thead className="text-xs text-gray-700 uppercase bg-gray-200">
                           <tr>
-                            <th className="px-4 py-2">ประเภท</th>
-                            <th className="px-4 py-2">หมายเลข</th>
-                            <th className="px-0 py-2 text-center">
+                            <th className="px-4 py-2 whitespace-nowrap">ประเภท</th>
+                            <th className="px-4 py-2 whitespace-nowrap">หมายเลข</th>
+                            <th className="px-0 py-2 text-center whitespace-nowrap">
                               ยอดแทง
                             </th>
-                            <th className="px-4 py-2 text-right">
+                            <th className="px-4 py-2 text-right whitespace-nowrap">
                               เรทจ่าย
                             </th>
-                            <th className="px-4 py-2 text-right">บาทละ</th>
-                            <th className="px-4 py-2 text-right">
+                            <th className="px-4 py-2 text-right whitespace-nowrap">บาทละ</th>
+                            <th className="px-4 py-2 text-right whitespace-nowrap">
                               เงินรางวัล
                             </th>
-                            <th className="px-4 py-2 text-center">
+                            <th className="px-4 py-2 text-center whitespace-nowrap">
                               บันทึกช่วยจำ
                             </th>
-                            <th className="px-4 py-2 text-center">สถานะ</th>
+                            <th className="px-4 py-2 text-center whitespace-nowrap">สถานะ</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -877,7 +877,7 @@ useEffect(() => {
                               return (
                                 <tr
                                   key={item.id}
-                                  className={`border-b ${
+                                  className={`border-b whitespace-nowrap${
                                     isWinner
                                       ? "bg-green-100"
                                       : statusText === "รอใส่ผลรางวัล" ||
@@ -886,18 +886,18 @@ useEffect(() => {
                                       : "bg-red-50"
                                   }`}
                                 >
-                                  <td className="px-4 py-3">
+                                  <td className="px-4 py-3 whitespace-nowrap">
                                     {getBetTypeName(item.bet_type)} (
                                     {item.bet_style})
                                   </td>
-                                  <td className="px-4 py-3 font-mono">
+                                  <td className="px-4 py-3 text-left font-mono whitespace-nowrap">
                                     {item.bet_number}
                                   </td>
-                                  <td className="px-4 py-3 text-center">
+                                  <td className="px-4 py-3 text-center whitespace-nowrap">
                                     {item.price} บาท
                                   </td>
                                   <td
-                                    className={`px-4 py-3 text-right ${
+                                    className={`px-4 py-3 text-right whitespace-nowrap ${
                                       item.price * 0.5 == item.rate
                                         ? " text-red-600"
                                         : " text-black"
@@ -910,7 +910,7 @@ useEffect(() => {
                                     บาท
                                   </td>
                                   <td
-                                    className={`px-4 py-3 text-right ${
+                                    className={`px-4 py-3 text-right whitespace-nowrap ${
                                       item.price * 0.5 == item.rate
                                         ? " text-red-600"
                                         : " text-black"
@@ -934,7 +934,7 @@ useEffect(() => {
                                     บาท
                                   </td>
                                   <td
-                                    className={`px-4 py-3 text-right font-semibold ${
+                                    className={`px-4 py-3 text-right font-semibold whitespace-nowrap ${
                                       isWinner
                                         ? "text-green-700"
                                         : "text-gray-400"
