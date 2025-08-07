@@ -1245,7 +1245,7 @@ app.get('/api/bills-for-prize-check', isAuthenticated, (req, res) => __awaiter(v
                     JOIN bill_entries be_sub ON bi_sub.bill_entry_id = be_sub.id 
                     WHERE be_sub.bill_id = b.id AND bi_sub.status = 'ยืนยัน'
                 ) as "itemCount",
-                -- ✅ --- LOGIC การคำนวณยอดรางวัลที่แก้ไขใหม่ ---
+                -- --- ⬇️ LOGIC การคำนวณยอดรางวัลที่แก้ไขใหม่ทั้งหมด ⬇️ ---
                 (
                     SELECT COALESCE(SUM(bi_win.payout_amount), 0)
                     FROM bet_items bi_win
@@ -1262,7 +1262,6 @@ app.get('/api/bills-for-prize-check', isAuthenticated, (req, res) => __awaiter(v
                 )::float AS "totalWinnings"
             FROM bills b
             JOIN users u ON b.user_id = u.id
-            -- ใช้ LEFT JOIN เพื่อป้องกันกรณีที่ lotto_round ถูกลบไปแล้ว
             LEFT JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
             WHERE 1=1
         `;
