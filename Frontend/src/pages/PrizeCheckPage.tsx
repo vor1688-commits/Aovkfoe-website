@@ -37,6 +37,7 @@ export interface PrizeCheckItem {
   rate: number;
   payoutAmount: number;
   status: 'ยืนยัน' | 'คืนเลข' | null;
+  totalWinnings: number;
 }
 
 // --- Helper Functions ---
@@ -203,15 +204,15 @@ const fetchItems = useCallback(async () => {
     
     try { 
         const response = await api.get<PrizeCheckItem[]>(
-            `/api/prize-check/all-items?${params.toString()}`
+            `/api/bills-for-prize-check?${params.toString()}`
         );
         setMasterItems(response.data);
         const uniqueNames = [
             ...new Set(response.data.map((item) => item.lottoName)),
         ].sort();
         setLottoNamesList(uniqueNames);
-    } catch (error) {
-        // Interceptor จะจัดการ Error 401/403
+    } catch (error) { 
+      
         console.error("Failed to fetch items", error);
         setMasterItems([]);
     } finally {
@@ -743,115 +744,129 @@ useEffect(() => {
                 <th className="px-4 py-3">งวด</th>
                 <th className="px-4 py-3">บันทึกโดย</th>
                 <th className="px-4 py-3">บันทึกช่วยจำ</th>
+                <th className="px-4 py-3 text-right">ยอดเงินรางวัล</th> 
               </tr>
             </thead>
             <tbody>
-  {isLoading ? (
-    <tr> 
-      <td colSpan={5} className="text-center py-16">
-        <div className="flex justify-center items-center gap-2 text-gray-500">
-          <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
-          <span>กำลังโหลดข้อมูล...</span>
-        </div>
-      </td>
-    </tr>
-  ) : Object.keys(groupedItems).length === 0 ? (
-    <tr>
-      <td colSpan={5} className="text-center py-16 text-gray-500">
-        ไม่พบข้อมูล หรือไม่ตรงกับตัวกรอง
-      </td>
-    </tr>
-  ) : (
-    Object.entries(groupedItems).map(
-      ([currentBillRef, billItems]) => {
-        const firstItem = billItems[0];
-        const isExpanded = expandedRow === currentBillRef;
+              {isLoading ? (
+                <tr>
+                  {/* แก้ไข colSpan เป็น 6 เพื่อรองรับคอลัมน์ใหม่ */}
+                  <td colSpan={6} className="text-center py-16">
+                    <div className="flex justify-center items-center gap-2 text-gray-500">
+                      <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      <span>กำลังโหลดข้อมูล...</span>
+                    </div>
+                  </td>
+                </tr>
+              ) : Object.keys(groupedItems).length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="text-center py-16 text-gray-500">
+                    ไม่พบข้อมูล หรือไม่ตรงกับตัวกรอง
+                  </td>
+                </tr>
+              ) : (
+                Object.entries(groupedItems).map(
+                  ([currentBillRef, billItems]) => {
+                    const firstItem = billItems[0];
+                    const isExpanded = expandedRow === currentBillRef;
+                    const billStatus = getBillStatus(billItems, overrideWinningNumbers, manualLottoGroupKey);
+                    
+                    // --- คำนวณยอดรวมเงินรางวัลสำหรับบิลนี้ ---
+                    const totalWinningsForBill = billItems.reduce((total, item) => {
+                        const details = getPrizeDetails(item, overrideWinningNumbers, manualLottoGroupKey);
+                        if (details.isWinner) {
+                            return total + details.prize;
+                        }
+                        return total;
+                    }, 0);
 
-        const billStatus = getBillStatus(
-          billItems, 
-          overrideWinningNumbers, 
-          manualLottoGroupKey
-        );
-        
-        const rowClass = {
-          'winner': 'bg-green-50 hover:bg-green-100 border-l-4 border-l-green-500',
-          'loser': 'bg-red-50 hover:bg-red-100 border-l-4 border-l-red-500',
-          'pending': 'bg-white hover:bg-gray-50'
-        }[billStatus] || 'bg-white hover:bg-gray-50';
+                    const rowClass = {
+                      'winner': 'bg-green-50 hover:bg-green-100 border-l-4 border-l-green-500',
+                      'loser': 'bg-red-50 hover:bg-red-100 border-l-4 border-l-red-500',
+                      'pending': 'bg-white hover:bg-gray-50'
+                    }[billStatus] || 'bg-white hover:bg-gray-50';
 
-        return (
-          <React.Fragment key={currentBillRef}>
-            <tr
-              className={`border-b cursor-pointer transition-colors duration-300 ${rowClass}`}
-              onClick={() => toggleRow(currentBillRef)}
-            >
-              <td className="px-4 py-3 font-medium text-blue-600">{currentBillRef}</td>
-              <td className="px-4 py-3">{firstItem.lottoName}</td>
-              <td className="px-4 py-3">{formatDateString(firstItem.lottoDrawDate, "short")}</td>
-              <td className="px-4 py-3">{firstItem.username}</td>
-              <td className="px-4 py-3">{firstItem.note}</td>
-            </tr>
-            {isExpanded && (
-              <tr className="bg-gray-50">
-                <td colSpan={5} className="p-2 md:p-4">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left text-gray-600">
-                      <thead className="text-xs text-gray-700 uppercase bg-gray-200">
-                        <tr>
-                          <th className="px-4 py-2">ประเภท</th>
-                          <th className="px-4 py-2">หมายเลข</th>
-                          <th className="px-0 py-2 text-center">ยอดแทง</th>
-                          <th className="px-4 py-2 text-right">เรทจ่าย</th>
-                          <th className="px-4 py-2 text-right">บาทละ</th>
-                          <th className="px-4 py-2 text-right">เงินรางวัล</th>
-                          <th className="px-4 py-2 text-center">บันทึกช่วยจำ</th>
-                          <th className="px-4 py-2 text-center">สถานะ</th>
+                    return (
+                      <React.Fragment key={currentBillRef}>
+                        <tr
+                          className={`border-b cursor-pointer transition-colors duration-300 ${rowClass}`}
+                          onClick={() => toggleRow(currentBillRef)}
+                        >
+                          <td className="px-4 py-3 font-medium text-blue-600">{currentBillRef}</td>
+                          <td className="px-4 py-3">{firstItem.lottoName}</td>
+                          <td className="px-4 py-3">{formatDateString(firstItem.lottoDrawDate, "short")}</td>
+                          <td className="px-4 py-3">{firstItem.username}</td>
+                          <td className="px-4 py-3">{firstItem.note}</td>
+                           
+                        {firstItem.totalWinnings > 0 ? (
+                          <span className="text-green-600">
+                            {firstItem.totalWinnings.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">-</span>
+                        )}
                         </tr>
-                      </thead>
-                      <tbody>
-                        {billItems.filter(item => item.status === 'ยืนยัน').map((item) => {
-                          const { statusText, isWinner } = getPrizeDetails(item, overrideWinningNumbers, manualLottoGroupKey);
-                          return (
-                            <tr key={item.id} className={`border-b ${isWinner ? "bg-green-100" : (statusText === 'รอใส่ผลรางวัล' || statusText === 'รอประกาศผล') ? "bg-white" : "bg-red-50"}`}>
-                              <td className="px-4 py-3">{getBetTypeName(item.bet_type)} ({item.bet_style})</td>
-                              <td className="px-4 py-3 font-mono">{item.bet_number}</td>
-                              <td className="px-4 py-3 text-center">{item.price} บาท</td>
-                              <td className={`px-4 py-3 text-right ${item.price * 0.5 == item.rate ? " text-red-600" : " text-black"}`}>
-                                {item.price} {item.price * 0.5 == item.rate ? "(จ่ายครึ่ง)" : ""} บาท
-                              </td>
-                              <td className={`px-4 py-3 text-right ${item.price * 0.5 == item.rate ? " text-red-600" : " text-black"}`}>{item.price * 0.5 == item.rate ? (item.baht_per / 2).toLocaleString("th-TH", {maximumFractionDigits: 2, minimumFractionDigits: 2}): item.baht_per} บาท</td>
-                              <td className={`px-4 py-3 text-right font-semibold ${isWinner ? "text-green-700" : "text-gray-400"}`}>
-                                {Number(item.payoutAmount).toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2, })} บาท
-                              </td>
-                              <td className="px-4 py-3 text-center">{firstItem.note}</td>
-                              <td className="px-4 py-3 text-center">
-                                <span className={`px-2 py-1 rounded-full text-xs font-bold whitespace-nowrap ${
-                                  isWinner ? "bg-green-200 text-green-800"
-                                  : statusText === "ไม่ถูกรางวัล" ? "bg-red-100 text-red-700"
-                                  : statusText === "รอใส่ผลรางวัล" ? "bg-gray-200 text-gray-800"
-                                  : "bg-yellow-100 text-yellow-800"
-                                }`}>
-                                  {statusText}
-                                </span>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </td>
-              </tr>
-            )}
-          </React.Fragment>
-        );
-      }
-    )
-  )}
-</tbody>
+                        {isExpanded && (
+                          <tr className="bg-gray-50">
+                            <td colSpan={6} className="p-2 md:p-4">
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left text-gray-600">
+                                  <thead className="text-xs text-gray-700 uppercase bg-gray-200">
+                                    <tr>
+                                      <th className="px-4 py-2">ประเภท</th>
+                                      <th className="px-4 py-2">หมายเลข</th>
+                                      <th className="px-0 py-2 text-center">ยอดแทง</th>
+                                      <th className="px-4 py-2 text-right">เรทจ่าย</th>
+                                      <th className="px-4 py-2 text-right">บาทละ</th>
+                                      <th className="px-4 py-2 text-right">เงินรางวัล</th>
+                                      <th className="px-4 py-2 text-center">สถานะ</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {billItems.filter(item => item.status === 'ยืนยัน').map((item) => {
+                                      const { statusText, isWinner } = getPrizeDetails(item, overrideWinningNumbers, manualLottoGroupKey);
+                                      return (
+                                        <tr key={item.id} className={`border-b ${isWinner ? "bg-green-100" : (statusText === 'รอใส่ผลรางวัล' || statusText === 'รอประกาศผล') ? "bg-white" : "bg-red-50"}`}>
+                                          <td className="px-4 py-3">{getBetTypeName(item.bet_type)} ({item.bet_style})</td>
+                                          <td className="px-4 py-3 font-mono">{item.bet_number}</td>
+                                          <td className="px-4 py-3 text-center">{item.price} บาท</td>
+                                          <td className={`px-4 py-3 text-right ${item.price * 0.5 === item.rate ? "text-red-600" : "text-black"}`}>
+                                            {item.rate.toLocaleString()} {item.price * 0.5 === item.rate ? "(จ่ายครึ่ง)" : ""}
+                                          </td>
+                                          <td className={`px-4 py-3 text-right ${item.price * 0.5 === item.rate ? "text-red-600" : "text-black"}`}>
+                                            {item.baht_per.toLocaleString()}
+                                          </td>
+                                          <td className={`px-4 py-3 text-right font-semibold ${isWinner ? "text-green-700" : "text-gray-400"}`}>
+                                            {Number(item.payoutAmount).toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 })}
+                                          </td>
+                                          <td className="px-4 py-3 text-center">
+                                            <span className={`px-2 py-1 rounded-full text-xs font-bold whitespace-nowrap ${
+                                              isWinner ? "bg-green-200 text-green-800"
+                                              : statusText === "ไม่ถูกรางวัล" ? "bg-red-100 text-red-700"
+                                              : statusText === "รอใส่ผลรางวัล" ? "bg-gray-200 text-gray-800"
+                                              : "bg-yellow-100 text-yellow-800"
+                                            }`}>
+                                              {statusText}
+                                            </span>
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  }
+                )
+              )}
+            </tbody>
           </table>
         </div>
       </div>

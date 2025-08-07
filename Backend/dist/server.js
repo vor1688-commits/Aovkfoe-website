@@ -1221,6 +1221,110 @@ app.get('/api/bills', isAuthenticated, (req, res) => __awaiter(void 0, void 0, v
         res.status(500).json({ error: 'เกิดข้อผิดพลาดในการดึงข้อมูลบิล', details: err.message });
     }
 }));
+app.get('/api/bills-for-prize-check', isAuthenticated, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const loggedInUser = req.user;
+    const { startDate, endDate, status, billRef, noteRef, username, lottoCategory, lottoName } = req.query;
+    try {
+        let query = `
+            SELECT 
+                b.id, 
+                b.bill_ref as "billRef", 
+                b.created_at as "createdAt",
+                b.bet_name as "lottoName", 
+                b.total_amount as "totalAmount",
+                b.status, 
+                b.note, 
+                b.bill_lotto_draw AS "lottoDrawDate", 
+                u.username,
+                (
+                    SELECT COUNT(bi_sub.id) 
+                    FROM bet_items bi_sub 
+                    JOIN bill_entries be_sub ON bi_sub.bill_entry_id = be_sub.id 
+                    WHERE be_sub.bill_id = b.id
+                ) as "itemCount",
+                CASE 
+                    WHEN EXISTS (
+                        SELECT 1 
+                        FROM bet_items bi_sub 
+                        JOIN bill_entries be_sub ON bi_sub.bill_entry_id = be_sub.id 
+                        WHERE be_sub.bill_id = b.id AND (bi_sub.price * 0.5) = bi_sub.rate
+                    ) 
+                    THEN true 
+                    ELSE false 
+                END as "hasHalfRateItem",
+                -- --- ส่วนที่เพิ่มเข้ามา: คำนวณยอดถูกรางวัลทั้งหมดของบิลนี้ ---
+                (
+                    SELECT COALESCE(SUM(bi_win.payout_amount), 0)
+                    FROM bet_items bi_win
+                    JOIN bill_entries be_win ON bi_win.bill_entry_id = be_win.id
+                    JOIN bills b_win ON be_win.bill_id = b_win.id
+                    JOIN lotto_rounds lr_win ON b_win.lotto_round_id = lr_win.id
+                    WHERE be_win.bill_id = b.id
+                      AND lr_win.status IN ('closed', 'manual_closed')
+                      AND bi_win.status = 'ยืนยัน'
+                      AND (
+                          (be_win.bet_type IN ('3d', '6d') AND bi_win.bet_style = 'ตรง' AND lr_win.winning_numbers->>'3top' = bi_win.bet_number) OR
+                          (be_win.bet_type IN ('3d', '6d') AND bi_win.bet_style = 'โต๊ด' AND lr_win.winning_numbers->'3tote' @> to_jsonb(bi_win.bet_number::text)) OR
+                          (be_win.bet_type IN ('2d', '19d') AND bi_win.bet_style = 'บน' AND lr_win.winning_numbers->>'2top' = bi_win.bet_number) OR
+                          (be_win.bet_type IN ('2d', '19d') AND bi_win.bet_style = 'ล่าง' AND lr_win.winning_numbers->>'2bottom' = bi_win.bet_number)
+                      )
+                )::float AS "totalWinnings"
+            FROM 
+                bills b
+            JOIN 
+                users u ON b.user_id = u.id
+            WHERE 1=1
+        `;
+        const queryParams = [];
+        if (loggedInUser.role === 'user') {
+            queryParams.push(loggedInUser.id);
+            query += ` AND b.user_id = $${queryParams.length}`;
+        }
+        else if (loggedInUser.role === 'admin' || loggedInUser.role === 'owner') {
+            if (username) {
+                queryParams.push(username);
+                query += ` AND u.username = $${queryParams.length}`;
+            }
+        }
+        if (startDate) {
+            queryParams.push(startDate);
+            query += ` AND b.created_at::date >= $${queryParams.length}`;
+        }
+        if (endDate) {
+            const nextDay = new Date(endDate);
+            nextDay.setDate(nextDay.getDate() + 1);
+            queryParams.push(nextDay.toISOString().split('T')[0]);
+            query += ` AND b.created_at < $${queryParams.length}`;
+        }
+        if (status) {
+            queryParams.push(status);
+            query += ` AND b.status = $${queryParams.length}`;
+        }
+        if (billRef) {
+            queryParams.push(`%${billRef}%`);
+            query += ` AND b.bill_ref ILIKE $${queryParams.length}`;
+        }
+        if (noteRef) {
+            queryParams.push(`%${noteRef}%`);
+            query += ` AND b.note ILIKE $${queryParams.length}`;
+        }
+        if (lottoCategory) {
+            queryParams.push(`%${lottoCategory}%`);
+            query += ` AND b.bet_name ILIKE $${queryParams.length}`;
+        }
+        if (lottoName) {
+            queryParams.push(lottoName);
+            query += ` AND b.bet_name = $${queryParams.length}`;
+        }
+        query += ` GROUP BY b.id, u.username ORDER BY b.id DESC`;
+        const result = yield db.query(query, queryParams);
+        res.json(result.rows);
+    }
+    catch (err) {
+        console.error('Error fetching bills for prize check:', err);
+        res.status(500).json({ error: 'เกิดข้อผิดพลาดในการดึงข้อมูลบิล', details: err.message });
+    }
+}));
 app.delete('/api/delete-bills/:id', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { id } = req.params;
     try {
