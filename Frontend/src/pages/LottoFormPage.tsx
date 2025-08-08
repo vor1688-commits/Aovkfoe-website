@@ -121,6 +121,7 @@ const LottoFormPage = () => {
 
   // NEW STATE: สำหรับควบคุมการแสดงผลของ Modal โดยเฉพาะ
   const [isModalVisible, setIsModalVisible] = useState(false);
+  const [isBillInvalid, setIsBillInvalid] = useState(false);
 
   // --- Functions for generating image (Definitive fix) ---
     const generateReceiptImage = useCallback(async () => {
@@ -298,28 +299,33 @@ useEffect(() => {
       }
     }
   }, [currentTime, roundDetails, navigate]);
-  
-  useEffect(() => {
-    // ดึงรายการเลขปิดล่าสุดจาก state
+
+
+
+useEffect(() => {
     const closedNumbers = specialNumbers?.closed_numbers || [];
     
-    // คำนวณยอดรวมใหม่โดยพิจารณาเลขปิดด้วย
+    // คำนวณยอดรวมสุทธิ (เหมือนเดิม)
     const newTotal = bill.reduce((sum, entry) => {
-        // คำนวณราคาต่อ 1 หมายเลขของ entry นี้
         const pricePerBet = (entry.priceTop || 0) + (entry.priceTote || 0) + (entry.priceBottom || 0);
-        
-        // ✨ กรองเอาเฉพาะเลขที่ "ไม่" เป็นเลขปิด ออกจากรายการของ entry นี้
         const validBetsInEntry = entry.bets.filter(bet => !closedNumbers.includes(bet));
-        
-        // คำนวณยอดรวมของ entry นี้จาก "เลขที่ไม่ใช่เลขปิด" เท่านั้น
         const entryTotal = validBetsInEntry.length * pricePerBet;
-        
-        // บวกยอดรวมของ entry นี้เข้าไปในยอดรวมทั้งหมด
         return sum + entryTotal;
-    }, 0); // 0 คือค่าเริ่มต้นของ sum
-
+    }, 0);
     setTotal(newTotal);
-}, [bill, specialNumbers]); // ✅ เพิ่ม specialNumbers เป็น dependency
+
+    // ตรวจสอบว่าบิลทั้งหมดเป็นเลขปิดหรือไม่
+    if (bill.length > 0) {
+        const allNumbersAreClosed = bill.every(entry => 
+            entry.bets.every(betNumber => 
+                closedNumbers.includes(betNumber)
+            )
+        );
+        setIsBillInvalid(allNumbersAreClosed);
+    } else {
+        setIsBillInvalid(false);
+    }
+  }, [bill, specialNumbers]);
  
   const handlePrint = useReactToPrint({
     content: () => receiptRef.current,
@@ -969,10 +975,15 @@ const handleAddBillEntry = async () => {
             ล้างตัวเลข
           </button>
           <button
-            className="px-6 py-2 bg-blue-500 text-white rounded-md font-semibold hover:bg-blue-600"
+            className={`px-6 py-2 rounded-md font-semibold transition-colors ${
+              isBillInvalid 
+                ? 'bg-red-500 text-white cursor-not-allowed' 
+                : 'bg-blue-500 text-white hover:bg-blue-600'
+            }`}
             onClick={handleSaveBill}
+            disabled={isBillInvalid}
           >
-            บันทึกบิล
+            {isBillInvalid ? 'ไม่สามารถบันทึก (เลขปิดทั้งหมด)' : 'บันทึกบิล'}
           </button>
         </div>
       </div>

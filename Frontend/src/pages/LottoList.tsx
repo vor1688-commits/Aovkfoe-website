@@ -649,13 +649,13 @@ useEffect(() => {
           <table className="w-full text-sm text-left text-gray-500">
             <thead className="text-xs text-gray-700 uppercase bg-gray-50">
               <tr>
-                <th scope="col" className="px-3 py-3 whitespace-nowrap">
+                <th scope="col" className="px-0 py-3 whitespace-nowrap">
                   No
                 </th>
                 <th scope="col" className="px-6 py-3 whitespace-nowrap">
                   เลขที่ใบสั่งซื้อ
                 </th>
-                <th scope="col" className="px-6 py-3 whitespace-nowrap">
+                <th scope="col" className="px-4 py-3 whitespace-nowrap">
                   วันที่บันทึกข้อมูล
                 </th>
                 <th scope="col" className="px-6 py-3 whitespace-nowrap">
@@ -668,7 +668,7 @@ useEffect(() => {
                   งวด
                 </th>
                 <th scope="col" className="px-6 py-3 whitespace-nowrap">
-                  จำนวนรายการ
+                  จำนวน
                 </th>
                 <th scope="col" className="px-6 py-3 whitespace-nowrap">
                   ยอดรวม
@@ -711,7 +711,7 @@ useEffect(() => {
                       onClick={() => handleRowClick(order.id)}
                       className="bg-white border-b hover:bg-gray-50 cursor-pointer"
                     >
-                      <td className="px-3 py-4">{index + 1}</td>
+                      <td className="px-1 py-4">{index + 1}</td>
                       <td
                         className={`font-medium px-6 py-4 whitespace-nowrap flex items-center ${
                           order.lottoName === "หวยนี้ถูกนำออกจากระบบแล้ว"
@@ -721,7 +721,7 @@ useEffect(() => {
                       >
                         {order.billRef}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-2 py-4 whitespace-nowrap">
                         {new Date(order.createdAt).toLocaleString("th-TH")}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
