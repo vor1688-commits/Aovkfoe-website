@@ -363,12 +363,13 @@ export interface Order {
   lottoName: string;
   itemCount: number;
   totalAmount: number;
+  returnedAmount: number;  
+  netAmount?: number;
   status: 'ยืนยันแล้ว' | 'ยกเลิก' | 'รอผล';
   username: string;
   note: string | null;
   bill_lotto_draw: string | null;
   hasHalfRateItem?: boolean;
-  netAmount?: number;
 }
 
 export interface BetItem {

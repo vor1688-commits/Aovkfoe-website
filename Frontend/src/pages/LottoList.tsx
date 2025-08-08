@@ -655,6 +655,12 @@ useEffect(() => {
                 </th>
                 <th scope="col" className="px-6 py-3">
                   ยอดรวม
+                </th> 
+                <th scope="col" className="px-6 py-3">
+                  ยอดคืนเลข
+                </th>
+                <th scope="col" className="px-6 py-3">
+                  ยอดสุทธิ
                 </th>
                 <th scope="col" className="px-4 py-3">
                   บันทึกช่วยจำ

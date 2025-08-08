@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react"; 
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import type { ChartOptions } from "chart.js";
 import { useAuth } from "../contexts/AuthContext";
 import { Bar, Doughnut } from "react-chartjs-2";
@@ -44,12 +44,10 @@ ChartJS.register(
   Legend,
   ArcElement
 );
-const API_URL =
-  import.meta.env.VITE_API_URL_FRONTEND || "http://localhost:3001";
 
-
+// --- Interfaces ---
 interface GroupedWinningItem {
-  id: string; // เราจะสร้าง ID ใหม่จาก billRef และ bet_number
+  id: string;
   billRef: string;
   username: string;
   lottoName: string;
@@ -63,7 +61,6 @@ interface GroupedWinningItem {
   }[];
 }
 
-// --- Interfaces ---
 interface CheckableItem {
   id: number;
   lottoRoundId: number;
@@ -83,12 +80,14 @@ interface CheckableItem {
   rate: number;
   payoutAmount: number;
 }
+
 interface WinningNumbers {
   "3top"?: string[];
   "2top"?: string[];
   "2bottom"?: string[];
   "3tote"?: string[];
 }
+
 interface SummaryData {
   totalBetAmount: number;
   totalWinnings: number;
@@ -96,13 +95,16 @@ interface SummaryData {
   netProfit: number;
   totalReturnedAmount: number;
 }
+
 interface User {
   id: number;
   username: string;
 }
+
 interface BreakdownData {
   byLottoType: { name: string; totalAmount: number; billCount: string }[];
 }
+
 interface RecentBill {
   id: number;
   billRef: string;
@@ -114,14 +116,16 @@ interface RecentBill {
   lottoName: string;
   billLottoDraw: string | null;
   note: string | null;
+  lottoRoundId: number;
 }
-// ⭐ Interface ใหม่: สรุปยอดแทงตามตัวเลข
+
 interface AllBetItemsSummary {
   number: string;
+  style: string;
   count: string;
   totalAmount: number;
 }
-// ⭐ อัปเดต Interface ของ API Response
+
 interface SummaryApiResponse {
   summary: SummaryData;
   breakdown: BreakdownData;
@@ -130,22 +134,20 @@ interface SummaryApiResponse {
   users: User[];
 }
 
-
-interface AllBetItemsSummary { number: string; style: string; count: string; totalAmount: number; }
-interface SummaryApiResponse { summary: SummaryData; breakdown: BreakdownData; allBetItemsSummary: AllBetItemsSummary[]; recentBills: RecentBill[]; users: User[]; }
-
-
-// --- Helper Functions (เหมือนเดิม) ---
+// --- Helper Functions ---
 const formatCurrency = (amount: number, decimals = 2) =>
   amount.toLocaleString("th-TH", {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   });
+
 const getDateString = (offsetDays = 0) =>
   new Date(Date.now() - offsetDays * 24 * 60 * 60 * 1000)
     .toISOString()
     .split("T")[0];
+
 const sortString = (str: string) => str.split("").sort().join("");
+
 const calculatePrizeDetails = (item: CheckableItem): { isWinner: boolean } => {
   if (
     item.lottoRoundStatus !== "closed" &&
@@ -191,6 +193,7 @@ const calculatePrizeDetails = (item: CheckableItem): { isWinner: boolean } => {
   }
   return { isWinner };
 };
+
 const useAnimatedCounter = (to: number, isCurrency = true, decimals = 2) => {
   const [value, setValue] = useState(0);
   useEffect(() => {
@@ -207,6 +210,7 @@ const useAnimatedCounter = (to: number, isCurrency = true, decimals = 2) => {
     ? formatCurrency(value, decimals)
     : Math.round(value).toLocaleString();
 };
+
 const KpiCard: React.FC<{
   title: string;
   value: number;
@@ -223,25 +227,22 @@ const KpiCard: React.FC<{
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
     >
-      {" "}
       <div className="flex justify-between items-start">
-        {" "}
         <div>
-          {" "}
-          <h3 className="kpi-title">{title}</h3>{" "}
-          <p className={`text-3xl font-bold ${colorClass}`}>{animatedValue}</p>{" "}
-        </div>{" "}
+          <h3 className="kpi-title">{title}</h3>
+          <p className={`text-3xl font-bold ${colorClass}`}>{animatedValue}</p>
+        </div>
         <div className={`p-3 rounded-full bg-gray-700/50 w-min ${colorClass}`}>
-          {" "}
-          {icon}{" "}
-        </div>{" "}
-      </div>{" "}
+          {icon}
+        </div>
+      </div>
       {children && (
         <div className="mt-4 pt-4 border-t border-gray-700/50">{children}</div>
-      )}{" "}
+      )}
     </motion.div>
   );
 };
+
 const MessageDisplay: React.FC<{
   icon: React.ReactNode;
   title: string;
@@ -252,23 +253,20 @@ const MessageDisplay: React.FC<{
     animate={{ opacity: 1 }}
     className="text-center p-10 bg-gray-800 rounded-lg border border-gray-700/50"
   >
-    {" "}
-    <div className="mx-auto h-12 w-12 text-gray-500">{icon}</div>{" "}
-    <h3 className="mt-2 text-lg font-medium text-white">{title}</h3>{" "}
-    <p className="mt-1 text-sm text-gray-400">{message}</p>{" "}
+    <div className="mx-auto h-12 w-12 text-gray-500">{icon}</div>
+    <h3 className="mt-2 text-lg font-medium text-white">{title}</h3>
+    <p className="mt-1 text-sm text-gray-400">{message}</p>
   </motion.div>
 );
 
 // --- Main Component ---
 const AccountPage: React.FC = () => {
   const { user } = useAuth();
-  const [summaryData, setSummaryData] = useState<SummaryApiResponse | null>(
-    null
-  );
+  const [summaryData, setSummaryData] = useState<SummaryApiResponse | null>(null);
   const [checkableItems, setCheckableItems] = useState<CheckableItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [deletingBillId, setDeletingBillId] = useState<number | null>(null); 
+  const [deletingBillId, setDeletingBillId] = useState<number | null>(null);
 
   const [startDate, setStartDate] = useState(getDateString(29));
   const [endDate, setEndDate] = useState(getDateString(0));
@@ -280,12 +278,7 @@ const AccountPage: React.FC = () => {
 
   const [selectedBillIds, setSelectedBillIds] = useState<number[]>([]);
 
-  const [lottoOptions, setLottoOptions] = useState<
-    Record<
-      string,
-      { roundId: number; roundName: string; cutoff_datetime: string }[]
-    >
-  >({});
+  const [lottoOptions, setLottoOptions] = useState<Record<string, { roundId: number; roundName: string; cutoff_datetime: string }[]>>({});
   const [selectedLottoName, setSelectedLottoName] = useState("all");
   const [selectedDate, setSelectedDate] = useState("all");
 
@@ -319,15 +312,12 @@ const AccountPage: React.FC = () => {
       prizeCheckParams.append("lottoDate", selectedDate);
     }
 
-    // ⭐ จุดที่แก้ไข: สร้าง params สำหรับ optionsRequest ⭐
     const optionsParams = new URLSearchParams();
     if ((user.role === "owner" || user.role === 'admin') && selectedUser && selectedUser !== "all") {
       optionsParams.append("username", selectedUser);
     } else if (user.role !== "owner" && user.role !== 'admin') {
-      // ถ้าไม่ใช่ owner ให้ส่ง username ของตัวเองไปเสมอ
       optionsParams.append("username", user.username);
     }
-    // ถ้าเป็น owner และเลือก "แสดงทั้งหมด" จะไม่ส่ง param ไป -> API จะคืนค่าทั้งหมด
 
     const summaryRequest = api.get<SummaryApiResponse>(`/api/financial-summary?${summaryParams.toString()}`);
     const prizeCheckRequest = api.get<CheckableItem[]>(`/api/prize-check/all-items?${prizeCheckParams.toString()}`);
@@ -347,15 +337,7 @@ const AccountPage: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [
-    startDate,
-    endDate,
-    selectedUser,
-    status,
-    user,
-    selectedLottoName,
-    selectedDate,
-  ]);
+  }, [startDate, endDate, selectedUser, status, user, selectedLottoName, selectedDate]);
 
   useEffect(() => {
     if (selectedUser) fetchAllData();
@@ -371,8 +353,8 @@ const AccountPage: React.FC = () => {
       setDeletingBillId(billId);
       try {
         await api.delete(`/api/delete-bills/${billId}`);
-        fetchAllData();
-        showStatus("success",`ลบบิล "${billRef}" สำเร็จ`, "");
+        await fetchAllData();
+        showStatus("success", `ลบบิล "${billRef}" สำเร็จ`, "");
       } catch (err: any) {
         alert(err.response?.data?.error || "ไม่สามารถลบบิลได้", "", "light");
       } finally {
@@ -381,72 +363,50 @@ const AccountPage: React.FC = () => {
     }
   };
 
-
-  // ฟังก์ชันจัดการการเลือกทีละรายการ
-const handleSelectOne = (billId: number) => {
+  const handleSelectOne = (billId: number) => {
     setSelectedBillIds(prevSelected => {
-        if (prevSelected.includes(billId)) {
-            return prevSelected.filter(id => id !== billId);
-        } else {
-            return [...prevSelected, billId];
-        }
+      if (prevSelected.includes(billId)) {
+        return prevSelected.filter(id => id !== billId);
+      } else {
+        return [...prevSelected, billId];
+      }
     });
-};
+  };
 
-// ฟังก์ชันจัดการการเลือกทั้งหมด
-const handleSelectAll = () => {
-    // ใช้ optional chaining '?' เพื่อป้องกัน error หาก summaryData เป็น null
+  const handleSelectAll = () => {
     const recentBills = summaryData?.recentBills ?? [];
-    
     if (selectedBillIds.length === recentBills.length) {
-        setSelectedBillIds([]);
+      setSelectedBillIds([]);
     } else {
-        const allBillIds = recentBills.map(bill => bill.id);
-        setSelectedBillIds(allBillIds);
+      const allBillIds = recentBills.map(bill => bill.id);
+      setSelectedBillIds(allBillIds);
     }
-};
+  };
 
-// ฟังก์ชันสำหรับลบรายการที่เลือก
-const handleDeleteSelected = async () => {
+  const handleDeleteSelected = async () => {
     if (selectedBillIds.length === 0) return;
 
     const isConfirmed = await confirm(
-        "ยืนยันการลบ",
-        `คุณต้องการลบ ${selectedBillIds.length} บิลที่เลือกใช่หรือไม่?`,
-        'light'
+      "ยืนยันการลบ",
+      `คุณต้องการลบ ${selectedBillIds.length} บิลที่เลือกใช่หรือไม่?`,
+      'light'
     );
 
     if (isConfirmed) {
-        showStatus("loading", "กำลังลบ...", "");
-        try {
-            await api.post('/api/bills/batch-delete', { billIds: selectedBillIds });
-            
-            // ✅ แก้ไขส่วนอัปเดต State ให้ปลอดภัยจากค่า null
-            setSummaryData(prevData => {
-                // ถ้า prevData เป็น null ให้ return null กลับไปเลย
-                if (!prevData) {
-                    return null;
-                }
-                
-                // ถ้าไม่ null ก็ทำงานตามปกติ
-                return {
-                    ...prevData,
-                    recentBills: prevData.recentBills.filter(bill => !selectedBillIds.includes(bill.id))
-                };
-            });
-            
-            await fetchAllData();  
-            setSelectedBillIds([]); // ล้างรายการที่เลือก
-            hideStatus(); 
-            showStatus("success", `ลบ ${selectedBillIds.length} บิลเรียบร้อยแล้ว`, "");
-
-        } catch (error) {
-            hideStatus();
-            console.error("Failed to delete selected bills:", error);
-            showStatus("success","เกิดข้อผิดพลาด ไม่สามารถลบรายการที่เลือกได้", ""); 
-        }
+      showStatus("loading", "กำลังลบ...", "");
+      try {
+        await api.post('/api/bills/batch-delete', { billIds: selectedBillIds });
+        await fetchAllData();
+        setSelectedBillIds([]);
+        hideStatus();
+        showStatus("success", `ลบ ${selectedBillIds.length} บิลเรียบร้อยแล้ว`, "");
+      } catch (error) {
+        hideStatus();
+        console.error("Failed to delete selected bills:", error);
+        showStatus("error", "เกิดข้อผิดพลาด", "ไม่สามารถลบรายการที่เลือกได้");
+      }
     }
-}; 
+  };
 
   const {
     winningItems,
@@ -455,6 +415,7 @@ const handleDeleteSelected = async () => {
     winningsByBetType,
     doughnutChartData,
     lottoNameBarChartData,
+    groupedWinningItems,
   } = useMemo(() => {
     const items = checkableItems.filter(
       (item) => calculatePrizeDetails(item).isWinner
@@ -482,14 +443,8 @@ const handleDeleteSelected = async () => {
             (d) => d.totalAmount
           ),
           backgroundColor: [
-            "#16A34A",
-            "#DC2626",
-            "#D97706",
-            "#2563EB",
-            "#7C3AED",
-            "#DB2777",
-            "#0891B2",
-            "#65A30D",
+            "#16A34A", "#DC2626", "#D97706", "#2563EB",
+            "#7C3AED", "#DB2777", "#0891B2", "#65A30D",
           ],
           borderColor: "#1F2937",
           borderWidth: 4,
@@ -511,6 +466,34 @@ const handleDeleteSelected = async () => {
         },
       ],
     };
+
+    const grouped = items.reduce((acc, item) => {
+      const key = `${item.billRef}-${item.bet_number}`;
+      if (!acc[key]) {
+        acc[key] = {
+          id: key,
+          billRef: item.billRef,
+          username: item.username,
+          lottoName: item.lottoName,
+          lottoDrawDate: item.lottoDrawDate,
+          bet_number: item.bet_number,
+          totalPayout: 0,
+          details: [],
+        };
+      }
+      acc[key].totalPayout += parseFloat(item.payoutAmount as any);
+      acc[key].details.push({
+        bet_type: item.bet_type,
+        bet_style: item.bet_style,
+        payoutAmount: parseFloat(item.payoutAmount as any),
+      });
+      return acc;
+    }, {} as Record<string, GroupedWinningItem>);
+  
+    const groupedArray = Object.values(grouped).sort((a, b) => 
+        new Date(b.lottoDrawDate).getTime() - new Date(a.lottoDrawDate).getTime()
+    );
+
     return {
       winningItems: items,
       displayTotalWinnings: totalWinnings,
@@ -518,8 +501,18 @@ const handleDeleteSelected = async () => {
       winningsByBetType: winningsByType,
       doughnutChartData: doughnutData,
       lottoNameBarChartData: barData,
+      groupedWinningItems: groupedArray,
     };
   }, [checkableItems, summaryData]);
+
+  const billWinnings = useMemo(() => {
+    const winningsMap = new Map<string, number>();
+    winningItems.forEach(item => {
+        const currentWinnings = winningsMap.get(item.billRef) || 0;
+        winningsMap.set(item.billRef, currentWinnings + parseFloat(item.payoutAmount as any));
+    });
+    return winningsMap;
+  }, [winningItems]);
 
   const groupedDateOptions = useMemo(() => {
     if (selectedLottoName === "all" || !lottoOptions[selectedLottoName])
@@ -534,69 +527,57 @@ const handleDeleteSelected = async () => {
     );
   }, [lottoOptions, selectedLottoName]);
 
-
-
-const groupedBetSummary = useMemo(() => {
-        if (!summaryData || !summaryData.allBetItemsSummary) {
-            return {};
-        }
-        
-        // จัดกลุ่มข้อมูลตาม 'number'
-        const grouped = summaryData.allBetItemsSummary.reduce((acc, item) => {
-            if (!acc[item.number]) {
-                acc[item.number] = {
-                    totalAmount: 0,
-                    totalCount: 0,
-                    styles: []
-                };
-            }
-            acc[item.number].totalAmount += item.totalAmount;
-            acc[item.number].totalCount += Number(item.count);
-            acc[item.number].styles.push({
-                style: item.style,
-                count: Number(item.count),
-                totalAmount: item.totalAmount
-            });
-            return acc;
-        }, {} as Record<string, { totalAmount: number, totalCount: number, styles: { style: string, count: number, totalAmount: number }[] }>);
-        
-        // เรียงลำดับกลุ่มจากยอดรวมสูงสุดไปน้อยสุด
-        return Object.entries(grouped)
-            .sort(([, a], [, b]) => b.totalAmount - a.totalAmount)
-            .reduce((acc, [key, value]) => {
-                acc[key] = value;
-                return acc;
-            }, {} as Record<string, any>);
-
-    }, [summaryData]);
-
-
- const topBetNumbersChartData = useMemo(() => {
-        const sortedNumbers = Object.entries(groupedBetSummary);
-        if (sortedNumbers.length === 0) {
-            return { labels: [], datasets: [] };
-        }
-
-        const colorPalette = [ 'rgba(59, 130, 246, 0.7)', 'rgba(16, 185, 129, 0.7)', 'rgba(239, 68, 68, 0.7)', 'rgba(245, 158, 11, 0.7)', 'rgba(147, 51, 234, 0.7)', 'rgba(219, 39, 119, 0.7)', 'rgba(20, 184, 166, 0.7)' ];
-        const backgroundColors = sortedNumbers.map((_, index) => colorPalette[index % colorPalette.length]);
-        const borderColors = backgroundColors.map(color => color.replace('0.7', '1'));
-
-        return {
-            labels: sortedNumbers.map(([number]) => number),
-            datasets: [{
-                label: 'ยอดแทงรวม',
-                data: sortedNumbers.map(([, data]) => data.totalAmount),
-                backgroundColor: backgroundColors,
-                borderColor: borderColors,
-                borderWidth: 1,
-            }],
+  const groupedBetSummary = useMemo(() => {
+    if (!summaryData || !summaryData.allBetItemsSummary) {
+      return {};
+    }
+    const grouped = summaryData.allBetItemsSummary.reduce((acc, item) => {
+      if (!acc[item.number]) {
+        acc[item.number] = {
+          totalAmount: 0,
+          totalCount: 0,
+          styles: []
         };
-    }, [groupedBetSummary]);
+      }
+      acc[item.number].totalAmount += item.totalAmount;
+      acc[item.number].totalCount += Number(item.count);
+      acc[item.number].styles.push({
+        style: item.style,
+        count: Number(item.count),
+        totalAmount: item.totalAmount
+      });
+      return acc;
+    }, {} as Record<string, { totalAmount: number, totalCount: number, styles: { style: string, count: number, totalAmount: number }[] }>);
+    
+    return Object.entries(grouped)
+      .sort(([, a], [, b]) => b.totalAmount - a.totalAmount)
+      .reduce((acc, [key, value]) => {
+        acc[key] = value;
+        return acc;
+      }, {} as Record<string, any>);
+  }, [summaryData]);
 
-  const dataCount = topBetNumbersChartData.labels.length;
-  const chartHeight = dataCount * 35;
+  const topBetNumbersChartData = useMemo(() => {
+    const sortedNumbers = Object.entries(groupedBetSummary);
+    if (sortedNumbers.length === 0) {
+      return { labels: [], datasets: [] };
+    }
+    const colorPalette = [ 'rgba(59, 130, 246, 0.7)', 'rgba(16, 185, 129, 0.7)', 'rgba(239, 68, 68, 0.7)', 'rgba(245, 158, 11, 0.7)', 'rgba(147, 51, 234, 0.7)', 'rgba(219, 39, 119, 0.7)', 'rgba(20, 184, 166, 0.7)' ];
+    const backgroundColors = sortedNumbers.map((_, index) => colorPalette[index % colorPalette.length]);
+    const borderColors = backgroundColors.map(color => color.replace('0.7', '1'));
+    return {
+      labels: sortedNumbers.map(([number]) => number),
+      datasets: [{
+        label: 'ยอดแทงรวม',
+        data: sortedNumbers.map(([, data]) => data.totalAmount),
+        backgroundColor: backgroundColors,
+        borderColor: borderColors,
+        borderWidth: 1,
+      }],
+    };
+  }, [groupedBetSummary]);
 
-  const chartOptions = (titleText: string, legendDisplay = false) => ({
+  const chartOptions = (titleText: string, legendDisplay = false): ChartOptions<'bar' | 'doughnut'> => ({
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
@@ -629,14 +610,13 @@ const groupedBetSummary = useMemo(() => {
       },
     },
   });
-  // แก้ไขฟังก์ชันนี้ทั้งหมด
+
   const chartOptions2 = (
     titleText: string,
     axis: "x" | "y",
     legendDisplay = false
   ): ChartOptions<"bar"> => {
     const xPosition = axis === "y" ? "top" : "bottom";
-
     return {
       indexAxis: axis,
       responsive: true,
@@ -687,24 +667,22 @@ const groupedBetSummary = useMemo(() => {
     };
   };
 
-
   const getStatusPill = (status: string) => {
-  switch (status) {
-    case 'รอผล':
-      return <span className="px-2 py-1 text-xs font-semibold text-yellow-800 bg-yellow-200 rounded-full">{status}</span>;
-    case 'ยืนยันแล้ว':
-      return <span className="px-2 py-1 text-xs font-semibold text-green-800 bg-green-200 rounded-full">{status}</span>;
-    case 'ยกเลิก':
-      return <span className="px-2 py-1 text-xs font-semibold text-red-800 bg-red-200 rounded-full">{status}</span>;
-    default:
-      return <span className="px-2 py-1 text-xs font-semibold text-gray-800 bg-gray-200 rounded-full">{status}</span>;
-  }
-};
+    switch (status) {
+      case 'รอผล':
+        return <span className="px-2 py-1 text-xs font-semibold text-yellow-800 bg-yellow-200 rounded-full">{status}</span>;
+      case 'ยืนยันแล้ว':
+        return <span className="px-2 py-1 text-xs font-semibold text-green-800 bg-green-200 rounded-full">{status}</span>;
+      case 'ยกเลิก':
+        return <span className="px-2 py-1 text-xs font-semibold text-red-800 bg-red-200 rounded-full">{status}</span>;
+      default:
+        return <span className="px-2 py-1 text-xs font-semibold text-gray-800 bg-gray-200 rounded-full">{status}</span>;
+    }
+  };
 
-  const isSmallScreen = useMediaQuery("(max-width: 639px)");
   const isMediumScreenOrLarger = useMediaQuery("(min-width: 768px)");
   const chartAxis = isMediumScreenOrLarger ? "x" : "y";
-  const horizontalChartHeight = topBetNumbersChartData.labels.length * 35; // แท่งละ 35px
+  const horizontalChartHeight = topBetNumbersChartData.labels.length * 35;
 
   return (
     <div className="space-y-6 text-white">
@@ -854,10 +832,9 @@ const groupedBetSummary = useMemo(() => {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
-            {/* KPI Cards, Charts, and Tables */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
               <KpiCard
-                title="ยอดแทงทั้งหมด"
+                title="ยอดแทงทั้งหมด (สุทธิ)"
                 value={summaryData.summary.totalBetAmount}
                 icon={<BanknotesIcon className="h-6 w-6" />}
                 colorClass="text-blue-400"
@@ -865,8 +842,14 @@ const groupedBetSummary = useMemo(() => {
               <KpiCard
                 title="ยอดชนะทั้งหมด"
                 value={displayTotalWinnings}
-                icon={<ArrowTrendingUpIcon className="h-6 w-6" />}
+                icon={<TrophyIcon className="h-6 w-6" />}
                 colorClass="text-green-400"
+              />
+              <KpiCard
+                title="ยอดคืนเลขทั้งหมด"
+                value={summaryData.summary.totalReturnedAmount}
+                icon={<TrashIcon className="h-6 w-6" />}
+                colorClass="text-gray-400"
               />
               <KpiCard
                 title="กำไร / ขาดทุน"
@@ -937,108 +920,89 @@ const groupedBetSummary = useMemo(() => {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="kpi-card">
-    <div className="flex justify-between items-center mb-4">
-        <h3 className="chart-title mb-0"><TableCellsIcon className="h-6 w-6" />สรุปยอดแทงตามตัวเลข</h3>
-        {/* --- ✅ เพิ่มช่องค้นหา --- */}
-        <div className="relative">
-            <input 
-                type="text"
-                value={betSummarySearch}
-                onChange={e => setBetSummarySearch(e.target.value.replace(/[^0-9]/g, ''))}
-                maxLength={3}
-                placeholder="ค้นหาเลข..."
-                className="input-dark w-32 !pl-8"
-            />
-            <MagnifyingGlassIcon className="h-5 w-5 text-gray-500 absolute top-1/2 left-2 -translate-y-1/2"/>
-        </div>
-    </div>
-    <div className="space-y-3 max-h-90 sm:min-h-50 overflow-y-auto custom-scrollbar pr-2">
-        {/* ✅ แก้ไข: กรองข้อมูลก่อนแสดงผล */}
-        {Object.entries(groupedBetSummary)
-            .filter(([number]) => number.includes(betSummarySearch))
-            .length > 0 ? (
-            Object.entries(groupedBetSummary)
-                .filter(([number]) => number.includes(betSummarySearch))
-                .map(([number, data]) => (
-                    <div key={number} className="bg-gray-800/50 p-3 rounded-lg">
-                        {/* --- แถวสรุปรวมของแต่ละเลข --- */}
-                        <div className="flex justify-between items-center mb-2 pb-2 border-b border-gray-700">
-                            <div className="flex items-center gap-3">
-                                <span className="font-mono text-xl text-cyan-400">{number}</span>
-                                <span className="text-sm font-semibold text-white">{data.totalCount.toLocaleString()} ชุด</span>
-                            </div>
-                            <div className="font-bold text-base text-white text-right">
-                                {formatCurrency(data.totalAmount)}
-                                <span className="text-xs text-gray-500 ml-1">บาท</span>
-                            </div>
-                        </div> 
-                        <div className="space-y-1">
-                            {data.styles.map((styleItem: any, styleIndex: number) => (
-                                <div key={styleIndex} className="flex justify-between items-center text-md pl-2"> 
-                                <span className="text-gray-300 capitalize"> 
-                                    <span className="font-mono text-cyan-400">{number}</span> 
-                                    <span className={`
-                                        ${(styleItem.style ==='บน' || styleItem.style ==='ตรง') ? "text-green-500"
-                                        : (styleItem.style ==='ล่าง') ? "text-red-500" 
-                                        : "text-orange-400"}
-                                    `}>
-                                        {' '}{styleItem.style}
-                                    </span> 
-                                    <span className="text-gray-500"> ({styleItem.count} ชุด)</span>
-                                </span>
-
-                                <span className="text-sm font-semibold font-mono text-gray-300">{formatCurrency(styleItem.totalAmount)} บาท</span>
-                            </div>
-                            ))}
-                        </div>
-                    </div>
-                ))
-        ) : ( 
-            <p className="text-gray-500 italic text-center py-4">
-                {betSummarySearch ? `ไม่พบข้อมูลเลข "${betSummarySearch}"` : "ไม่พบข้อมูล"}
-            </p> 
-        )}
-    </div>
-    
-</div>
-        <div className="p-0 bg-gray-900 text-white">
-              <div className="kpi-card bg-gray-800 rounded-lg shadow-lg">
-                <h3 className="chart-title flex items-center text-lg font-semibold mb-4">
-                  <PresentationChartLineIcon className="h-6 w-6 mr-2" />
-                  อันดับเลขที่มียอดแทงสูงสุด
-                </h3>
-                {isMediumScreenOrLarger ? (
-                  <div className="relative h-[400px]">
-                    <Bar
-                      data={topBetNumbersChartData}
-                      options={chartOptions2("ยอดแทงรวม", chartAxis)}
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="chart-title mb-0"><TableCellsIcon className="h-6 w-6" />สรุปยอดแทงตามตัวเลข</h3>
+                  <div className="relative">
+                    <input 
+                        type="text"
+                        value={betSummarySearch}
+                        onChange={e => setBetSummarySearch(e.target.value.replace(/[^0-9]/g, ''))}
+                        maxLength={3}
+                        placeholder="ค้นหาเลข..."
+                        className="input-dark w-32 !pl-8"
                     />
+                    <MagnifyingGlassIcon className="h-5 w-5 text-gray-500 absolute top-1/2 left-2 -translate-y-1/2"/>
                   </div>
-                ) : (
-                  <div className="relative h-[300px] overflow-y-auto">
-                    {/* Container ด้านใน: กำหนดความสูงตามจำนวนข้อมูลเพื่อให้เกิด scrollbar */}
-                    <div
-                      style={{
-                        height: `${horizontalChartHeight}px`,
-                        position: "relative",
-                      }}
-                    >
-                      <Bar
-                        data={topBetNumbersChartData}
-                        options={chartOptions2("ยอดแทงรวม", chartAxis)}
-                      />
-                    </div>
-                  </div>
-                )}
+                </div>
+                <div className="space-y-3 max-h-96 overflow-y-auto custom-scrollbar pr-2">
+                  {Object.entries(groupedBetSummary)
+                      .filter(([number]) => number.includes(betSummarySearch))
+                      .length > 0 ? (
+                      Object.entries(groupedBetSummary)
+                          .filter(([number]) => number.includes(betSummarySearch))
+                          .map(([number, data]) => (
+                              <div key={number} className="bg-gray-800/50 p-3 rounded-lg">
+                                  <div className="flex justify-between items-center mb-2 pb-2 border-b border-gray-700">
+                                      <div className="flex items-center gap-3">
+                                          <span className="font-mono text-xl text-cyan-400">{number}</span>
+                                          <span className="text-sm font-semibold text-white">{data.totalCount.toLocaleString()} ชุด</span>
+                                      </div>
+                                      <div className="font-bold text-base text-white text-right">
+                                          {formatCurrency(data.totalAmount)}
+                                          <span className="text-xs text-gray-500 ml-1">บาท</span>
+                                      </div>
+                                  </div> 
+                                  <div className="space-y-1">
+                                      {data.styles.map((styleItem: any, styleIndex: number) => (
+                                          <div key={styleIndex} className="flex justify-between items-center text-sm pl-2"> 
+                                              <span className="text-gray-300 capitalize"> 
+                                                  <span className={`font-semibold ${(styleItem.style ==='บน' || styleItem.style ==='ตรง') ? "text-green-500" : (styleItem.style ==='ล่าง') ? "text-red-500" : "text-orange-400"}`}>
+                                                      {styleItem.style}
+                                                  </span> 
+                                                  <span className="text-gray-500 ml-2"> ({styleItem.count} ชุด)</span>
+                                              </span>
+                                              <span className="font-semibold font-mono text-gray-300">{formatCurrency(styleItem.totalAmount)}</span>
+                                          </div>
+                                      ))}
+                                  </div>
+                              </div>
+                          ))
+                  ) : ( 
+                      <p className="text-gray-500 italic text-center py-4">
+                          {betSummarySearch ? `ไม่พบข้อมูลเลข "${betSummarySearch}"` : "ไม่พบข้อมูล"}
+                      </p> 
+                  )}
+                </div>
               </div>
-            </div>
-              
-            </div>
 
-            {winningItems.length > 0 && (
+              <div className="kpi-card">
+  <h3 className="chart-title flex items-center text-lg font-semibold mb-4">
+    <PresentationChartLineIcon className="h-6 w-6 mr-2" />
+    อันดับเลขที่มียอดแทงสูงสุด
+  </h3>
+
+  {/* 👇 แก้ไขโดยเพิ่ม div ครอบด้านนอก และใส่ class สำหรับ scrollbar 👇 */}
+  <div className="relative max-h-96 overflow-y-auto custom-scrollbar">
+    <div 
+      style={{ 
+        height: isMediumScreenOrLarger ? '384px' : `${horizontalChartHeight}px`, 
+        minHeight: '200px',
+        position: 'relative' 
+      }}
+    >
+      <Bar
+        data={topBetNumbersChartData}
+        options={chartOptions2("ยอดแทงรวม", chartAxis)}
+      />
+    </div>
+  </div>
+</div>
+            </div>
+            
+            {groupedWinningItems.length > 0 && (
               <div className="kpi-card">
                 <h2 className="text-xl font-bold mb-4">
-                  รายการที่ถูกรางวัลทั้งหมด ({winningItems.length} รายการ)
+                  รายการที่ถูกรางวัล ({groupedWinningItems.length} รายการสรุป)
                 </h2>
                 <div className="overflow-x-auto max-h-96 custom-scrollbar">
                   <table className="w-full text-sm text-left">
@@ -1051,160 +1015,169 @@ const groupedBetSummary = useMemo(() => {
                         <th className="p-3 whitespace-nowrap">งวดหวย</th>
                         <th className="p-3 whitespace-nowrap">ประเภท</th>
                         <th className="p-3 whitespace-nowrap">เลข</th>
-                        <th className="p-3 text-right whitespace-nowrap">เงินรางวัล</th>
+                        <th className="p-3 text-right whitespace-nowrap">เงินรางวัลรวม</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {winningItems.map((item) => (
-                        <tr
-                          key={item.id}
-                          className="border-b border-gray-800 hover:bg-gray-800/50 whitespace-nowrap"
-                        >
-                          <td className="p-3 font-mono text-blue-400 whitespace-nowrap">
-                            {item.billRef}
-                          </td>
-                          {(user?.role === "owner" || user?.role === 'admin') && (
-                            <td className="p-3 whitespace-nowrap">{item.username}</td>
-                          )}
-                          <td className="p-3 whitespace-nowrap">
-                            {item.lottoName}
-                            <br />
-                            <span className="text-xs text-gray-500 whitespace-nowrap">
-                              {formatDateString(item.lottoDrawDate, 'short')}
-                            </span>
-                          </td>
-                          <td className="p-3 whitespace-nowrap">
-                            {getBetTypeName(item.bet_type)} ({item.bet_style})
-                          </td>
-                          <td className="p-3 font-mono whitespace-nowrap">{item.bet_number}</td>
-                          <td className="p-3 text-right font-semibold text-green-400 whitespace-nowrap">
-                            {formatCurrency(item.payoutAmount)}
-                          </td>
-                        </tr>
-                      ))}
+                        {groupedWinningItems.map((group) => (
+                            <tr
+                            key={group.id}
+                            className="border-b border-gray-800 hover:bg-gray-800/50 whitespace-nowrap"
+                            >
+                            <td className="p-3 font-mono text-blue-400 whitespace-nowrap">
+                                {group.billRef}
+                            </td>
+                            {(user?.role === "owner" || user?.role === 'admin') && (
+                                <td className="p-3 whitespace-nowrap">{group.username}</td>
+                            )}
+                            <td className="p-3 whitespace-nowrap">
+                                {group.lottoName}
+                                <br />
+                                <span className="text-xs text-gray-500 whitespace-nowrap">
+                                {formatDateString(group.lottoDrawDate, 'short')}
+                                </span>
+                            </td>
+                            <td className="p-3 whitespace-nowrap text-xs">
+                                {group.details.map((detail, index) => (
+                                <div key={index}>
+                                    {getBetTypeName(detail.bet_type)} ({detail.bet_style})
+                                </div>
+                                ))}
+                            </td>
+                            <td className="p-3 font-mono whitespace-nowrap">{group.bet_number}</td>
+                            <td className="p-3 text-right font-semibold text-green-400 whitespace-nowrap">
+                                {formatCurrency(group.totalPayout)}
+                            </td>
+                            </tr>
+                        ))}
                     </tbody>
                   </table>
                 </div>
               </div>
             )}
-           <div className="kpi-card">
-    <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-bold">บิลล่าสุด</h2>
-        
-        {selectedBillIds.length > 0 && (
-            <button
-                onClick={handleDeleteSelected}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-500 transition-colors text-sm font-bold flex items-center gap-2"
-            >
-                <TrashIcon className="h-4 w-4" />
-                ลบ {selectedBillIds.length} รายการที่เลือก
-            </button>
-        )}
-    </div>
-
-    <div className="overflow-x-auto">
-        <table className="w-full text-sm text-left">
-            <thead className="text-gray-400">
-                <tr className="border-b border-gray-700">
-                   <th className="p-3">
-                        {/* ✨ [ปรับปรุง] เปลี่ยนเป็น Checkbox วงกลมแบบ Custom */}
+            
+            <div className="kpi-card">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold">บิลล่าสุด</h2>
+                {selectedBillIds.length > 0 && (
+                  <button
+                    onClick={handleDeleteSelected}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-500 transition-colors text-sm font-bold flex items-center gap-2"
+                  >
+                    <TrashIcon className="h-4 w-4" />
+                    ลบ {selectedBillIds.length} รายการที่เลือก
+                  </button>
+                )}
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="text-gray-400">
+                    <tr className="border-b border-gray-700">
+                      <th className="p-3">
                         <label htmlFor="select-all-checkbox" className="relative flex items-center justify-center cursor-pointer p-2">
-                            <input
-                                id="select-all-checkbox"
-                                type="checkbox"
-                                className="peer sr-only" // ซ่อน checkbox เดิม
-                                checked={(summaryData?.recentBills.length ?? 0) > 0 && selectedBillIds.length === summaryData?.recentBills.length}
-                                onChange={handleSelectAll}
-                                disabled={(summaryData?.recentBills.length ?? 0) === 0}
-                            />
-                            {/* วงกลมด้านนอก */}
-                            <div className="w-5 h-5 rounded-full border-2 border-gray-500 peer-checked:border-blue-500 peer-checked:bg-blue-500 transition-all duration-200"></div>
-                            {/* วงกลมด้านใน (จะแสดงเมื่อถูกเลือก) */}
-                            <div className="absolute w-2 h-2 rounded-full bg-gray-900 opacity-0 peer-checked:opacity-100 transition-opacity duration-200"></div>
+                          <input
+                            id="select-all-checkbox"
+                            type="checkbox"
+                            className="peer sr-only"
+                            checked={(summaryData?.recentBills.length ?? 0) > 0 && selectedBillIds.length === summaryData?.recentBills.length}
+                            onChange={handleSelectAll}
+                            disabled={(summaryData?.recentBills.length ?? 0) === 0}
+                          />
+                          <div className="w-5 h-5 rounded-full border-2 border-gray-500 peer-checked:border-blue-500 peer-checked:bg-blue-500 transition-all duration-200"></div>
+                          <div className="absolute w-2 h-2 rounded-full bg-gray-900 opacity-0 peer-checked:opacity-100 transition-opacity duration-200"></div>
                         </label>
-                    </th>
-                    <th className="p-3 whitespace-nowrap">เลขที่บิล</th>
-                    {(user?.role === "owner" || user?.role === 'admin') && (
+                      </th>
+                      <th className="p-3 whitespace-nowrap">เลขที่บิล</th>
+                      {(user?.role === "owner" || user?.role === 'admin') && (
                         <th className="p-3 whitespace-nowrap">ผู้ใช้งาน</th>
-                    )}
-                    <th className="p-3 whitespace-nowrap">วันที่บันทึก</th>
-                    <th className="p-3 whitespace-nowrap">ประเภทหวย</th>
-                    <th className="p-3 whitespace-nowrap">งวดวันที่</th>
-                    <th className="p-3 text-center whitespace-nowrap">ยอดรวม</th>
-                    <th className="p-3 whitespace-nowrap">บันทึกช่วยจำ</th>
-                    <th className="p-3 text-center whitespace-nowrap">สถานะ</th>
-                    <th className="p-3 text-right whitespace-nowrap">จัดการ</th>
-                </tr>
-            </thead>
-            <tbody>
-                {/* ✅ แก้ไขการ map ข้อมูล ให้ปลอดภัยจาก null */}
-                {summaryData?.recentBills.map((bill) => (
-                    <tr
-                        key={bill.id}
-                        className={`border-b border-gray-800 transition-colors ${selectedBillIds.includes(bill.id) ? 'bg-blue-900/50' : 'hover:bg-gray-800/50'}`}
-                    >
-                        <td className="p-3">
-                            {/* ✨ [ปรับปรุง] เปลี่ยนเป็น Checkbox วงกลมแบบ Custom */}
-                            <label htmlFor={`select-bill-${bill.id}`} className="relative flex items-center justify-center cursor-pointer p-2">
-                                <input
-                                    id={`select-bill-${bill.id}`}
-                                    type="checkbox"
-                                    className="peer sr-only" // ซ่อน checkbox เดิม
-                                    checked={selectedBillIds.includes(bill.id)}
-                                    onChange={() => handleSelectOne(bill.id)}
-                                />
-                                {/* วงกลมด้านนอก */}
-                                <div className="w-5 h-5 rounded-full border-2 border-gray-500 peer-checked:border-blue-500 peer-checked:bg-blue-500 transition-all duration-200"></div>
-                                {/* วงกลมด้านใน (จะแสดงเมื่อถูกเลือก) */}
-                                <div className="absolute w-2 h-2 rounded-full bg-gray-900 opacity-0 peer-checked:opacity-100 transition-opacity duration-200"></div>
-                            </label>
-                        </td>
-                        <td className="p-3 font-mono text-blue-400 whitespace-nowrap">
-                            {bill.billRef}
-                        </td>
-                        {(user?.role === "owner" || user?.role === 'admin') && (
-                            <td className="p-3 text-gray-300">{bill.username}</td>
-                        )}
-                        <td className="p-3 text-gray-400 whitespace-nowrap">
-                            {new Date(bill.createdAt).toLocaleString("th-TH")}
-                        </td>
-                        <td className="p-3 text-gray-300 whitespace-nowrap">{bill.lottoName}</td>
-                        <td className="p-3 text-gray-400 whitespace-nowrap">
-                            {bill.billLottoDraw
-                                ? formatDateString(bill.billLottoDraw, 'short')
-                                : "-"}
-                        </td>
-                        <td className="p-3 text-center font-semibold whitespace-nowrap">
-                            {formatCurrency(bill.totalAmount)}
-                        </td>
-                        <td className="p-3 text-gray-400 whitespace-nowrap">
-                            {bill.note ?? "-"}
-                        </td>
-                        <td className="p-3 text-center whitespace-nowrap">
-        {getStatusPill(bill.status)}
-      </td>
-                        <td className="p-3 text-right whitespace-nowrap">
-                            <button
-                                onClick={() =>
-                                    handleDeleteBill(bill.id, bill.billRef)
-                                }
-                                disabled={deletingBillId === bill.id}
-                                className="text-red-500 hover:text-red-400 disabled:text-gray-500 disabled:cursor-wait"
-                                aria-label={`ลบบิล ${bill.billRef}`}
-                            >
-                                {deletingBillId === bill.id ? (
-                                    "กำลังลบ..."
-                                ) : (
-                                    <TrashIcon className="h-5 w-5" />
-                                )}
-                            </button>
-                        </td>
+                      )}
+                      <th className="p-3 whitespace-nowrap">วันที่บันทึก</th>
+                      <th className="p-3 whitespace-nowrap">ประเภทหวย</th>
+                      <th className="p-3 whitespace-nowrap">งวดวันที่</th>
+                      <th className="p-3 text-center whitespace-nowrap">ยอดรวม (สุทธิ)</th>
+                      <th className="p-3 text-center whitespace-nowrap">ผลลัพธ์/รางวัล</th>
+                      <th className="p-3 whitespace-nowrap">บันทึกช่วยจำ</th>
+                      <th className="p-3 text-center whitespace-nowrap">สถานะ</th>
+                      <th className="p-3 text-right whitespace-nowrap">จัดการ</th>
                     </tr>
-                ))}
-            </tbody>
-        </table>
-    </div>
-</div>
+                  </thead>
+                  <tbody>
+                    {summaryData?.recentBills.map((bill) => {
+                      const winnings = billWinnings.get(bill.billRef) || 0;
+                      return (
+                        <tr
+                          key={bill.id}
+                          className={`border-b border-gray-800 transition-colors ${selectedBillIds.includes(bill.id) ? 'bg-blue-900/50' : 'hover:bg-gray-800/50'}`}
+                        >
+                          <td className="p-3">
+                            <label htmlFor={`select-bill-${bill.id}`} className="relative flex items-center justify-center cursor-pointer p-2">
+                              <input
+                                id={`select-bill-${bill.id}`}
+                                type="checkbox"
+                                className="peer sr-only"
+                                checked={selectedBillIds.includes(bill.id)}
+                                onChange={() => handleSelectOne(bill.id)}
+                              />
+                              <div className="w-5 h-5 rounded-full border-2 border-gray-500 peer-checked:border-blue-500 peer-checked:bg-blue-500 transition-all duration-200"></div>
+                              <div className="absolute w-2 h-2 rounded-full bg-gray-900 opacity-0 peer-checked:opacity-100 transition-opacity duration-200"></div>
+                            </label>
+                          </td>
+                          <td className="p-3 font-mono text-blue-400 whitespace-nowrap">
+                            {bill.billRef}
+                          </td>
+                          {(user?.role === "owner" || user?.role === 'admin') && (
+                            <td className="p-3 text-gray-300">{bill.username}</td>
+                          )}
+                          <td className="p-3 text-gray-400 whitespace-nowrap">
+                            {new Date(bill.createdAt).toLocaleString("th-TH")}
+                          </td>
+                          <td className="p-3 text-gray-300 whitespace-nowrap">{bill.lottoName}</td>
+                          <td className="p-3 text-gray-400 whitespace-nowrap">
+                            {bill.billLottoDraw
+                              ? formatDateString(bill.billLottoDraw, 'short')
+                              : "-"}
+                          </td>
+                          <td className="p-3 text-center font-semibold whitespace-nowrap">
+                            {formatCurrency(bill.totalAmount)}
+                          </td>
+                          <td className="p-3 text-right font-semibold whitespace-nowrap">
+                            {bill.status === 'รอผล' && <span className="text-gray-500">-</span>}
+                            {bill.status === 'ยกเลิก' && <span className="text-red-500">ยกเลิก</span>}
+                            {bill.status === 'ยืนยันแล้ว' && (
+                                winnings > 0 
+                                ? <span className="text-green-400">+{formatCurrency(winnings)}</span>
+                                : <span className="text-gray-400">{formatCurrency(0)}</span>
+                            )}
+                          </td>
+                          <td className="p-3 text-gray-400 whitespace-nowrap">
+                            {bill.note ?? "-"}
+                          </td>
+                          <td className="p-3 text-center whitespace-nowrap">
+                            {getStatusPill(bill.status)}
+                          </td>
+                          <td className="p-3 text-right whitespace-nowrap">
+                            <button
+                              onClick={() =>
+                                handleDeleteBill(bill.id, bill.billRef)
+                              }
+                              disabled={deletingBillId === bill.id}
+                              className="text-red-500 hover:text-red-400 disabled:text-gray-500 disabled:cursor-wait"
+                              aria-label={`ลบบิล ${bill.billRef}`}
+                            >
+                              {deletingBillId === bill.id ? (
+                                "กำลังลบ..."
+                              ) : (
+                                <TrashIcon className="h-5 w-5" />
+                              )}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

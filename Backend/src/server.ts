@@ -1528,12 +1528,114 @@ app.get("/api/users", isAuthenticated, isAdminOrOwner, async (req, res) => {
 
 
 
+// app.get('/api/bills', isAuthenticated, async (req: Request, res: Response) => {
+    
+//     const loggedInUser = req.user!; 
+//     const { startDate, endDate, status, billRef, noteRef, username, lottoCategory, lottoName } = req.query;
+
+//     // --- ✅ Query ฉบับสมบูรณ์ที่รวมทุกอย่างแล้ว ---
+//     let query = `
+//         SELECT 
+//             b.id, 
+//             b.bill_ref as "billRef", 
+//             b.created_at as "createdAt",
+//             b.bet_name as "lottoName", 
+//             b.total_amount as "totalAmount",
+//             b.status, 
+//             b.note, 
+//             b.bill_lotto_draw, 
+//             u.username,
+//             -- 1. itemCount ที่มีประสิทธิภาพ
+//             COUNT(DISTINCT bi.id) as "itemCount",
+//             -- 2. hasHalfRateItem สำหรับส่งไป Frontend
+//             CASE 
+//                 WHEN EXISTS (
+//                     SELECT 1
+//                     FROM bet_items bi_sub
+//                     JOIN bill_entries be_sub ON bi_sub.bill_entry_id = be_sub.id
+//                     WHERE be_sub.bill_id = b.id AND (bi_sub.price * 0.5) = bi_sub.rate
+//                 ) 
+//                 THEN true 
+//                 ELSE false 
+//             END as "hasHalfRateItem"
+//         FROM 
+//             bills b
+//         JOIN 
+//             users u ON b.user_id = u.id
+//         LEFT JOIN 
+//             bill_entries be ON be.bill_id = b.id
+//         LEFT JOIN 
+//             bet_items bi ON bi.bill_entry_id = be.id
+//         WHERE 1=1
+//     `;
+//     const queryParams: any[] = [];
+
+//     // --- ส่วนการกรองข้อมูลทั้งหมด (ทำงานเหมือนเดิมที่คุณเขียนมา) ---
+//     if (loggedInUser.role === 'user') {
+//         queryParams.push(loggedInUser.id);
+//         query += ` AND b.user_id = $${queryParams.length}`;
+//     } else if (loggedInUser.role === 'admin' || loggedInUser.role === 'owner') {
+//         if (username) {
+//             queryParams.push(username);
+//             query += ` AND u.username = $${queryParams.length}`;
+//         }
+//     }
+
+//     if (startDate) {
+//         queryParams.push(startDate);
+//         query += ` AND b.created_at::date >= $${queryParams.length}`;
+//     }
+//     if (endDate) {
+//         const nextDay = new Date(endDate as string);
+//         nextDay.setDate(nextDay.getDate() + 1);
+//         queryParams.push(nextDay.toISOString().split('T')[0]);
+//         query += ` AND b.created_at < $${queryParams.length}`;
+//     }
+//     if (status) {
+//         queryParams.push(status);
+//         query += ` AND b.status = $${queryParams.length}`;
+//     }
+//     if (billRef) {
+//         queryParams.push(`%${billRef}%`);
+//         query += ` AND b.bill_ref ILIKE $${queryParams.length}`;
+//     }
+//     if (noteRef) {
+//         queryParams.push(`%${noteRef}%`);
+//         query += ` AND b.note ILIKE $${queryParams.length}`;
+//     }
+//     if (lottoCategory) {
+//         queryParams.push(`%${lottoCategory}%`);
+//         query += ` AND b.bet_name ILIKE $${queryParams.length}`;
+//     }
+//     if (lottoName) {
+//         queryParams.push(lottoName);
+//         query += ` AND b.bet_name = $${queryParams.length}`;
+//     }
+//     // ----------------------------------------------------
+
+//     // --- ✅ GROUP BY และ ORDER BY ---
+//     query += `
+//         GROUP BY 
+//             b.id, u.username
+//         ORDER BY 
+//             b.id DESC
+//     `;
+
+//     try {
+//         const result = await db.query(query, queryParams);
+//         // console.log(`result bill => ${JSON.stringify(result)}`);
+//         res.json(result.rows);
+//     } catch (err: any) {
+//         console.error('Error fetching bills:', err);
+//         res.status(500).json({ error: 'เกิดข้อผิดพลาดในการดึงข้อมูลบิล', details: err.message });
+//     }
+// });
+ 
 app.get('/api/bills', isAuthenticated, async (req: Request, res: Response) => {
     
     const loggedInUser = req.user!; 
     const { startDate, endDate, status, billRef, noteRef, username, lottoCategory, lottoName } = req.query;
 
-    // --- ✅ Query ฉบับสมบูรณ์ที่รวมทุกอย่างแล้ว ---
     let query = `
         SELECT 
             b.id, 
@@ -1545,9 +1647,21 @@ app.get('/api/bills', isAuthenticated, async (req: Request, res: Response) => {
             b.note, 
             b.bill_lotto_draw, 
             u.username,
-            -- 1. itemCount ที่มีประสิทธิภาพ
             COUNT(DISTINCT bi.id) as "itemCount",
-            -- 2. hasHalfRateItem สำหรับส่งไป Frontend
+            -- คำนวณยอดที่ถูกคืนเงินในแต่ละบิล
+            COALESCE((
+                SELECT SUM(bi_ret.price)
+                FROM bet_items bi_ret
+                JOIN bill_entries be_ret ON bi_ret.bill_entry_id = be_ret.id
+                WHERE be_ret.bill_id = b.id AND bi_ret.status = 'คืนเลข'
+            ), 0) AS "returnedAmount",
+            -- คำนวณยอดสุทธิ
+            (b.total_amount - COALESCE((
+                SELECT SUM(bi_ret.price)
+                FROM bet_items bi_ret
+                JOIN bill_entries be_ret ON bi_ret.bill_entry_id = be_ret.id
+                WHERE be_ret.bill_id = b.id AND bi_ret.status = 'คืนเลข'
+            ), 0)) AS "netAmount",
             CASE 
                 WHEN EXISTS (
                     SELECT 1
@@ -1568,9 +1682,9 @@ app.get('/api/bills', isAuthenticated, async (req: Request, res: Response) => {
             bet_items bi ON bi.bill_entry_id = be.id
         WHERE 1=1
     `;
+    
     const queryParams: any[] = [];
 
-    // --- ส่วนการกรองข้อมูลทั้งหมด (ทำงานเหมือนเดิมที่คุณเขียนมา) ---
     if (loggedInUser.role === 'user') {
         queryParams.push(loggedInUser.id);
         query += ` AND b.user_id = $${queryParams.length}`;
@@ -1611,9 +1725,7 @@ app.get('/api/bills', isAuthenticated, async (req: Request, res: Response) => {
         queryParams.push(lottoName);
         query += ` AND b.bet_name = $${queryParams.length}`;
     }
-    // ----------------------------------------------------
 
-    // --- ✅ GROUP BY และ ORDER BY ---
     query += `
         GROUP BY 
             b.id, u.username
@@ -1623,14 +1735,12 @@ app.get('/api/bills', isAuthenticated, async (req: Request, res: Response) => {
 
     try {
         const result = await db.query(query, queryParams);
-        // console.log(`result bill => ${JSON.stringify(result)}`);
         res.json(result.rows);
     } catch (err: any) {
         console.error('Error fetching bills:', err);
         res.status(500).json({ error: 'เกิดข้อผิดพลาดในการดึงข้อมูลบิล', details: err.message });
     }
 });
- 
    
 
 
