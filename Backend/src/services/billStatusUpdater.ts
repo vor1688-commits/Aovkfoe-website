@@ -4,7 +4,7 @@ import { Pool } from 'pg';
 import * as schedule from 'node-schedule';
 
 /**
- * Job ที่จะทำงานเบื้องหลังเพื่ออัปเดตสถานะบิลที่ยัง "รอผล" (ฉบับปรับปรุง)
+ * Job ที่จะทำงานเบื้องหลังเพื่ออัปเดตสถานะบิลที่ยัง "รอผล" (ฉบับแก้ไข Timezone)
  */
 export async function updatePendingBillsJob(db: Pool) {
     console.log('Running scheduled job: update-pending-bills');
@@ -13,18 +13,18 @@ export async function updatePendingBillsJob(db: Pool) {
     try {
         await client.query('BEGIN');
 
-        // ✨ --- [จุดที่แก้ไข] ปรับปรุง SQL Query ให้แม่นยำขึ้น --- ✨
+        // ✨ --- [จุดที่แก้ไข] ปรับปรุง SQL Query ให้เปรียบเทียบเวลาแบบ UTC ตรงๆ --- ✨
         const billsToUpdateResult = await client.query(`
             SELECT b.id
             FROM bills b
-            JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
+            LEFT JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
             WHERE b.status = 'รอผล'
               AND (
-                -- เงื่อนไขที่ 1: บิลถูกสร้างมานานเกิน 40 นาที (Safety Net)
-                (NOW() AT TIME ZONE 'Asia/Bangkok') - b.created_at > INTERVAL '40 minutes'
+                -- เงื่อนไขที่ 1: เวลาผ่านไปแล้ว 40 นาที (เทียบ UTC ตรงๆ)
+                NOW() - b.created_at > INTERVAL '40 minutes'
                 OR
-                -- เงื่อนไขที่ 2: งวดปิดไปแล้ว และผ่านไปแล้วอย่างน้อย 5 นาที (Grace Period)
-                (lr.status LIKE '%closed%' AND (NOW() AT TIME ZONE 'Asia/Bangkok') - lr.cutoff_datetime > INTERVAL '5 minutes')
+                -- เงื่อนไขที่ 2: สถานะของงวดนั้นๆ ปิดไปแล้ว
+                lr.status LIKE '%closed%'
               )
         `);
         // ✨ --- [สิ้นสุดการแก้ไข] --- ✨
