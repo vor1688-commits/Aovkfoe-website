@@ -18,4 +18,4 @@ CREATE TABLE IF NOT EXISTS public.bill_entries
 TABLESPACE pg_default;
 
 ALTER TABLE IF EXISTS public.bill_entries
-    OWNER to postgres;
+    OWNER to maharuay_db_user;

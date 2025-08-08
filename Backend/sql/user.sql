@@ -1,6 +1,4 @@
--- =================================================================
--- Schema for public.users
--- =================================================================
+-- Table: public.users
 
 -- DROP TABLE IF EXISTS public.users;
 
@@ -12,19 +10,9 @@ CREATE TABLE IF NOT EXISTS public.users
     role user_role NOT NULL DEFAULT 'user'::user_role,
     CONSTRAINT users_pkey PRIMARY KEY (id),
     CONSTRAINT users_username_key UNIQUE (username)
-);
+)
+
+TABLESPACE pg_default;
 
 ALTER TABLE IF EXISTS public.users
-    OWNER to postgres;
-
--- =================================================================
--- Initial Data for public.users
--- =================================================================
-
--- Clear existing data before inserting to prevent conflicts
-TRUNCATE TABLE public.users RESTART IDENTITY CASCADE;
-
-INSERT INTO public.users (id, username, password_hash, role) 
-VALUES
-(1, 'AdminOwner', '$2b$10$R7gFUMt.JggoGYnqAojAjuvVtHDvigPO/ae3T7ixcgQolYWU3zENu', 'owner');
-
+    OWNER to maharuay_db_user;

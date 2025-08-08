@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS public.bet_items
 TABLESPACE pg_default;
 
 ALTER TABLE IF EXISTS public.bet_items
-    OWNER to postgres;
+    OWNER to maharuay_db_user;
 -- Index: idx_bet_items_bill_entry_id
 
 -- DROP INDEX IF EXISTS public.idx_bet_items_bill_entry_id;

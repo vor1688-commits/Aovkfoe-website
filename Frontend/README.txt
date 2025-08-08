@@ -103,3 +103,24 @@ DATABASE_URL=postgres://your_db_user:your_db_password@localhost:5432/your_db_nam
     - สร้างไฟล์ .env.production ในโปรเจกต์ React
     - ใส่ VITE_API_URL=https://your-backend-app-name.onrender.com
     - เรียกใช้ในโค้ดด้วย import.meta.env.VITE_API_URL
+
+
+
+
+
+
+
+
+
+
+
+ในไฟล์ .env ฝั่ง frontend
+
+VITE_API_URL_FRONTEND= "path/เซิฟเวอร์.com"
+
+
+
+
+ในไฟล์ .env ฝั่ง backend
+
+DATABASE_URL= "path/ฐานข้อมูล.com"
