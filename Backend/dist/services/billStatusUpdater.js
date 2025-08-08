@@ -47,7 +47,7 @@ exports.updatePendingBillsJob = updatePendingBillsJob;
 exports.startBillStatusUpdateJob = startBillStatusUpdateJob;
 const schedule = __importStar(require("node-schedule"));
 /**
- * Job ที่จะทำงานเบื้องหลังเพื่ออัปเดตสถานะบิลที่ยัง "รอผล"
+ * Job ที่จะทำงานเบื้องหลังเพื่ออัปเดตสถานะบิลที่ยัง "รอผล" (ฉบับปรับปรุง)
  */
 function updatePendingBillsJob(db) {
     return __awaiter(this, void 0, void 0, function* () {
@@ -55,27 +55,25 @@ function updatePendingBillsJob(db) {
         const client = yield db.connect();
         try {
             yield client.query('BEGIN');
-            // 1. ค้นหา ID ของบิลทั้งหมดที่เข้าเงื่อนไข
-            // เงื่อนไขคือ: สถานะเป็น 'รอผล' และ (ครบ 40 นาทีแล้ว หรือ งวดของบิลนั้นปิดไปแล้ว)
+            // ✨ --- [จุดที่แก้ไข] ปรับปรุง SQL Query ให้แม่นยำขึ้น --- ✨
             const billsToUpdateResult = yield client.query(`
             SELECT b.id
             FROM bills b
             JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
             WHERE b.status = 'รอผล'
               AND (
-                -- เงื่อนไขที่ 1: เวลาผ่านไปแล้ว 40 นาที (เทียบกับเวลาไทย)
+                -- เงื่อนไขที่ 1: บิลถูกสร้างมานานเกิน 40 นาที (Safety Net)
                 (NOW() AT TIME ZONE 'Asia/Bangkok') - b.created_at > INTERVAL '40 minutes'
                 OR
-                -- เงื่อนไขที่ 2: สถานะของงวดนั้นๆ มีคำว่า 'closed'
-                lr.status LIKE '%closed%'
+                -- เงื่อนไขที่ 2: งวดปิดไปแล้ว และผ่านไปแล้วอย่างน้อย 5 นาที (Grace Period)
+                (lr.status LIKE '%closed%' AND (NOW() AT TIME ZONE 'Asia/Bangkok') - lr.cutoff_datetime > INTERVAL '5 minutes')
               )
         `);
+            // ✨ --- [สิ้นสุดการแก้ไข] --- ✨
             const billIdsToUpdate = billsToUpdateResult.rows.map(row => row.id);
             if (billIdsToUpdate.length > 0) {
                 console.log(`[Bill Updater] Found ${billIdsToUpdate.length} bills to update.`);
-                // 2. อัปเดตสถานะของ 'bills' ที่เข้าเงื่อนไขให้เป็น 'ยืนยันแล้ว'
                 const updatedBillsResult = yield client.query(`UPDATE bills SET status = 'ยืนยันแล้ว' WHERE id = ANY($1::int[])`, [billIdsToUpdate]);
-                // 3. อัปเดตสถานะของ 'bet_items' ที่เป็น NULL ในบิลเหล่านั้นให้เป็น 'ยืนยัน'
                 const updatedItemsResult = yield client.query(`UPDATE bet_items
                  SET status = 'ยืนยัน'
                  WHERE status IS NULL
@@ -102,7 +100,6 @@ function updatePendingBillsJob(db) {
  */
 function startBillStatusUpdateJob(db) {
     console.log('Bill status update job scheduled to run every 5 minutes.');
-    // ตั้งเวลาให้ทำงานทุกๆ 5 นาที
     schedule.scheduleJob('*/5 * * * *', () => {
         updatePendingBillsJob(db);
     });
