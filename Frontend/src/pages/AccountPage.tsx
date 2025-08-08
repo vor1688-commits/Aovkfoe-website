@@ -47,6 +47,22 @@ ChartJS.register(
 const API_URL =
   import.meta.env.VITE_API_URL_FRONTEND || "http://localhost:3001";
 
+
+interface GroupedWinningItem {
+  id: string; // เราจะสร้าง ID ใหม่จาก billRef และ bet_number
+  billRef: string;
+  username: string;
+  lottoName: string;
+  lottoDrawDate: string;
+  bet_number: string;
+  totalPayout: number;
+  details: {
+    bet_type: string;
+    bet_style: string;
+    payoutAmount: number;
+  }[];
+}
+
 // --- Interfaces ---
 interface CheckableItem {
   id: number;
@@ -78,6 +94,7 @@ interface SummaryData {
   totalWinnings: number;
   totalBills: number;
   netProfit: number;
+  totalReturnedAmount: number;
 }
 interface User {
   id: number;
@@ -92,6 +109,7 @@ interface RecentBill {
   username: string;
   createdAt: string;
   totalAmount: number;
+  returnedAmount: number;
   status: string;
   lottoName: string;
   billLottoDraw: string | null;
@@ -669,6 +687,20 @@ const groupedBetSummary = useMemo(() => {
     };
   };
 
+
+  const getStatusPill = (status: string) => {
+  switch (status) {
+    case 'รอผล':
+      return <span className="px-2 py-1 text-xs font-semibold text-yellow-800 bg-yellow-200 rounded-full">{status}</span>;
+    case 'ยืนยันแล้ว':
+      return <span className="px-2 py-1 text-xs font-semibold text-green-800 bg-green-200 rounded-full">{status}</span>;
+    case 'ยกเลิก':
+      return <span className="px-2 py-1 text-xs font-semibold text-red-800 bg-red-200 rounded-full">{status}</span>;
+    default:
+      return <span className="px-2 py-1 text-xs font-semibold text-gray-800 bg-gray-200 rounded-full">{status}</span>;
+  }
+};
+
   const isSmallScreen = useMediaQuery("(max-width: 639px)");
   const isMediumScreenOrLarger = useMediaQuery("(min-width: 768px)");
   const chartAxis = isMediumScreenOrLarger ? "x" : "y";
@@ -1149,12 +1181,8 @@ const groupedBetSummary = useMemo(() => {
                             {bill.note ?? "-"}
                         </td>
                         <td className="p-3 text-center whitespace-nowrap">
-                            <span
-                                className={`px-2 py-1 text-xs rounded-full bg-gray-700`}
-                            >
-                                {bill.status}
-                            </span>
-                        </td>
+        {getStatusPill(bill.status)}
+      </td>
                         <td className="p-3 text-right whitespace-nowrap">
                             <button
                                 onClick={() =>
