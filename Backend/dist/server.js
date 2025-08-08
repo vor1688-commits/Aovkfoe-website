@@ -554,6 +554,7 @@ app.post('/api/batch-check-bet-limits', (req, res) => __awaiter(void 0, void 0, 
         const isExempt = exemptionResult.rows.some(ex => (ex.exemption_type === 'user' && ex.user_id === userId) ||
             (ex.exemption_type === 'role' && ex.user_role === userRole));
         if (isExempt) {
+            // client.release();
             return res.status(200).json({ message: 'สามารถซื้อได้ทั้งหมด (User ได้รับการยกเว้น)' });
         }
         // --- สิ้นสุดส่วน exemption ---
@@ -831,6 +832,7 @@ app.delete('/api/delete-bills/:id', (req, res) => __awaiter(void 0, void 0, void
         if (result.rowCount === 0) {
             return res.status(404).json({ error: 'ไม่พบโพยที่ต้องการลบ' });
         }
+        // ส่ง Status 204 (No Content) เพื่อยืนยันว่าการลบสำเร็จ
         res.status(204).send();
     }
     catch (err) {
@@ -1262,6 +1264,7 @@ app.delete('/api/delete-lotto-types/:id', (req, res) => __awaiter(void 0, void 0
         });
     }
     finally {
+        // 8. คืน Client กลับสู่ Pool
         client.release();
     }
 }));
@@ -1682,6 +1685,7 @@ app.delete("/api/users/:id", isAuthenticated, isAdminOrOwner, (req, res) => __aw
         });
     }
     finally {
+        // 7. Always release the client back to the pool in the end
         client.release();
     }
 }));
@@ -1881,7 +1885,7 @@ app.get("/api/financial-summary", isAuthenticated, (req, res) => __awaiter(void 
         }
         const baseWhereClauses = whereConditions.join(' AND ');
         // --- สิ้นสุดส่วนการสร้างเงื่อนไข ---
-        // ✨ --- [โค้ดที่แก้ไข] สร้าง CTE เพื่อคำนวณยอดสุทธิและยอดคืนของแต่ละบิล --- ✨
+        // ✨ --- [จุดที่แก้ไข] สร้าง CTE เพื่อคำนวณยอดสุทธิและยอดคืนของแต่ละบิล --- ✨
         const baseQueryWithCTE = `
             WITH filtered_bills AS (
                 SELECT b.*
@@ -1908,9 +1912,6 @@ app.get("/api/financial-summary", isAuthenticated, (req, res) => __awaiter(void 
                           AND EXISTS (
                               SELECT 1 FROM lotto_rounds lr 
                               WHERE lr.id = fb.lotto_round_id AND lr.status IN ('closed', 'manual_closed')
-                                -- ▼▼▼ [จุดที่แก้ไข] เพิ่มการตรวจสอบ NULL ที่นี่ ▼▼▼
-                                AND lr.winning_numbers IS NOT NULL
-                                -- ▲▲▲ [สิ้นสุดจุดที่แก้ไข] ▲▲▲
                                 AND ((be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ตรง' AND lr.winning_numbers->>'3top' = bi.bet_number) OR 
                                      (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'โต๊ด' AND lr.winning_numbers->'3tote' @> to_jsonb(bi.bet_number::text)) OR 
                                      (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'บน' AND lr.winning_numbers->>'2top' = bi.bet_number) OR 
@@ -2091,13 +2092,11 @@ app.get("/api/winning-report", isAuthenticated, (req, res) => __awaiter(void 0, 
             JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
             WHERE b.created_at BETWEEN $1 AND $2 AND bi.status = 'ยืนยัน'
               AND lr.status IN ('closed', 'manual_closed') ${userFilterClause}
-              -- ✨ [แก้ไข] เพิ่มการตรวจสอบว่า winning_numbers ไม่ใช่ NULL ก่อนเข้าถึงข้อมูลข้างใน
-              AND lr.winning_numbers IS NOT NULL 
               AND (
-                  (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ตรง' AND lr.winning_numbers->>'3top' = bi.bet_number) OR
-                  (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'โต๊ด' AND lr.winning_numbers->'3tote' @> to_jsonb(bi.bet_number::text)) OR
-                  (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'บน' AND lr.winning_numbers->>'2top' = bi.bet_number) OR
-                  (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' = bi.bet_number)
+                    (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ตรง' AND lr.winning_numbers->>'3top' = bi.bet_number) OR
+                    (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'โต๊ด' AND lr.winning_numbers->'3tote' @> to_jsonb(bi.bet_number::text)) OR
+                    (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'บน' AND lr.winning_numbers->>'2top' = bi.bet_number) OR
+                    (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' = bi.bet_number)
               )
             ORDER BY lr.cutoff_datetime DESC, b.id DESC;
         `;
