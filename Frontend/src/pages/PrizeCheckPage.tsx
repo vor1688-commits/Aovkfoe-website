@@ -427,11 +427,12 @@ useEffect(() => {
                     value={status}
                     onChange={(e) => setStatus(e.target.value)}
                     className="w-full p-2.5 bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg"
+                    disabled={true}
                   >
                     <option value="ยืนยันแล้ว">ยืนยันแล้ว</option>
-                    <option value="รอผล">รอผล</option>
+                    {/* <option value="รอผล">รอผล</option>
                     <option value="ยกเลิก">ยกเลิก</option>
-                    <option value="">ทั้งหมด</option>
+                    <option value="">ทั้งหมด</option> */}
                   </select>
                 </div>
 
@@ -741,8 +742,8 @@ useEffect(() => {
         <th className="px-4 py-3 whitespace-nowrap">ประเภทหวย</th>
         <th className="px-4 py-3 whitespace-nowrap">งวด</th>
         <th className="px-4 py-3 whitespace-nowrap">บันทึกโดย</th>
-        <th className="px-4 py-3 whitespace-nowrap">บันทึกช่วยจำ</th>
         <th className="px-4 py-3 text-center whitespace-nowrap">เงินรางวัลรวม</th>
+        <th className="px-4 py-3 whitespace-nowrap">บันทึกช่วยจำ</th>
       </tr>
     </thead>
     <tbody>
@@ -826,8 +827,7 @@ useEffect(() => {
                 <td className="px-4 py-3 whitespace-nowrap">
                   {formatDateString(firstItem.lottoDrawDate, "short")}
                 </td>
-                <td className="px-4 py-3 whitespace-nowrap">{firstItem.username}</td>
-                <td className="px-4 py-3 whitespace-nowrap">{firstItem.note}</td>
+                <td className="px-4 py-3 whitespace-nowrap">{firstItem.username}</td> 
                 <td
                   className={`px-4 py-3 text-center font-semibold whitespace-nowrap ${
                     totalPrizeForBill > 0 ? "text-green-700" : "text-gray-500"
@@ -838,6 +838,7 @@ useEffect(() => {
                     maximumFractionDigits: 2,
                   })} บาท
                 </td>
+                <td className="px-4 py-3 whitespace-nowrap">{firstItem.note}</td>
               </tr>
               {isExpanded && (
                 <tr className="bg-gray-50">

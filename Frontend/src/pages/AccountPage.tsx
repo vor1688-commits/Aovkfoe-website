@@ -999,27 +999,31 @@ const {
               </div>
 
               <div className="kpi-card">
-                <h3 className="chart-title flex items-center text-lg font-semibold mb-4">
-                  <PresentationChartLineIcon className="h-6 w-6 mr-2" />
-                  อันดับเลขที่มียอดแทงสูงสุด
-                </h3>
+  <h3 className="chart-title flex items-center text-lg font-semibold mb-4">
+    <PresentationChartLineIcon className="h-6 w-6 mr-2" />
+    อันดับเลขที่มียอดแทงสูงสุด
+  </h3>
 
-                {/* 👇 แก้ไขโดยเพิ่ม div ครอบด้านนอก และใส่ class สำหรับ scrollbar 👇 */}
-                <div className="relative max-h-96 overflow-y-auto custom-scrollbar">
-                  <div 
-                    style={{ 
-                      height: isMediumScreenOrLarger ? '384px' : `${horizontalChartHeight}px`, 
-                      minHeight: '200px',
-                      position: 'relative' 
-                    }}
-                  >
-                    <Bar
-                      data={topBetNumbersChartData}
-                      options={chartOptions2("ยอดแทงรวม", chartAxis)}
-                    />
-                  </div>
-                </div>
-              </div>
+  {/* --- [จุดที่แก้ไข] --- */}
+  {/* 1. div ด้านนอกสุดทำหน้าที่เป็น "กรอบ" ที่จะแสดง scrollbar แนวนอน */}
+  <div className="relative overflow-x-auto custom-scrollbar">
+    
+    {/* 2. div ด้านในจะมีความกว้างยืดหยุ่นตามจำนวนข้อมูล */}
+    <div 
+      style={{ 
+        height: isMediumScreenOrLarger ? '384px' : `${horizontalChartHeight}px`, 
+        width: isMediumScreenOrLarger ? `${Math.max(100, topBetNumbersChartData.labels.length * 5)}%` : '100%',
+        minWidth: '100%',
+        position: 'relative' 
+      }}
+    >
+      <Bar
+        data={topBetNumbersChartData}
+        options={chartOptions2("ยอดแทงรวม", chartAxis)}
+      />
+    </div>
+  </div>
+</div>
             </div>
             
             {groupedWinningItems.length > 0 && (

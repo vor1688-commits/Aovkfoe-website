@@ -19,7 +19,7 @@ import {
   formatDateString,
 } from "../services/BetService";
 import { useAuth } from "../contexts/AuthContext"; 
-import { ExclamationTriangleIcon, XMarkIcon } from "@heroicons/react/24/solid";
+import { BookOpenIcon, ExclamationTriangleIcon, SpeakerWaveIcon, XMarkIcon } from "@heroicons/react/24/solid";
 import { FullScreenLoader } from "../components/LoadingScreen";
 import { useReactToPrint } from "react-to-print";
 import { toPng } from "html-to-image";
@@ -639,11 +639,22 @@ useEffect(() => {
             </div>
           </div>
         </form>
+        
 
-        <div className="flex items-center my-4 text-sm text-gray-600">
-          <ExclamationTriangleIcon className="h-5 w-5 text-red-500 mr-2 flex-shrink-0" />{" "}
+         <div className="flex items-center my-4 text-sm text-green-800 bg-green-100 p-3 rounded-lg border border-green-200">
+          <BookOpenIcon className="h-5 w-5 text-green-500 mr-2 flex-shrink-0" />
+          <span>
+            บิลที่บันทึกจะยืนยันอัตโนมัตินับจากเวลาที่บันทึก 40 นาที หรือ หวยงวดนั้นปิดให้ซื้อแล้ว
+          </span>
+        </div> 
+
+        <div className="flex items-center my-4 text-sm">
+          <div className="flex flex-row justify-between">
+            <ExclamationTriangleIcon className="h-5 w-5 text-red-500 mr-2 flex-shrink-0" />{" "}
           <span>สัญลักษณ์นี้หมายถึงในบิลนั้นๆมีเลขจ่ายครึ่งราคา</span>
-        </div>
+          </div> 
+        </div>  
+
 
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left text-gray-500">
