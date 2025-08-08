@@ -1,7 +1,7 @@
 import React from 'react';
 import { formatDateBasicString } from '../services/BetService';
 
-// --- Interfaces (เหมือนเดิม) ---
+// --- Interfaces ---
 interface BillEntry {
   bets: string[];
   betTypes: string;
@@ -9,14 +9,16 @@ interface BillEntry {
   priceTote: number;
   priceBottom: number;
 }
+
 interface PrintableBill {
   billRef: string;
   betName: string;
   billLottoDraw: string;
-  totalAmount: number; // ยอดนี้คือยอดที่ยังไม่หักเลขปิด
+  totalAmount: number;
   billEntries: BillEntry[];
   note?: string;
 }
+
 interface LottoTypeDetails {
   rate_3_top: string;
   rate_3_tote: string;
@@ -26,15 +28,18 @@ interface LottoTypeDetails {
   rate_run_top: string;
   rate_run_bottom: string;
 }
+
 interface SpecialNumbers {
   closed_numbers: string[];
   half_pay_numbers: string[];
 }
+
 interface Props {
   bill: PrintableBill | null;
   lottoTypeDetails: LottoTypeDetails | null;
   specialNumbers: SpecialNumbers | null;
 }
+
 interface ProcessedBet {
   id: string;
   type: string;
@@ -43,6 +48,7 @@ interface ProcessedBet {
   receivedAmount: number;
   payoutRate: string;
   isHalfPay: boolean;
+  isClosed: boolean;
 }
 
 const PrintableReceipt = React.forwardRef<HTMLDivElement, Props>(
@@ -55,10 +61,8 @@ const PrintableReceipt = React.forwardRef<HTMLDivElement, Props>(
     const processedBets = bill.billEntries.flatMap((entry, entryIndex) => {
       const rows: ProcessedBet[] = [];
       entry.bets.forEach((betNumber, betIndex) => {
-        // ✨ [แก้ไข] กรองเลขปิดออกไปเลย ไม่ต้องแสดงในใบเสร็จ
-        if (specialNumbers.closed_numbers.includes(betNumber)) return;
-        
-        const isHalfPay = specialNumbers.half_pay_numbers.includes(betNumber);
+        const isClosed = specialNumbers.closed_numbers.includes(betNumber);
+        const isHalfPay = !isClosed && specialNumbers.half_pay_numbers.includes(betNumber);
         const isThreeDigit = betNumber.length === 3;
         const isRunDigit = betNumber.length === 1;
 
@@ -67,26 +71,32 @@ const PrintableReceipt = React.forwardRef<HTMLDivElement, Props>(
           if (type === 'top' && entry.priceTop > 0) {
             betData = {
               type: isRunDigit ? 'วิ่งบน' : (isThreeDigit ? '3 ตัวตรง' : '2 ตัวบน'),
-              number: betNumber, betAmount: entry.priceTop,
-              receivedAmount: entry.priceTop, // ในใบเสร็จจะแสดงราคาเต็มเสมอ
-              payoutRate: isRunDigit ? lottoTypeDetails.rate_run_top : (isThreeDigit ? lottoTypeDetails.rate_3_top : lottoTypeDetails.rate_2_top),
+              number: betNumber,
+              betAmount: isClosed ? 0 : entry.priceTop,
+              receivedAmount: isClosed ? 0 : entry.priceTop,
+              payoutRate: isClosed ? '0' : (isRunDigit ? lottoTypeDetails.rate_run_top : (isThreeDigit ? lottoTypeDetails.rate_3_top : lottoTypeDetails.rate_2_top)),
               isHalfPay: isHalfPay,
+              isClosed: isClosed,
             };
           } else if (type === 'bottom' && entry.priceBottom > 0) {
-              betData = {
+            betData = {
               type: isRunDigit ? 'วิ่งล่าง' : (isThreeDigit ? '3 ตัวล่าง' : '2 ตัวล่าง'),
-              number: betNumber, betAmount: entry.priceBottom,
-              receivedAmount: entry.priceBottom,
-              payoutRate: isRunDigit ? lottoTypeDetails.rate_run_bottom : (isThreeDigit ? lottoTypeDetails.rate_3_bottom : lottoTypeDetails.rate_2_bottom),
+              number: betNumber,
+              betAmount: isClosed ? 0 : entry.priceBottom,
+              receivedAmount: isClosed ? 0 : entry.priceBottom,
+              payoutRate: isClosed ? '0' : (isRunDigit ? lottoTypeDetails.rate_run_bottom : (isThreeDigit ? lottoTypeDetails.rate_3_bottom : lottoTypeDetails.rate_2_bottom)),
               isHalfPay: isHalfPay,
+              isClosed: isClosed,
             };
           } else if (type === 'tote' && entry.priceTote > 0 && isThreeDigit) {
             betData = {
               type: '3 ตัวโต๊ด',
-              number: betNumber, betAmount: entry.priceTote,
-              receivedAmount: entry.priceTote,
-              payoutRate: lottoTypeDetails.rate_3_tote,
+              number: betNumber,
+              betAmount: isClosed ? 0 : entry.priceTote,
+              receivedAmount: isClosed ? 0 : entry.priceTote,
+              payoutRate: isClosed ? '0' : lottoTypeDetails.rate_3_tote,
               isHalfPay: isHalfPay,
+              isClosed: isClosed,
             };
           }
           if (betData) {
@@ -116,7 +126,13 @@ const PrintableReceipt = React.forwardRef<HTMLDivElement, Props>(
       return acc;
     }, {} as Record<string, ProcessedBet[]>);
 
-    // ✨ [แก้ไข] คำนวณยอดรวมใหม่จากรายการที่ผ่านการกรองแล้ว
+    // จัดเรียงให้เลขปิดไปอยู่ท้ายสุดของแต่ละกลุ่ม
+    Object.values(groupedBets).forEach(group => {
+      group.sort((a, b) => {
+        return (a.isClosed ? 1 : 0) - (b.isClosed ? 1 : 0);
+      });
+    });
+
     const totalBetAmount = processedBets.reduce((sum, bet) => sum + bet.betAmount, 0);
 
     return (
@@ -145,20 +161,21 @@ const PrintableReceipt = React.forwardRef<HTMLDivElement, Props>(
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {betsInGroup.map((bet) => (
-                    <tr key={bet.id} className="text-sm">
-                      <td className={`py-2 px-3 whitespace-nowrap font-semibold ${bet.type.includes('บน') || bet.type.includes('ตรง') ? 'text-red-500' : 'text-blue-500'}`}>
-                        {bet.type} @ {bet.number}
+                    <tr key={bet.id} className={`text-sm ${bet.isClosed ? 'bg-gray-100 text-gray-400' : ''}`}>
+                      <td className={`py-2 px-3 whitespace-nowrap font-semibold ${bet.isClosed ? '' : (bet.type.includes('บน') || bet.type.includes('ตรง') ? 'text-red-500' : 'text-blue-500')}`}>
+                        {bet.type} @ {bet.number} 
+                        {bet.isClosed && <span className="ml-2 font-normal italic">(เลขปิด)</span>}
                       </td>
                       <td className="py-2 px-3 text-right">{bet.betAmount.toFixed(2)}</td>
-                      <td className={`py-2 px-3 text-right ${bet.isHalfPay ? "text-red-600" : "text-black"}`}>
-                        {bet.isHalfPay ? (
+                      <td className={`py-2 px-3 text-right ${!bet.isClosed && bet.isHalfPay ? "text-red-600" : ""}`}>
+                        {!bet.isClosed && bet.isHalfPay ? (
                           <span>{bet.receivedAmount.toFixed(2)} (จ่ายครึ่ง)</span>
                         ) : (
                           bet.receivedAmount.toFixed(2)
                         )}
                       </td>
-                      <td className={`py-2 px-3 text-right ${bet.isHalfPay ? "text-red-600" : "text-black"}`}>
-                          {bet.isHalfPay ? (parseFloat(bet.payoutRate) / 2).toFixed(2) : parseFloat(bet.payoutRate).toFixed(2)}
+                      <td className={`py-2 px-3 text-right ${!bet.isClosed && bet.isHalfPay ? "text-red-600" : ""}`}>
+                        {bet.isClosed ? '0.00' : (bet.isHalfPay ? (parseFloat(bet.payoutRate) / 2).toFixed(2) : parseFloat(bet.payoutRate).toFixed(2))}
                       </td>
                     </tr>
                   ))}

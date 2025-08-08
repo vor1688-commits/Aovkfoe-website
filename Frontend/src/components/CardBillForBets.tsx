@@ -6,10 +6,11 @@ interface SpecialNumbers {
   closed_numbers: string[];
   half_pay_numbers: string[];
 }
+
 interface CardBillForBetProps {
   bets: string[];
   betType: string;
-  bahtPer: number; // ✨ [แก้ไข] เพิ่ม prop ที่ลืมไป
+  bahtPer: number;
   priceTop: number;
   priceTote: number;
   priceBottom: number; 
@@ -22,7 +23,7 @@ interface CardBillForBetProps {
 const CardBillForBets: React.FC<CardBillForBetProps> = ({
   bets,
   betType,
-  bahtPer, // ✨ [แก้ไข] รับ prop เข้ามา (แม้จะไม่ได้ใช้)
+  bahtPer,
   priceTop,
   priceTote,
   priceBottom,
@@ -31,10 +32,21 @@ const CardBillForBets: React.FC<CardBillForBetProps> = ({
   onEdit,
   specialNumbers
 }) => {
-  const calculatedTotal = (priceTop + priceTote + priceBottom) * bets.length;
-  const isThreeDigitMode = betType === '3d' || betType === '6d';
+  // ✨ --- [เพิ่ม] ส่วนตรรกะใหม่ --- ✨
   const closedNumbersSet = new Set(specialNumbers?.closed_numbers || []);
+  
+  // 1. แยกรายการเลขที่ซื้อได้ (valid) และเลขปิด (closed) ออกจากกัน
+  const validBets = bets.filter(bet => !closedNumbersSet.has(bet));
+  const closedBets = bets.filter(bet => closedNumbersSet.has(bet));
 
+  // 2. คำนวณราคาต่อ 1 หมายเลข และยอดรวมที่ถูกต้องจาก `validBets` เท่านั้น
+  const pricePerBet = priceTop + priceTote + priceBottom;
+  const actualCalculatedTotal = validBets.length * pricePerBet;
+  // ✨ --- สิ้นสุดส่วนตรรกะใหม่ --- ✨
+
+
+  const isThreeDigitMode = betType === '3d' || betType === '6d';
+  
   const priceParts = [];
   if (priceTop > 0) {
     const label = isThreeDigitMode ? 'ตรง' : 'บน';
@@ -50,6 +62,7 @@ const CardBillForBets: React.FC<CardBillForBetProps> = ({
 
   return (
     <div className="bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200 mb-2 border border-gray-200/80 flex items-center p-3 gap-4">
+      {/* ส่วนแสดงประเภทและราคา (เหมือนเดิม) */}
       <div className="flex-shrink-0 w-32 text-center border-r pr-4 border-gray-200">
         <span className="px-3 py-1 text-sm font-bold leading-5 text-indigo-800 bg-indigo-100 rounded-full">
           {getBetTypeName(betType)}
@@ -65,19 +78,32 @@ const CardBillForBets: React.FC<CardBillForBetProps> = ({
       </div>
 
       <div className="flex-grow min-w-0">
+        {/* ส่วนแสดงตัวเลขทั้งหมด (เหมือนเดิม แต่ตอนนี้เลขปิดจะเป็นสีแดง) */}
         <div className="flex flex-wrap gap-x-3 gap-y-1 font-mono text-base leading-relaxed">
           {bets.map((betNumber, index) => (
-            <span key={index} className={closedNumbersSet.has(betNumber) ? 'text-red-500 font-bold' : 'text-gray-800'}>
+            <span key={index} className={closedNumbersSet.has(betNumber) ? 'text-red-500 font-bold line-through' : 'text-gray-800'}>
               {betNumber}
             </span>
           ))}
         </div>
+
+        {/* ✨ --- [แก้ไข] ส่วนแสดงยอดรวม --- ✨ */}
         <div className="text-xs text-gray-500 mt-1">
-          {bets.length} ตัว x {priceTop + priceTote + priceBottom} บาท = 
-          <span className="font-bold text-indigo-600 ml-1">{calculatedTotal.toLocaleString('en-US')} บาท</span>
+          {/* ใช้จำนวน validBets ในการคำนวณ */}
+          {validBets.length} ตัว x {pricePerBet} บาท = 
+          {/* แสดงยอดรวมที่คำนวณใหม่ */}
+          <span className="font-bold text-indigo-600 ml-1">{actualCalculatedTotal.toLocaleString('en-US')} บาท</span>
         </div>
+
+        {/* ✨ --- [เพิ่ม] ส่วนแสดงข้อความแจ้งเตือน (จะแสดงก็ต่อเมื่อมีเลขปิด) --- ✨ */}
+        {closedBets.length > 0 && (
+          <div className="text-xs text-red-500 mt-1 italic">
+            *เลขปิดจำนวน {closedBets.length} ตัว ไม่ถูกนำมาคำนวณในยอดรวมนี้
+          </div>
+        )}
       </div>
 
+      {/* ส่วนปุ่มแก้ไข/ลบ (เหมือนเดิม) */}
       <div className="flex items-center space-x-1">
         <button onClick={() => onEdit(entryIndex)} className="p-2 text-gray-500 rounded-full hover:bg-yellow-100 hover:text-yellow-600"><PencilSquareIcon className="h-5 w-5" /></button>
         <button onClick={() => onRemove(entryIndex)} className="p-2 text-gray-500 rounded-full hover:bg-red-100 hover:text-red-600"><TrashIcon className="h-5 w-5" /></button>

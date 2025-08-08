@@ -61,6 +61,9 @@ interface LottoTypeDetails {
   specific_days_of_week: number[] | null;
   betting_skip_start_day: number;
 }
+
+
+
 interface LottoRoundDetails {
   name: string;
   lottoDate: string;
@@ -133,154 +136,6 @@ const LottoFormPage = () => {
     };
     return await toPng(receiptRef.current, options);
   }, []);
-
-
-// const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
-//   e.preventDefault();
-//   const pastedText = e.clipboardData.getData('text').trim();
-
-//   // --- UPDATED: Logic ใหม่ที่รองรับการแยกด้วย . และ - ที่ติดกัน ---
-
-//   // 1. ทำให้ตัวคั่นเป็นรูปแบบเดียวกันทั้งหมดก่อน (ใช้ space)
-//   // โดยเปลี่ยน ., :, =, @, ! หรือ ? ให้เป็น space
-//   const normalizedText = pastedText.replace(/[\n,:=@!?.]+/g, ' ');
-
-//   // 2. แยก "กลุ่มข้อมูลหลัก" ด้วย space
-//   const primaryGroups = normalizedText.split(/\s+/).filter(Boolean);
-
-//   // 3. นำแต่ละกลุ่มมาแยกย่อยด้วยขีดกลาง (-) อีกครั้ง
-//   const tokens = primaryGroups.flatMap(group => 
-//     group.includes('-') ? group.split('-') : [group]
-//   ).filter(Boolean);
-
-//   // --- ส่วนที่เหลือของฟังก์ชันทำงานเหมือนเดิม ---
-//   const newBets: BetNumber[] = tokens.map(token => {
-//     let isValid = false;
-//     const isNumericOnly = /^\d+$/.test(token);
-    
-//     if (isNumericOnly && !specialNumbers?.closed_numbers?.includes(token)) {
-//       if (subTab === '2d' && token.length === 2) {
-//         isValid = true;
-//       } else if (subTab === '3d' && token.length === 3) {
-//         isValid = true;
-//       } else if (subTab === 'run' && token.length === 1) {
-//         isValid = true;
-//       }
-//     }
-    
-//     return { 
-//         value: token, 
-//         selected: true, 
-//         isValid: isValid 
-//     };
-//   });
-
-//   setBets(prevBets => {
-//     const existingValues = new Set(prevBets.map(b => b.value));
-//     const uniqueNewBets = newBets.filter(b => !existingValues.has(b.value));
-//     return [...prevBets, ...uniqueNewBets];
-//   });
-// };
-
-// const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
-//   e.preventDefault();
-//   const pastedText = e.clipboardData.getData('text').trim();
-
-//   // --- Logic ใหม่แบบ 2 ชั้น ---
-
-//   // 1. แยกข้อความออกเป็น "กลุ่มข้อมูล" ด้วยสัญลักษณ์หลัก (เว้นวรรค, ขึ้นบรรทัดใหม่, :, =, @, !)
-//   const betGroups = pastedText.split(/[\s\n:@=!?]+/).filter(Boolean);
-
-//   // 2. ในแต่ละ "กลุ่มข้อมูล", ให้แยก "เลขหวย" ออกจาก "ราคา" ด้วยเครื่องหมายขีดกลาง (-)
-//   // ใช้ flatMap เพื่อทำให้ผลลัพธ์แบนราบเป็น Array เดียว
-//   const tokens = betGroups.flatMap(group => group.split('-')).filter(Boolean);
-  
-//   // --- ส่วนที่เหลือของฟังก์ชันเหมือนเดิมทุกประการ ---
-//   const newBets: BetNumber[] = tokens.map(token => {
-//     let isValid = false;
-//     const isNumericOnly = /^\d+$/.test(token);
-    
-//     if (isNumericOnly && !specialNumbers?.closed_numbers?.includes(token)) {
-//       if (subTab === '2d' && token.length === 2) {
-//         isValid = true;
-//       } else if (subTab === '3d' && token.length === 3) {
-//         isValid = true;
-//       } else if (subTab === 'run' && token.length === 1) {
-//         isValid = true;
-//       }
-//     }
-    
-//     return { 
-//         value: token, 
-//         selected: true, 
-//         isValid: isValid 
-//     };
-//   });
-
-//   setBets(prevBets => {
-//     const existingValues = new Set(prevBets.map(b => b.value));
-//     const uniqueNewBets = newBets.filter(b => !existingValues.has(b.value));
-//     return [...prevBets, ...uniqueNewBets];
-//   });
-// };
-
-//
-  
-//The best
-// const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
-//   e.preventDefault();
-//   const pastedText = e.clipboardData.getData('text').trim();
-//   let tokens: string[] = [];
-
-//   // --- Logic ใหม่: ตรวจสอบรูปแบบของข้อความที่วาง ---
-
-//   // ตรวจสอบว่ามีสัญลักษณ์ของรูปแบบ "เลข-ราคา" หรือไม่ (เช่น :, =, @)
-//   if (/[:=@]/.test(pastedText)) {
-//     // ---- ใช้ Logic แบบที่ 1 (สำหรับรูปแบบซับซ้อน: เลข-ราคา) ----
-//     const primaryGroups = pastedText.split(/[\s\n,:=@!?]+/).filter(Boolean);
-//     tokens = primaryGroups.flatMap(group => 
-//       group.includes('-') ? group.split('-', 2) : [group]
-//     ).filter(Boolean);
-//   } else {
-//     // ---- ใช้ Logic แบบที่ 2 (สำหรับรูปแบบลิสต์ตัวเลข) ----
-//     // แปลงตัวคั่นทั้งหมด (จุด, ขีดกลาง, คอมม่า, เว้นวรรค) ให้เป็น space เดียว
-//     const normalizedText = pastedText.replace(/[\n,.-]+/g, ' ');
-//     tokens = normalizedText.split(/\s+/).filter(Boolean);
-//   }
-
-//   // --- ส่วนการตรวจสอบและเพิ่มลง State (ทำงานเหมือนเดิมทุกประการ) ---
-//   const newBets: BetNumber[] = tokens.map(token => {
-//     let isValid = false;
-//     const isNumericOnly = /^\d+$/.test(token);
-    
-//     if (isNumericOnly && !specialNumbers?.closed_numbers?.includes(token)) {
-//       if (subTab === '2d' && token.length === 2) {
-//         isValid = true;
-//       } else if (subTab === '3d' && token.length === 3) {
-//         isValid = true;
-//       } else if (subTab === 'run' && token.length === 1) {
-//         isValid = true;
-//       }
-//     }
-    
-//     return { 
-//         value: token, 
-//         selected: true, 
-//         isValid: isValid 
-//     };
-//   });
-
-//   setBets(prevBets => {
-//     const existingValues = new Set(prevBets.map(b => b.value));
-//     const uniqueNewBets = newBets.filter(b => !existingValues.has(b.value));
-//     return [...prevBets, ...uniqueNewBets];
-//   });
-// };
-
-//The best lastday 5/8/2568 15:20
-// const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
-// };
-
 
 //The best lastday 5/08/2568  17:00
 const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
@@ -445,8 +300,26 @@ useEffect(() => {
   }, [currentTime, roundDetails, navigate]);
   
   useEffect(() => {
-    setTotal(bill.reduce((sum, entry) => sum + entry.total, 0));
-  }, [bill]);
+    // ดึงรายการเลขปิดล่าสุดจาก state
+    const closedNumbers = specialNumbers?.closed_numbers || [];
+    
+    // คำนวณยอดรวมใหม่โดยพิจารณาเลขปิดด้วย
+    const newTotal = bill.reduce((sum, entry) => {
+        // คำนวณราคาต่อ 1 หมายเลขของ entry นี้
+        const pricePerBet = (entry.priceTop || 0) + (entry.priceTote || 0) + (entry.priceBottom || 0);
+        
+        // ✨ กรองเอาเฉพาะเลขที่ "ไม่" เป็นเลขปิด ออกจากรายการของ entry นี้
+        const validBetsInEntry = entry.bets.filter(bet => !closedNumbers.includes(bet));
+        
+        // คำนวณยอดรวมของ entry นี้จาก "เลขที่ไม่ใช่เลขปิด" เท่านั้น
+        const entryTotal = validBetsInEntry.length * pricePerBet;
+        
+        // บวกยอดรวมของ entry นี้เข้าไปในยอดรวมทั้งหมด
+        return sum + entryTotal;
+    }, 0); // 0 คือค่าเริ่มต้นของ sum
+
+    setTotal(newTotal);
+}, [bill, specialNumbers]); // ✅ เพิ่ม specialNumbers เป็น dependency
  
   const handlePrint = useReactToPrint({
     content: () => receiptRef.current,

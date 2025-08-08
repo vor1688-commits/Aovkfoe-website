@@ -307,12 +307,17 @@ app.get('/api/round-limit-summary/:lottoRoundId/user/:userId', (req, res) => __a
         const roundLimitsResult = yield client.query('SELECT limit_2d_amount, limit_3d_amount FROM lotto_rounds WHERE id = $1', [lottoRoundId]);
         const specificLimitsResult = yield client.query('SELECT bet_number, max_amount FROM lotto_round_number_limits WHERE lotto_round_id = $1', [lottoRoundId]);
         const rangeLimitsResult = yield client.query('SELECT range_start, range_end, max_amount FROM lotto_round_range_limits WHERE lotto_round_id = $1', [lottoRoundId]);
+        // ✨ --- [จุดที่แก้ไข] --- ✨
+        // เพิ่ม AND (bi.status IS NULL OR bi.status = 'ยืนยัน') เข้าไปใน Query
         const totalSpentResult = yield client.query(`SELECT bi.bet_number, SUM(bi.price) as total_spent
              FROM bet_items bi
              JOIN bill_entries be ON bi.bill_entry_id = be.id
              JOIN bills b ON be.bill_id = b.id
-             WHERE b.user_id = $1 AND b.lotto_round_id = $2
+             WHERE b.user_id = $1 
+               AND b.lotto_round_id = $2
+               AND (bi.status IS NULL OR bi.status = 'ยืนยัน') -- <-- บรรทัดที่เพิ่มเข้ามา
              GROUP BY bi.bet_number`, [userId, lottoRoundId]);
+        // ✨ --- [สิ้นสุดการแก้ไข] --- ✨
         res.json({
             defaultLimits: roundLimitsResult.rows[0] || {},
             specificLimits: specificLimitsResult.rows,
@@ -1082,13 +1087,10 @@ app.post('/api/bills/batch-delete', (req, res) => __awaiter(void 0, void 0, void
         client.release();
     }
 }));
-// ในไฟล์ server.ts
 app.post('/api/batch-check-bet-limits', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    // ... (ส่วนการตรวจสอบ exemption เหมือนเดิม) ...
     const { userId, lottoRoundId, bets } = req.body;
     const client = yield db.connect();
     try {
-        // --- (ส่วน exemption ไม่มีการเปลี่ยนแปลง) ---
         const userResult = yield client.query('SELECT role FROM users WHERE id = $1', [userId]);
         if (userResult.rowCount === 0)
             throw new Error('User not found');
@@ -1113,15 +1115,26 @@ app.post('/api/batch-check-bet-limits', (req, res) => __awaiter(void 0, void 0, 
         const rangeLimits = rangeLimitsResult.rows;
         for (const bet of bets) {
             const { betNumber, price } = bet;
-            const totalSpentResult = yield client.query(`SELECT COALESCE(SUM(bi.price), 0) as total FROM bet_items bi JOIN bill_entries be ON bi.bill_entry_id = be.id JOIN bills b ON be.bill_id = b.id WHERE b.user_id = $1 AND b.lotto_round_id = $2 AND bi.bet_number = $3`, [userId, lottoRoundId, betNumber]);
+            // ✨ --- [จุดที่แก้ไข] --- ✨
+            // เพิ่ม AND (bi.status IS NULL OR bi.status = 'ยืนยัน') เข้าไปใน Query
+            const totalSpentResult = yield client.query(`SELECT COALESCE(SUM(bi.price), 0) as total 
+               FROM bet_items bi 
+               JOIN bill_entries be ON bi.bill_entry_id = be.id 
+               JOIN bills b ON be.bill_id = b.id 
+               WHERE b.user_id = $1 
+                 AND b.lotto_round_id = $2 
+                 AND bi.bet_number = $3
+                 AND (bi.status IS NULL OR bi.status = 'ยืนยัน')`, // <-- บรรทัดที่เพิ่มเข้ามา
+            [userId, lottoRoundId, betNumber]);
+            // ✨ --- [สิ้นสุดการแก้ไข] --- ✨
             const totalSpent = parseFloat(totalSpentResult.rows[0].total);
             let limitAmount = null;
+            // ... (ส่วน Logic การหากฎลิมิตที่เหลือ ทำงานเหมือนเดิม) ...
             if (specificLimits[betNumber]) {
                 limitAmount = specificLimits[betNumber];
             }
             else {
                 const numInt = parseInt(betNumber, 10);
-                // ⭐ จุดที่แก้ไข: เพิ่มเงื่อนไข `betNumber.length === range.range_start.length`
                 const matchingRange = rangeLimits.find(range => betNumber.length === range.range_start.length &&
                     numInt >= parseInt(range.range_start, 10) &&
                     numInt <= parseInt(range.range_end, 10));
