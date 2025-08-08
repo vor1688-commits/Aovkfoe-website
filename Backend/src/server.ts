@@ -6,6 +6,7 @@ import "dotenv/config";
 import pg from "pg";
 import { startLottoRoundGenerationJob, generateLottoRoundsJob } from './services/lottoRoundGenerator'; 
 import { log } from 'console';
+import { startBillStatusUpdateJob } from './services/billStatusUpdater';
 
 const { Pool } = pg;
 const app = express();
@@ -24,6 +25,7 @@ const db = new Pool({
 });
 
 startLottoRoundGenerationJob(db); 
+startBillStatusUpdateJob(db);
 console.log('Lotto round generation job initialized.'); 
 
 //  ฟังก์ชันนี้เป็นตัวอย่างง่ายๆ คุณต้องปรับแก้ให้เข้ากับระบบ Authentication ของคุณ
@@ -1853,7 +1855,7 @@ app.put('/api/bet-items/:itemId/status', async (req: Request, res: Response) => 
                     `UPDATE bills SET status = 'ยกเลิก' WHERE id = $1 RETURNING status`,
                     [billId]
                 );
-                if (billUpdateResult.rowCount ?? 0 > 0) {
+                if ((billUpdateResult.rowCount ?? 0) > 0) {
                     newBillStatus = billUpdateResult.rows[0].status;
                 }
             } else if (areAllItemsProcessed) {
@@ -1862,7 +1864,7 @@ app.put('/api/bet-items/:itemId/status', async (req: Request, res: Response) => 
                     `UPDATE bills SET status = 'ยืนยันแล้ว' WHERE id = $1 AND status = 'รอผล' RETURNING status`,
                     [billId]
                 );
-                if (billUpdateResult.rowCount ?? 0 > 0) {
+                if ((billUpdateResult.rowCount ?? 0) > 0) {
                     newBillStatus = billUpdateResult.rows[0].status;
                 }
             }
@@ -1920,7 +1922,7 @@ app.post('/api/bills/:billId/update-all-items', async (req: Request, res: Respon
                     `UPDATE bills SET status = 'ยกเลิก' WHERE id = $1 RETURNING status`,
                     [billId]
                 );
-                if (billUpdateResult.rowCount ?? 0 > 0) {
+                if ((billUpdateResult.rowCount ?? 0) > 0) {
                     newBillStatus = billUpdateResult.rows[0].status;
                 }
             } else if (areAllItemsProcessed) {
@@ -1929,7 +1931,7 @@ app.post('/api/bills/:billId/update-all-items', async (req: Request, res: Respon
                     `UPDATE bills SET status = 'ยืนยันแล้ว' WHERE id = $1 AND status = 'รอผล' RETURNING status`,
                     [billId]
                 );
-                if (billUpdateResult.rowCount ?? 0 > 0) {
+                if ((billUpdateResult.rowCount ?? 0) > 0) {
                     newBillStatus = billUpdateResult.rows[0].status;
                 }
             } 

@@ -5,18 +5,15 @@ import {
   getBetTypeName, 
   type Order, 
   type BillEntryDetail,
-  type BetItem, // ✅ นำ BetItem เข้ามาเพื่อใช้ type ของ status
-  formatDateString,
+  type BetItem,
   formatDateBasicString
 } from '../services/BetService';
 
-// Props Interface (เหมือนเดิม)
 interface Props {
   order: Order | null;
   details: BillEntryDetail[] | null;
 }
 
-// ✅ 1. อัปเดต Interface ให้รองรับสถานะที่หลากหลาย
 interface ProcessedItem {
   id: string;
   number: string;
@@ -25,7 +22,6 @@ interface ProcessedItem {
   amountReceived: number;
   payoutRate: number;
   statusText: string;
-  // ✅ เปลี่ยน Type ให้รองรับสถานะทั้งหมด
   confirmation: BetItem['status'] | 'รอผล'; 
 }
 
@@ -35,14 +31,11 @@ const PrintableBill2 = React.forwardRef<HTMLDivElement, Props>(({ order, details
     return null;
   }
 
-  // ✅ 2. แก้ไข useMemo ให้อ่านค่า status จาก item จริง
   const processedItems = useMemo(() => {
     const allItems: ProcessedItem[] = [];
     details.forEach((entry, entryIndex) => {
       entry.items.forEach((item, itemIndex) => {
         const isHalfPay = item.price !== item.rate;
-        // const received = isHalfPay ? item.price / 2 : item.price;
-        //ให้แสดงแบบจ่ายครึ่งแต่เรทเต็ม
         const received = isHalfPay ? item.price : item.price;
         
         allItems.push({
@@ -53,8 +46,6 @@ const PrintableBill2 = React.forwardRef<HTMLDivElement, Props>(({ order, details
           amountReceived: received,
           payoutRate: item.baht_per,
           statusText: isHalfPay ? 'จ่ายครึ่ง' : 'จ่ายเต็ม',
-          // 🔥🔥 จุดแก้ไขหลัก: อ่านค่าจาก item.status โดยตรง 🔥🔥
-          // ถ้า status เป็น null (ยังไม่ตัดสิน) ให้แสดงว่า "รอผล"
           confirmation: item.status ?? 'รอผล',
         });
       });
@@ -79,16 +70,21 @@ const PrintableBill2 = React.forwardRef<HTMLDivElement, Props>(({ order, details
     }, {} as Record<string, ProcessedItem[]>);
   }, [processedItems]);
 
-  const formatDate = (isoString: string | null) => {
-    if (!isoString) return 'N/A';
-    return new Date(isoString).toLocaleDateString('th-TH', {
-      year: 'numeric', month: 'long', day: 'numeric',
-    });
-  };
+  const { totalReturnedAmount, netTotalAmount } = useMemo(() => {
+    if (!details || !order) {
+      return { totalReturnedAmount: 0, netTotalAmount: 0 };
+    }
+    const returnedAmount = details.flatMap(entry => entry.items)
+      .filter(item => item.status === 'คืนเลข')
+      .reduce((sum, item) => sum + Number(item.price), 0);
+    const netAmount = Number(order.totalAmount) - returnedAmount;
+    return { totalReturnedAmount: returnedAmount, netTotalAmount: netAmount };
+  }, [details, order]);
 
   return (
     <div ref={ref} className="p-2 bg-gray-100 font-sans w-[650px]">
-      <div className="bg-blue-600 text-white p-2 rounded-t-md text-sm text-center whitespace-nowrap">
+      {/* 👇 แก้ไขสีพื้นหลังตรงนี้ 👇 */}
+      <div className="bg-black text-white p-2 rounded-t-md text-sm text-center whitespace-nowrap">
         <span>
           เลขที่บิล #{order.billRef} | {order.lottoName} | งวด {formatDateBasicString(order.bill_lotto_draw, 'long')}
         </span>
@@ -96,7 +92,8 @@ const PrintableBill2 = React.forwardRef<HTMLDivElement, Props>(({ order, details
       
       {Object.entries(groupedBets).map(([groupName, betsInGroup]) => (
         <div key={groupName} className="mt-1">
-          <div className="bg-blue-600 text-white font-semibold text-center py-1 px-3">
+          {/* 👇 แก้ไขสีพื้นหลังตรงนี้ 👇 */}
+          <div className="bg-black text-white font-semibold text-center py-1 px-3">
             {groupName}
           </div>
           
@@ -108,7 +105,6 @@ const PrintableBill2 = React.forwardRef<HTMLDivElement, Props>(({ order, details
                   <th className="py-2 px-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">ยอดเดิมพัน</th>
                   <th className="py-2 px-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">ยอดที่ได้รับ</th>
                   <th className="py-2 px-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">อัตราจ่าย (บาทละ)</th> 
-                  {/* <th className="py-2 px-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">รูปแบบการจ่าย</th> */}
                   <th className="py-2 px-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">ยืนยัน/คืนเลข</th>
                 </tr>
               </thead>
@@ -121,10 +117,6 @@ const PrintableBill2 = React.forwardRef<HTMLDivElement, Props>(({ order, details
                     <td className="py-2 px-3 text-right">{bet.amountBet.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
                     <td className={`py-2 px-3 ${bet.statusText === 'จ่ายครึ่ง' ? 'text-center text-red-600' : 'text-right text-black'}`}>{bet.amountReceived.toLocaleString('en-US', { minimumFractionDigits: 2 })} {bet.statusText === 'จ่ายครึ่ง' ? "(จ่ายครึ่ง)": ""}</td>
                     <td className={`py-2 px-3 text-center ${bet.statusText === 'จ่ายครึ่ง' ? 'text-red-600' : 'text-black'}`}>บาทละ {bet.statusText === 'จ่ายครึ่ง' ? (bet.payoutRate / 2).toLocaleString('en-US', {maximumFractionDigits: 2, minimumFractionDigits:2}):bet.payoutRate.toLocaleString('en-US')}</td> 
-                    {/* <td className={`py-2 px-3 text-center font-bold ${bet.statusText === 'จ่ายครึ่ง' ? 'text-red-500' : 'text-green-600'}`}>
-                      {bet.statusText}
-                    </td> */}
-                    {/* ✅ 3. เพิ่ม Style ตามสถานะจริง */}
                     <td className={`py-2 px-3 text-center font-bold ${
                       bet.confirmation === 'ยืนยัน' ? 'text-green-700' :
                       bet.confirmation === 'คืนเลข' ? 'text-red-700' :
@@ -140,8 +132,20 @@ const PrintableBill2 = React.forwardRef<HTMLDivElement, Props>(({ order, details
         </div>
       ))}
 
-      <div className="bg-blue-600 text-white p-2 rounded-b-md text-right font-bold mt-1 text-lg">
-        ยอดรวม: {order.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท
+      {/* 👇 แก้ไขสีพื้นหลังและเส้นคั่นตรงนี้ 👇 */}
+      <div className="bg-black text-white p-3 rounded-b-md text-right mt-1 space-y-1">
+        <div className="flex justify-between text-base text-white/80">
+          <span>ยอดรวมเดิม:</span>
+          <span>{order.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท</span>
+        </div>
+        <div className="flex justify-between text-base text-red-400">
+          <span>หักยอดคืนเลข:</span>
+          <span>- {totalReturnedAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท</span>
+        </div>
+        <div className="flex justify-between text-lg font-bold border-t border-gray-600 pt-1 mt-1">
+          <span>ยอดสุทธิ:</span>
+          <span>{netTotalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท</span>
+        </div>
       </div>
     </div>
   );

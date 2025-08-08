@@ -406,104 +406,126 @@ const AccountPage: React.FC = () => {
         showStatus("error", "เกิดข้อผิดพลาด", "ไม่สามารถลบรายการที่เลือกได้");
       }
     }
+  }; 
+
+
+
+const {
+  winningItems,
+  displayTotalWinnings,
+  displayNetProfit,
+  winningsByBetType,
+  doughnutChartData,
+  lottoNameBarChartData,
+  groupedWinningItems,
+} = useMemo(() => {
+  const items = checkableItems.filter(
+    (item) => calculatePrizeDetails(item).isWinner
+  );
+  
+  const totalWinnings = items.reduce(
+    (sum, item) => sum + parseFloat(item.payoutAmount as any),
+    0
+  );
+
+  const netProfit = summaryData
+    ? totalWinnings - summaryData.summary.totalBetAmount
+    : 0;
+    
+  const winningsSummary = items.reduce((acc, item) => {
+    const name = item.bet_type;
+    acc[name] = (acc[name] || 0) + parseFloat(item.payoutAmount as any);
+    return acc;
+  }, {} as Record<string, number>);
+
+  const winningsByType = Object.entries(winningsSummary)
+    .map(([name, total]) => ({ name, total }))
+    .sort((a, b) => b.total - a.total);
+
+  const doughnutData = {
+    labels: (summaryData?.breakdown.byLottoType || []).map((d) => d.name),
+    datasets: [
+      {
+        data: (summaryData?.breakdown.byLottoType || []).map(
+          (d) => d.totalAmount
+        ),
+        backgroundColor: [
+          "#16A34A", "#DC2626", "#D97706", "#2563EB",
+          "#7C3AED", "#DB2777", "#0891B2", "#65A30D",
+        ],
+        borderColor: "#1F2937",
+        borderWidth: 4,
+        hoverOffset: 8,
+      },
+    ],
   };
 
-  const {
-    winningItems,
-    displayTotalWinnings,
-    displayNetProfit,
-    winningsByBetType,
-    doughnutChartData,
-    lottoNameBarChartData,
-    groupedWinningItems,
-  } = useMemo(() => {
-    const items = checkableItems.filter(
-      (item) => calculatePrizeDetails(item).isWinner
-    );
-    const totalWinnings = items.reduce(
-      (sum, item) => sum + parseFloat(item.payoutAmount as any),
-      0
-    );
-    const netProfit = summaryData
-      ? totalWinnings - summaryData.summary.totalBetAmount
-      : 0;
-    const winningsSummary = items.reduce((acc, item) => {
-      const name = item.bet_type;
-      acc[name] = (acc[name] || 0) + parseFloat(item.payoutAmount as any);
-      return acc;
-    }, {} as Record<string, number>);
-    const winningsByType = Object.entries(winningsSummary)
-      .map(([name, total]) => ({ name, total }))
-      .sort((a, b) => b.total - a.total);
-    const doughnutData = {
-      labels: (summaryData?.breakdown.byLottoType || []).map((d) => d.name),
-      datasets: [
-        {
-          data: (summaryData?.breakdown.byLottoType || []).map(
-            (d) => d.totalAmount
-          ),
-          backgroundColor: [
-            "#16A34A", "#DC2626", "#D97706", "#2563EB",
-            "#7C3AED", "#DB2777", "#0891B2", "#65A30D",
-          ],
-          borderColor: "#1F2937",
-          borderWidth: 4,
-          hoverOffset: 8,
-        },
-      ],
-    };
-    const barData = {
-      labels: (summaryData?.breakdown.byLottoType || []).map((d) => d.name),
-      datasets: [
-        {
-          label: "จำนวนบิล",
-          data: (summaryData?.breakdown.byLottoType || []).map((d) =>
-            Number(d.billCount)
-          ),
-          backgroundColor: "rgba(59, 130, 246, 0.7)",
-          borderColor: "rgba(59, 130, 246, 1)",
-          borderWidth: 1,
-        },
-      ],
-    };
+  const barData = {
+    labels: (summaryData?.breakdown.byLottoType || []).map((d) => d.name),
+    datasets: [
+      {
+        label: "จำนวนบิล",
+        data: (summaryData?.breakdown.byLottoType || []).map((d) =>
+          Number(d.billCount)
+        ),
+        backgroundColor: "rgba(59, 130, 246, 0.7)",
+        borderColor: "rgba(59, 130, 246, 1)",
+        borderWidth: 1,
+      },
+    ],
+  };
 
-    const grouped = items.reduce((acc, item) => {
-      const key = `${item.billRef}-${item.bet_number}`;
-      if (!acc[key]) {
-        acc[key] = {
-          id: key,
-          billRef: item.billRef,
-          username: item.username,
-          lottoName: item.lottoName,
-          lottoDrawDate: item.lottoDrawDate,
-          bet_number: item.bet_number,
-          totalPayout: 0,
-          details: [],
-        };
-      }
-      acc[key].totalPayout += parseFloat(item.payoutAmount as any);
+  // ✨ --- [จุดที่แก้ไข] ปรับปรุง Logic การจัดกลุ่ม --- ✨
+  const grouped = items.reduce((acc, item) => {
+    const key = `${item.billRef}-${item.bet_number}`;
+    if (!acc[key]) {
+      acc[key] = {
+        id: key,
+        billRef: item.billRef,
+        username: item.username,
+        lottoName: item.lottoName,
+        lottoDrawDate: item.lottoDrawDate,
+        bet_number: item.bet_number,
+        totalPayout: 0,
+        details: [],
+      };
+    }
+    acc[key].totalPayout += parseFloat(item.payoutAmount as any);
+
+    // ตรวจสอบว่ามีรายละเอียดของ 'ประเภท' และ 'สไตล์' นี้อยู่แล้วหรือยัง
+    const existingDetail = acc[key].details.find(
+      d => d.bet_type === item.bet_type && d.bet_style === item.bet_style
+    );
+
+    if (existingDetail) {
+      // ถ้ามีอยู่แล้ว ให้อัปเดตยอดเงินรางวัล
+      existingDetail.payoutAmount += parseFloat(item.payoutAmount as any);
+    } else {
+      // ถ้ายังไม่มี ให้เพิ่มเข้าไปใหม่
       acc[key].details.push({
         bet_type: item.bet_type,
         bet_style: item.bet_style,
         payoutAmount: parseFloat(item.payoutAmount as any),
       });
-      return acc;
-    }, {} as Record<string, GroupedWinningItem>);
-  
-    const groupedArray = Object.values(grouped).sort((a, b) => 
-        new Date(b.lottoDrawDate).getTime() - new Date(a.lottoDrawDate).getTime()
-    );
+    }
+    
+    return acc;
+  }, {} as Record<string, GroupedWinningItem>);
 
-    return {
-      winningItems: items,
-      displayTotalWinnings: totalWinnings,
-      displayNetProfit: netProfit,
-      winningsByBetType: winningsByType,
-      doughnutChartData: doughnutData,
-      lottoNameBarChartData: barData,
-      groupedWinningItems: groupedArray,
-    };
-  }, [checkableItems, summaryData]);
+  const groupedArray = Object.values(grouped).sort((a, b) => 
+      new Date(b.lottoDrawDate).getTime() - new Date(a.lottoDrawDate).getTime()
+  ); 
+
+  return {
+    winningItems: items,
+    displayTotalWinnings: totalWinnings,
+    displayNetProfit: netProfit,
+    winningsByBetType: winningsByType,
+    doughnutChartData: doughnutData,
+    lottoNameBarChartData: barData,
+    groupedWinningItems: groupedArray,
+  };
+}, [checkableItems, summaryData]);
 
   const billWinnings = useMemo(() => {
     const winningsMap = new Map<string, number>();
@@ -840,17 +862,18 @@ const AccountPage: React.FC = () => {
                 colorClass="text-blue-400"
               />
               <KpiCard
-                title="ยอดชนะทั้งหมด"
-                value={displayTotalWinnings}
-                icon={<TrophyIcon className="h-6 w-6" />}
-                colorClass="text-green-400"
-              />
-              <KpiCard
                 title="ยอดคืนเลขทั้งหมด"
                 value={summaryData.summary.totalReturnedAmount}
                 icon={<TrashIcon className="h-6 w-6" />}
                 colorClass="text-gray-400"
               />
+              <KpiCard
+                title="ยอดชนะทั้งหมด"
+                value={displayTotalWinnings}
+                icon={<TrophyIcon className="h-6 w-6" />}
+                colorClass="text-green-400"
+              />
+            
               <KpiCard
                 title="กำไร / ขาดทุน"
                 value={displayNetProfit}
@@ -976,27 +999,27 @@ const AccountPage: React.FC = () => {
               </div>
 
               <div className="kpi-card">
-  <h3 className="chart-title flex items-center text-lg font-semibold mb-4">
-    <PresentationChartLineIcon className="h-6 w-6 mr-2" />
-    อันดับเลขที่มียอดแทงสูงสุด
-  </h3>
+                <h3 className="chart-title flex items-center text-lg font-semibold mb-4">
+                  <PresentationChartLineIcon className="h-6 w-6 mr-2" />
+                  อันดับเลขที่มียอดแทงสูงสุด
+                </h3>
 
-  {/* 👇 แก้ไขโดยเพิ่ม div ครอบด้านนอก และใส่ class สำหรับ scrollbar 👇 */}
-  <div className="relative max-h-96 overflow-y-auto custom-scrollbar">
-    <div 
-      style={{ 
-        height: isMediumScreenOrLarger ? '384px' : `${horizontalChartHeight}px`, 
-        minHeight: '200px',
-        position: 'relative' 
-      }}
-    >
-      <Bar
-        data={topBetNumbersChartData}
-        options={chartOptions2("ยอดแทงรวม", chartAxis)}
-      />
-    </div>
-  </div>
-</div>
+                {/* 👇 แก้ไขโดยเพิ่ม div ครอบด้านนอก และใส่ class สำหรับ scrollbar 👇 */}
+                <div className="relative max-h-96 overflow-y-auto custom-scrollbar">
+                  <div 
+                    style={{ 
+                      height: isMediumScreenOrLarger ? '384px' : `${horizontalChartHeight}px`, 
+                      minHeight: '200px',
+                      position: 'relative' 
+                    }}
+                  >
+                    <Bar
+                      data={topBetNumbersChartData}
+                      options={chartOptions2("ยอดแทงรวม", chartAxis)}
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
             
             {groupedWinningItems.length > 0 && (
@@ -1095,7 +1118,7 @@ const AccountPage: React.FC = () => {
                       <th className="p-3 whitespace-nowrap">ประเภทหวย</th>
                       <th className="p-3 whitespace-nowrap">งวดวันที่</th>
                       <th className="p-3 text-center whitespace-nowrap">ยอดรวม (สุทธิ)</th>
-                      <th className="p-3 text-center whitespace-nowrap">ผลลัพธ์/รางวัล</th>
+                      {/* <th className="p-3 text-center whitespace-nowrap">ผลลัพธ์/รางวัล</th> */}
                       <th className="p-3 whitespace-nowrap">บันทึกช่วยจำ</th>
                       <th className="p-3 text-center whitespace-nowrap">สถานะ</th>
                       <th className="p-3 text-right whitespace-nowrap">จัดการ</th>
@@ -1140,7 +1163,7 @@ const AccountPage: React.FC = () => {
                           <td className="p-3 text-center font-semibold whitespace-nowrap">
                             {formatCurrency(bill.totalAmount)}
                           </td>
-                          <td className="p-3 text-right font-semibold whitespace-nowrap">
+                          {/* <td className="p-3 text-right font-semibold whitespace-nowrap">
                             {bill.status === 'รอผล' && <span className="text-gray-500">-</span>}
                             {bill.status === 'ยกเลิก' && <span className="text-red-500">ยกเลิก</span>}
                             {bill.status === 'ยืนยันแล้ว' && (
@@ -1148,7 +1171,7 @@ const AccountPage: React.FC = () => {
                                 ? <span className="text-green-400">+{formatCurrency(winnings)}</span>
                                 : <span className="text-gray-400">{formatCurrency(0)}</span>
                             )}
-                          </td>
+                          </td> */}
                           <td className="p-3 text-gray-400 whitespace-nowrap">
                             {bill.note ?? "-"}
                           </td>

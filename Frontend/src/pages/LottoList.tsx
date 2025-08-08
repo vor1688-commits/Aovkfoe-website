@@ -258,61 +258,78 @@ const LottoList: React.FC = () => {
 };
   
   const handleUpdateEntryStatus = async (
-    billId: number,
-    itemId: number,
-    newStatus: "ยืนยัน" | "คืนเลข"
+  billId: number,
+  itemId: number,
+  newStatus: "ยืนยัน" | "คืนเลข"
 ) => {
-    // เก็บสถานะเดิมไว้เผื่อเกิด Error
-    const originalEntries = JSON.parse(JSON.stringify(detailEntries));
+  // เก็บสถานะเดิมไว้เผื่อเกิด Error (เหมือนเดิม)
+  const originalEntries = JSON.parse(JSON.stringify(detailEntries));
 
-    // อัปเดต UI ให้แสดงสถานะ "กำลังอัปเดต..." ทันทีเพื่อ UX ที่ดี
-    setDetailEntries((currentGroups) =>
-        currentGroups.map((group) => ({
-            ...group,
-            items: group.items.map((item) =>
-                item.id === itemId ? { ...item, status: "กำลังอัปเดต..." } : item
-            ),
-        }))
-    );
+  // อัปเดต UI ชั่วคราว (เหมือนเดิม)
+  setDetailEntries((currentGroups) =>
+    currentGroups.map((group) => ({
+      ...group,
+      items: group.items.map((item) =>
+        item.id === itemId ? { ...item, status: "กำลังอัปเดต..." } : item
+      ),
+    }))
+  );
 
-    try { 
-        const response = await api.put(`/api/bet-items/${itemId}/status`, { status: newStatus });
+  try { 
+    const response = await api.put(`/api/bet-items/${itemId}/status`, { status: newStatus });
+    const data: {
+      updatedItem: BetItem;
+      newBillStatus: Order["status"] | null;
+    } = response.data;
 
-        const data: {
-            updatedItem: BetItem;
-            newBillStatus: Order["status"] | null;
-        } = response.data; // ข้อมูลจะอยู่ใน .data โดยตรง
-
-        const { updatedItem, newBillStatus } = data;
-        if (!updatedItem) {
-            throw new Error("ข้อมูลที่ได้รับจากเซิร์ฟเวอร์ไม่ถูกต้อง");
-        }
-
-        // อัปเดต state ของ detailEntries ด้วยข้อมูลใหม่ล่าสุดจาก API
-        setDetailEntries((currentGroups) =>
-            currentGroups.map((group) => ({
-                ...group,
-                items: group.items.map((item) =>
-                    item.id === updatedItem.id ? updatedItem : item
-                ),
-            }))
-        );
-        
-        // ถ้าสถานะของบิลหลักมีการเปลี่ยนแปลง (เช่น ทุกรายการถูกยืนยันหมดแล้ว) ให้อัปเดต state ของ orders ด้วย
-        if (newBillStatus) {
-            setOrders((currentOrders) =>
-                currentOrders.map((order) =>
-                    order.id === billId ? { ...order, status: newBillStatus } : order
-                )
-            );
-        }
-
-    } catch (err: any) {
-        // Interceptor จะจัดการกับ 401/403, ส่วนนี้จะแสดง alert สำหรับ error อื่นๆ
-        alert("เกิดข้อผิดพลาด", err.response?.data?.error || err.message || "การอัปเดตสถานะล้มเหลว", "light");
-        // หากเกิด Error ให้คืนค่า UI กลับไปเป็นเหมือนเดิม
-        setDetailEntries(originalEntries);
+    const { updatedItem, newBillStatus } = data;
+    if (!updatedItem) {
+      throw new Error("ข้อมูลที่ได้รับจากเซิร์ฟเวอร์ไม่ถูกต้อง");
     }
+
+    // อัปเดต state ของ detailEntries ด้วยข้อมูลใหม่ (เหมือนเดิม)
+    setDetailEntries((currentGroups) =>
+      currentGroups.map((group) => ({
+        ...group,
+        items: group.items.map((item) =>
+          item.id === updatedItem.id ? updatedItem : item
+        ),
+      }))
+    );
+    
+    // ✨ --- [เพิ่ม] Logic การอัปเดตยอดรวมในตารางหลักทันที --- ✨
+    if (newStatus === 'คืนเลข') {
+      const returnedPrice = Number(updatedItem.price);
+
+      setOrders(currentOrders => 
+        currentOrders.map(order => {
+          if (order.id === billId) {
+            // สร้าง object ใหม่สำหรับ order ที่มีการเปลี่ยนแปลง
+            return {
+              ...order,
+              returnedAmount: Number(order.returnedAmount) + returnedPrice,
+              netAmount: Number(order.netAmount) - returnedPrice,
+            };
+          }
+          // คืน order เดิมถ้าไม่ใช่รายการที่ต้องการแก้ไข
+          return order;
+        })
+      );
+    }
+    // ✨ --- [สิ้นสุดการเพิ่ม Logic] --- ✨
+
+    if (newBillStatus) {
+      setOrders((currentOrders) =>
+        currentOrders.map((order) =>
+          order.id === billId ? { ...order, status: newBillStatus } : order
+        )
+      );
+    }
+
+  } catch (err: any) {
+    alert("เกิดข้อผิดพลาด", err.response?.data?.error || err.message || "การอัปเดตสถานะล้มเหลว", "light");
+    setDetailEntries(originalEntries);
+  }
 };
 
  const handleUpdateAllEntries = async (
@@ -632,40 +649,40 @@ useEffect(() => {
           <table className="w-full text-sm text-left text-gray-500">
             <thead className="text-xs text-gray-700 uppercase bg-gray-50">
               <tr>
-                <th scope="col" className="px-3 py-3">
+                <th scope="col" className="px-3 py-3 whitespace-nowrap">
                   No
                 </th>
-                <th scope="col" className="px-6 py-3">
+                <th scope="col" className="px-6 py-3 whitespace-nowrap">
                   เลขที่ใบสั่งซื้อ
                 </th>
-                <th scope="col" className="px-6 py-3">
+                <th scope="col" className="px-6 py-3 whitespace-nowrap">
                   วันที่บันทึกข้อมูล
                 </th>
-                <th scope="col" className="px-6 py-3">
+                <th scope="col" className="px-6 py-3 whitespace-nowrap">
                   บันทึกโดย
                 </th>
-                <th scope="col" className="px-6 py-3">
+                <th scope="col" className="px-6 py-3 whitespace-nowrap">
                   ประเภทหวย
                 </th>
-                <th scope="col" className="px-6 py-3">
+                <th scope="col" className="px-6 py-3 whitespace-nowrap">
                   งวด
                 </th>
-                <th scope="col" className="px-6 py-3">
+                <th scope="col" className="px-6 py-3 whitespace-nowrap">
                   จำนวนรายการ
                 </th>
-                <th scope="col" className="px-6 py-3">
+                <th scope="col" className="px-6 py-3 whitespace-nowrap">
                   ยอดรวม
                 </th> 
-                <th scope="col" className="px-6 py-3">
+                <th scope="col" className="px-6 py-3 whitespace-nowrap">
                   ยอดคืนเลข
                 </th>
-                <th scope="col" className="px-6 py-3">
+                <th scope="col" className="px-6 py-3 whitespace-nowrap">
                   ยอดสุทธิ
                 </th>
-                <th scope="col" className="px-4 py-3">
+                <th scope="col" className="px-4 py-3 whitespace-nowrap">
                   บันทึกช่วยจำ
                 </th>
-                <th scope="col" className="px-6 py-3">
+                <th scope="col" className="px-6 py-3 whitespace-nowrap">
                   สถานะ
                 </th>
               </tr>
@@ -673,7 +690,7 @@ useEffect(() => {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={10}>
+                  <td colSpan={12}>
                     <FullScreenLoader
                       isLoading={true}
                       text="กำลังโหลดข้อมูล..."
@@ -682,7 +699,7 @@ useEffect(() => {
                 </tr>
               ) : orders.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="text-center py-16">
+                  <td colSpan={12} className="text-center py-16">
                     <NoDataIcon />
                     <p>ไม่พบข้อมูล</p>
                   </td>
@@ -730,11 +747,21 @@ useEffect(() => {
                       <td className="px-6 py-4 text-center">
                         {order.itemCount}
                       </td>
-                      <td className="px-6 py-4 text-green-600">
+                       <td className="px-6 py-4 text-green-600 whitespace-nowrap"> 
                         {Number(order.totalAmount).toLocaleString("en-US", {
                           minimumFractionDigits: 2,
                         })}{" "}
                         บาท
+                      </td> 
+                      <td className="px-6 py-4 text-orange-600 whitespace-nowrap">
+                        {Number(order.returnedAmount) > 0 ? Number(order.returnedAmount).toLocaleString("en-US", {
+                          minimumFractionDigits: 2,
+                        }) : "0.00"} บาท
+                      </td> 
+                      <td className="px-6 py-4 font-bold text-green-600 whitespace-nowrap">
+                        {Number(order.netAmount).toLocaleString("en-US", {
+                          minimumFractionDigits: 2,
+                        })}
                       </td>
                       <td className="px-4 py-4">{order.note || "-"}</td>
                       <td className="px-6 py-4">
@@ -754,7 +781,7 @@ useEffect(() => {
 
                     {expandedRowId === order.id && (
                       <tr>
-                        <td colSpan={10} className="p-4 bg-gray-50">
+                        <td colSpan={12} className="p-4 bg-gray-50">
                           {isDetailLoading ? (
                             <p className="text-center py-4">
                               กำลังโหลดรายการ...
@@ -853,7 +880,6 @@ useEffect(() => {
                                               : ""
                                           }`}
                                         >
-                                          {/* {เช็คว่าเป็นเลขจ่ายครึ่งหรือไม่} */}
                                           บาทละ {item.price !== item.rate ? Number(item.baht_per / 2).toLocaleString("th-TH", {maximumFractionDigits: 2, minimumFractionDigits: 2}) :  Number(item.baht_per).toLocaleString("th-TH", {maximumFractionDigits: 2, minimumFractionDigits: 2})}
                                         </td>
                                         <td className="p-2 text-sm">

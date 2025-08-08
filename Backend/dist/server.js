@@ -19,6 +19,7 @@ const cors_1 = __importDefault(require("cors"));
 require("dotenv/config");
 const pg_1 = __importDefault(require("pg"));
 const lottoRoundGenerator_1 = require("./services/lottoRoundGenerator");
+const billStatusUpdater_1 = require("./services/billStatusUpdater");
 const { Pool } = pg_1.default;
 const app = (0, express_1.default)();
 // --- Middleware ---
@@ -32,6 +33,7 @@ const db = new Pool({
         : false,
 });
 (0, lottoRoundGenerator_1.startLottoRoundGenerationJob)(db);
+(0, billStatusUpdater_1.startBillStatusUpdateJob)(db);
 console.log('Lotto round generation job initialized.');
 // --- Middleware ---
 app.post("/api/login", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -1550,14 +1552,14 @@ app.put('/api/bet-items/:itemId/status', (req, res) => __awaiter(void 0, void 0,
             if (areAllItemsReturned) {
                 // ถ้าทุกรายการเป็น 'คืนเลข' -> บิลนี้จะถูก 'ยกเลิก'
                 const billUpdateResult = yield client.query(`UPDATE bills SET status = 'ยกเลิก' WHERE id = $1 RETURNING status`, [billId]);
-                if ((_b = billUpdateResult.rowCount) !== null && _b !== void 0 ? _b : 0 > 0) {
+                if (((_b = billUpdateResult.rowCount) !== null && _b !== void 0 ? _b : 0) > 0) {
                     newBillStatus = billUpdateResult.rows[0].status;
                 }
             }
             else if (areAllItemsProcessed) {
                 // ถ้าทุกรายการถูกจัดการแล้ว (ไม่มีรายการรอผล) -> บิลนี้จะถูก 'ยืนยันแล้ว'
                 const billUpdateResult = yield client.query(`UPDATE bills SET status = 'ยืนยันแล้ว' WHERE id = $1 AND status = 'รอผล' RETURNING status`, [billId]);
-                if ((_c = billUpdateResult.rowCount) !== null && _c !== void 0 ? _c : 0 > 0) {
+                if (((_c = billUpdateResult.rowCount) !== null && _c !== void 0 ? _c : 0) > 0) {
                     newBillStatus = billUpdateResult.rows[0].status;
                 }
             }
@@ -1599,14 +1601,14 @@ app.post('/api/bills/:billId/update-all-items', (req, res) => __awaiter(void 0, 
             if (areAllItemsReturned) {
                 // ✨ ถ้าทุกรายการถูก 'คืนเลข' -> สถานะบิลหลักจะเป็น 'ยกเลิก'
                 const billUpdateResult = yield client.query(`UPDATE bills SET status = 'ยกเลิก' WHERE id = $1 RETURNING status`, [billId]);
-                if ((_a = billUpdateResult.rowCount) !== null && _a !== void 0 ? _a : 0 > 0) {
+                if (((_a = billUpdateResult.rowCount) !== null && _a !== void 0 ? _a : 0) > 0) {
                     newBillStatus = billUpdateResult.rows[0].status;
                 }
             }
             else if (areAllItemsProcessed) {
                 // ✨ ถ้าทุกรายการถูกจัดการแล้ว (ไม่มีรายการที่รอผล) -> สถานะบิลหลักจะเป็น 'ยืนยันแล้ว'
                 const billUpdateResult = yield client.query(`UPDATE bills SET status = 'ยืนยันแล้ว' WHERE id = $1 AND status = 'รอผล' RETURNING status`, [billId]);
-                if ((_b = billUpdateResult.rowCount) !== null && _b !== void 0 ? _b : 0 > 0) {
+                if (((_b = billUpdateResult.rowCount) !== null && _b !== void 0 ? _b : 0) > 0) {
                     newBillStatus = billUpdateResult.rows[0].status;
                 }
             }
