@@ -303,21 +303,25 @@ app.get('/api/round-limit-summary/:lottoRoundId/user/:userId', (req, res) => __a
     const { lottoRoundId, userId } = req.params;
     const client = yield db.connect();
     try {
-        // ดึงข้อมูลกฎลิมิตทั้งหมด (ส่วนนี้เหมือนเดิม)
         const roundLimitsResult = yield client.query('SELECT limit_2d_amount, limit_3d_amount FROM lotto_rounds WHERE id = $1', [lottoRoundId]);
         const specificLimitsResult = yield client.query('SELECT bet_number, max_amount FROM lotto_round_number_limits WHERE lotto_round_id = $1', [lottoRoundId]);
         const rangeLimitsResult = yield client.query('SELECT range_start, range_end, max_amount FROM lotto_round_range_limits WHERE lotto_round_id = $1', [lottoRoundId]);
-        // ✨ --- [จุดที่แก้ไข] --- ✨
-        // เพิ่ม AND (bi.status IS NULL OR bi.status = 'ยืนยัน') เข้าไปใน Query
-        const totalSpentResult = yield client.query(`SELECT bi.bet_number, SUM(bi.price) as total_spent
+        const totalSpentResult = yield client.query(`SELECT 
+               bi.bet_number, 
+               SUM(
+                 CASE
+                   WHEN b.status = 'รอผล' THEN bi.price
+                   WHEN b.status IN ('ยืนยันแล้ว', 'ยกเลิก') AND (bi.status IS NULL OR bi.status = 'ยืนยัน') THEN bi.price
+                   ELSE 0
+                 END
+               ) as total_spent
              FROM bet_items bi
              JOIN bill_entries be ON bi.bill_entry_id = be.id
              JOIN bills b ON be.bill_id = b.id
              WHERE b.user_id = $1 
                AND b.lotto_round_id = $2
-               AND (bi.status IS NULL OR bi.status = 'ยืนยัน') -- <-- บรรทัดที่เพิ่มเข้ามา
+               AND b.status IN ('รอผล', 'ยืนยันแล้ว', 'ยกเลิก')
              GROUP BY bi.bet_number`, [userId, lottoRoundId]);
-        // ✨ --- [สิ้นสุดการแก้ไข] --- ✨
         res.json({
             defaultLimits: roundLimitsResult.rows[0] || {},
             specificLimits: specificLimitsResult.rows,
@@ -1091,6 +1095,7 @@ app.post('/api/batch-check-bet-limits', (req, res) => __awaiter(void 0, void 0, 
     const { userId, lottoRoundId, bets } = req.body;
     const client = yield db.connect();
     try {
+        // --- ส่วน exemption ---
         const userResult = yield client.query('SELECT role FROM users WHERE id = $1', [userId]);
         if (userResult.rowCount === 0)
             throw new Error('User not found');
@@ -1102,10 +1107,10 @@ app.post('/api/batch-check-bet-limits', (req, res) => __awaiter(void 0, void 0, 
             client.release();
             return res.status(200).json({ message: 'สามารถซื้อได้ทั้งหมด (User ได้รับการยกเว้น)' });
         }
-        // --- (สิ้นสุดส่วน exemption) ---
+        // --- สิ้นสุดส่วน exemption ---
         const failedBets = [];
         const roundLimitsResult = yield client.query('SELECT limit_2d_amount, limit_3d_amount FROM lotto_rounds WHERE id = $1', [lottoRoundId]);
-        const roundLimits = roundLimitsResult.rows[0];
+        const roundLimits = roundLimitsResult.rows[0] || {};
         const specificLimitsResult = yield client.query('SELECT bet_number, max_amount FROM lotto_round_number_limits WHERE lotto_round_id = $1', [lottoRoundId]);
         const specificLimits = specificLimitsResult.rows.reduce((acc, row) => {
             acc[row.bet_number] = parseFloat(row.max_amount);
@@ -1115,21 +1120,25 @@ app.post('/api/batch-check-bet-limits', (req, res) => __awaiter(void 0, void 0, 
         const rangeLimits = rangeLimitsResult.rows;
         for (const bet of bets) {
             const { betNumber, price } = bet;
-            // ✨ --- [จุดที่แก้ไข] --- ✨
-            // เพิ่ม AND (bi.status IS NULL OR bi.status = 'ยืนยัน') เข้าไปใน Query
-            const totalSpentResult = yield client.query(`SELECT COALESCE(SUM(bi.price), 0) as total 
-               FROM bet_items bi 
-               JOIN bill_entries be ON bi.bill_entry_id = be.id 
-               JOIN bills b ON be.bill_id = b.id 
-               WHERE b.user_id = $1 
-                 AND b.lotto_round_id = $2 
+            const totalSpentResult = yield client.query(`SELECT COALESCE(SUM(
+                 CASE
+                   -- 1. ถ้าบิลยัง 'รอผล' ให้นับยอดทุกรายการ ไม่ว่าสถานะของ item จะเป็นอะไร
+                   WHEN b.status = 'รอผล' THEN bi.price
+                   -- 2. ถ้าบิล 'ยืนยันแล้ว' หรือ 'ยกเลิก' ให้นับเฉพาะ item ที่ไม่ถูก 'คืนเลข'
+                   WHEN b.status IN ('ยืนยันแล้ว', 'ยกเลิก') AND (bi.status IS NULL OR bi.status = 'ยืนยัน') THEN bi.price
+                   -- 3. กรณีอื่นๆ ไม่นับยอด
+                   ELSE 0
+                 END
+               ), 0) as total
+               FROM bet_items bi
+               JOIN bill_entries be ON bi.bill_entry_id = be.id
+               JOIN bills b ON be.bill_id = b.id
+               WHERE b.user_id = $1
+                 AND b.lotto_round_id = $2
                  AND bi.bet_number = $3
-                 AND (bi.status IS NULL OR bi.status = 'ยืนยัน')`, // <-- บรรทัดที่เพิ่มเข้ามา
-            [userId, lottoRoundId, betNumber]);
-            // ✨ --- [สิ้นสุดการแก้ไข] --- ✨
+                 AND b.status IN ('รอผล', 'ยืนยันแล้ว', 'ยกเลิก')`, [userId, lottoRoundId, betNumber]);
             const totalSpent = parseFloat(totalSpentResult.rows[0].total);
             let limitAmount = null;
-            // ... (ส่วน Logic การหากฎลิมิตที่เหลือ ทำงานเหมือนเดิม) ...
             if (specificLimits[betNumber]) {
                 limitAmount = specificLimits[betNumber];
             }
@@ -1142,10 +1151,10 @@ app.post('/api/batch-check-bet-limits', (req, res) => __awaiter(void 0, void 0, 
                     limitAmount = parseFloat(matchingRange.max_amount);
                 }
                 else {
-                    if (betNumber.length <= 2 && roundLimits.limit_2d_amount) {
+                    if (roundLimits.limit_2d_amount !== null && betNumber.length <= 2) {
                         limitAmount = parseFloat(roundLimits.limit_2d_amount);
                     }
-                    else if (betNumber.length >= 3 && roundLimits.limit_3d_amount) {
+                    else if (roundLimits.limit_3d_amount !== null && betNumber.length >= 3) {
                         limitAmount = parseFloat(roundLimits.limit_3d_amount);
                     }
                 }
