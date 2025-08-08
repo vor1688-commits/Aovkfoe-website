@@ -1881,7 +1881,7 @@ app.get("/api/financial-summary", isAuthenticated, (req, res) => __awaiter(void 
         }
         const baseWhereClauses = whereConditions.join(' AND ');
         // --- สิ้นสุดส่วนการสร้างเงื่อนไข ---
-        // ✨ --- [จุดที่แก้ไข] สร้าง CTE เพื่อคำนวณยอดสุทธิและยอดคืนของแต่ละบิล --- ✨
+        // ✨ --- [โค้ดที่แก้ไข] สร้าง CTE เพื่อคำนวณยอดสุทธิและยอดคืนของแต่ละบิล --- ✨
         const baseQueryWithCTE = `
             WITH filtered_bills AS (
                 SELECT b.*
@@ -1908,6 +1908,9 @@ app.get("/api/financial-summary", isAuthenticated, (req, res) => __awaiter(void 
                           AND EXISTS (
                               SELECT 1 FROM lotto_rounds lr 
                               WHERE lr.id = fb.lotto_round_id AND lr.status IN ('closed', 'manual_closed')
+                                -- ▼▼▼ [จุดที่แก้ไข] เพิ่มการตรวจสอบ NULL ที่นี่ ▼▼▼
+                                AND lr.winning_numbers IS NOT NULL
+                                -- ▲▲▲ [สิ้นสุดจุดที่แก้ไข] ▲▲▲
                                 AND ((be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ตรง' AND lr.winning_numbers->>'3top' = bi.bet_number) OR 
                                      (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'โต๊ด' AND lr.winning_numbers->'3tote' @> to_jsonb(bi.bet_number::text)) OR 
                                      (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'บน' AND lr.winning_numbers->>'2top' = bi.bet_number) OR 
@@ -2088,11 +2091,13 @@ app.get("/api/winning-report", isAuthenticated, (req, res) => __awaiter(void 0, 
             JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
             WHERE b.created_at BETWEEN $1 AND $2 AND bi.status = 'ยืนยัน'
               AND lr.status IN ('closed', 'manual_closed') ${userFilterClause}
+              -- ✨ [แก้ไข] เพิ่มการตรวจสอบว่า winning_numbers ไม่ใช่ NULL ก่อนเข้าถึงข้อมูลข้างใน
+              AND lr.winning_numbers IS NOT NULL 
               AND (
-                    (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ตรง' AND lr.winning_numbers->>'3top' = bi.bet_number) OR
-                    (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'โต๊ด' AND lr.winning_numbers->'3tote' @> to_jsonb(bi.bet_number::text)) OR
-                    (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'บน' AND lr.winning_numbers->>'2top' = bi.bet_number) OR
-                    (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' = bi.bet_number)
+                  (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ตรง' AND lr.winning_numbers->>'3top' = bi.bet_number) OR
+                  (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'โต๊ด' AND lr.winning_numbers->'3tote' @> to_jsonb(bi.bet_number::text)) OR
+                  (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'บน' AND lr.winning_numbers->>'2top' = bi.bet_number) OR
+                  (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' = bi.bet_number)
               )
             ORDER BY lr.cutoff_datetime DESC, b.id DESC;
         `;
