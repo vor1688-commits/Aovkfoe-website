@@ -218,48 +218,47 @@ useEffect(() => {
             return;
         }
         setIsLoading(true);
-        setError(null); // เคลียร์ error เก่าก่อนเริ่มโหลด
+        setError(null);
         
         try {
-            // ใช้ Promise.allSettled เพื่อให้โหลดข้อมูลต่อไปได้แม้บางส่วนจะล้มเหลว
             const results = await Promise.allSettled([
                 api.get(`/api/lotto-rounds/${lottoId}`),
-                fetchSpecialNumbersOnly() // เรียกฟังก์ชันเดิมของคุณที่ใช้ fetch (หรือจะแก้เป็น axios ก็ได้)
+                fetchSpecialNumbersOnly()
             ]);
 
-            // --- Process Lotto Round Details ---
             const roundResult = results[0];
             if (roundResult.status === 'fulfilled') {
                 const roundData = roundResult.value.data;
-
                 const cutoffDate = new Date(roundData.round.cutoff_datetime);
+
+                // --- ✅ แก้ไข: เพิ่มการลบ 7 ชั่วโมงกลับเข้ามา ---
+                // เนื่องจากข้อมูล cutoff_datetime จาก API สำหรับหวยหุ้นเป็น UTC ที่ไม่ถูกต้อง
+                // เราจึงต้องลบส่วนต่าง 7 ชั่วโมงนี้ออกไปเองที่ฝั่ง Client
+                const sevenHoursInMillis = 7 * 60 * 60 * 1000;
+                const correctedTimestamp = cutoffDate.getTime() - sevenHoursInMillis;
+                // ---------------------------------------------
+
                 setRoundDetails({
                     name: roundData.round.name,
-                    lottoDate: formatDateString(roundData.round.cutoff_datetime, 'long'),
-                    lottoTime: new Date(roundData.round.cutoff_datetime).toLocaleTimeString("th-TH", {
+                    lottoDate: formatDateString(new Date(correctedTimestamp).toISOString(), 'long'),
+                    lottoTime: new Date(correctedTimestamp).toLocaleTimeString("th-TH", {
                         hour: "2-digit",
                         minute: "2-digit",
-                        timeZone: 'Asia/Bangkok',
+                        timeZone: 'UTC', // ใช้ UTC เพื่อแสดงผลเวลาที่แก้ไขแล้วโดยตรง
                     }),
-                    fullCutoffTimestamp: cutoffDate.getTime(), 
+                    fullCutoffTimestamp: correctedTimestamp, // <-- ใช้เวลาที่ถูกแก้ไขแล้ว
                     lotto_type_id: roundData.round.lotto_type_id,
                 });
+
                 setCurrentTime(new Date(roundData.serverTime));
 
-                // Fetch lotto type details after getting the type_id
-                try {
-                    const typeResponse = await api.get(`/api/lotto-types/${roundData.round.lotto_type_id}`);
-                    setLottoTypeDetails(typeResponse.data);
-                } catch (typeError) {
-                    console.error("Failed to fetch lotto type details:", typeError);
-                    setError("ไม่พบข้อมูลประเภทหวย");
-                }
+                const typeResponse = await api.get(`/api/lotto-types/${roundData.round.lotto_type_id}`);
+                setLottoTypeDetails(typeResponse.data);
 
             } else {
                 throw new Error("ไม่พบข้อมูลงวดหวย");
             }
             
-            // --- Process Special Numbers ---
             if (results[1].status === 'rejected') {
                 console.error("Failed to fetch special numbers:", results[1].reason);
             }
@@ -588,55 +587,7 @@ const handleAddBillEntry = async () => {
   if (type === "6d" && value.length === 3) add(generate6Glab(value));
   if (type === "19d" && value.length === 1) add(generate19Doors(value, doorMode));
 };
-  
-// const handleClickReverseNumbers = () => {
-//     // 1. กรองเอาเฉพาะรายการที่ "ถูกต้อง" และ "ถูกเลือก" เท่านั้น
-//     const validSelectedBets = bets.filter(bet => bet.isValid && bet.selected);
-
-//     // 2. สร้างลิสต์ของเลขกลับทั้งหมด โดยประมวลผลแต่ละเลขที่เลือก
-//     const newReversedValues: string[] = [];
-//     validSelectedBets.forEach(bet => {
-//         const num = bet.value;
-//         if (num.length === 2) {
-//             const reversed = num.split('').reverse().join('');
-//             if (num !== reversed) { // ป้องกันการกลับเลขเบิ้ล (เช่น 11 -> 11)
-//                 newReversedValues.push(reversed);
-//             }
-//         } else if (num.length === 3) {
-//             // เรียกใช้ฟังก์ชัน 6 กลับ
-//             const permutations = generatePermutations(num);
-//             // เพิ่มเลข 6 กลับทั้งหมด (ยกเว้นเลขเดิม) เข้าไปในลิสต์
-//             permutations.forEach(p => {
-//                 if (p !== num) {
-//                     newReversedValues.push(p);
-//                 }
-//             });
-//         }
-//     });
-
-//     // 3. กรองเลขซ้ำและเลขปิดรับ
-//     const existingBetsSet = new Set(bets.map(b => b.value));
-//     const closedNumbers = specialNumbers?.closed_numbers || [];
-
-//     const finalBetsToAdd = newReversedValues
-//         .filter(num => !existingBetsSet.has(num)) // กรองเอาเฉพาะเลขใหม่ที่ยังไม่มีในรายการ
-//         .filter(num => !closedNumbers.includes(num)); // กรองเอาเลขปิดรับออก
-
-//     const blockedBets = newReversedValues
-//         .filter(num => !existingBetsSet.has(num))
-//         .filter(num => closedNumbers.includes(num));
-
-//     if (blockedBets.length > 0) {
-//       alert(`เลขปิดรับ: ${[...new Set(blockedBets)].join(', ')}`,`ถูกตัดออกจากรายการ`, "light");
-//     }
-
-//     // 4. เพิ่มเลขใหม่ที่ผ่านการตรวจสอบทั้งหมดลงใน State
-//     if (finalBetsToAdd.length > 0) {
-//       const newBetsToAddObjects = finalBetsToAdd.map(value => ({ value, selected: true, isValid: true }));
-//       setBets(prevBets => [...prevBets, ...newBetsToAddObjects]);
-//     }
-// };
-
+   
 
   const handleClickReverseNumbers = () => {
     // 1. กรองเอาเฉพาะรายการที่ "ถูกต้อง" และ "ถูกเลือก" (เหมือนเดิม)

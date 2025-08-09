@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react"; 
 import type { ChartOptions } from "chart.js";
 import { useAuth } from "../contexts/AuthContext";
 import { Bar, Doughnut } from "react-chartjs-2";
@@ -282,6 +282,11 @@ const AccountPage: React.FC = () => {
   const [selectedLottoName, setSelectedLottoName] = useState("all");
   const [selectedDate, setSelectedDate] = useState("all");
 
+  const [chartKey, setChartKey] = useState(0);
+
+  // ✨ --- [เพิ่ม] State สำหรับจัดการ Legend --- ✨
+  const [hiddenLegends, setHiddenLegends] = useState<string[]>([]);
+
   useEffect(() => {
     if (user) setSelectedUser(user.username);
   }, [user]);
@@ -408,124 +413,123 @@ const AccountPage: React.FC = () => {
     }
   }; 
 
-
-
-const {
-  winningItems,
-  displayTotalWinnings,
-  displayNetProfit,
-  winningsByBetType,
-  doughnutChartData,
-  lottoNameBarChartData,
-  groupedWinningItems,
-} = useMemo(() => {
-  const items = checkableItems.filter(
-    (item) => calculatePrizeDetails(item).isWinner
-  );
-  
-  const totalWinnings = items.reduce(
-    (sum, item) => sum + parseFloat(item.payoutAmount as any),
-    0
-  );
-
-  const netProfit = summaryData
-    ? totalWinnings - summaryData.summary.totalBetAmount
-    : 0;
-    
-  const winningsSummary = items.reduce((acc, item) => {
-    const name = item.bet_type;
-    acc[name] = (acc[name] || 0) + parseFloat(item.payoutAmount as any);
-    return acc;
-  }, {} as Record<string, number>);
-
-  const winningsByType = Object.entries(winningsSummary)
-    .map(([name, total]) => ({ name, total }))
-    .sort((a, b) => b.total - a.total);
-
-  const doughnutData = {
-    labels: (summaryData?.breakdown.byLottoType || []).map((d) => d.name),
-    datasets: [
-      {
-        data: (summaryData?.breakdown.byLottoType || []).map(
-          (d) => d.totalAmount
-        ),
-        backgroundColor: [
-          "#16A34A", "#DC2626", "#D97706", "#2563EB",
-          "#7C3AED", "#DB2777", "#0891B2", "#65A30D",
-        ],
-        borderColor: "#1F2937",
-        borderWidth: 4,
-        hoverOffset: 8,
-      },
-    ],
-  };
-
-  const barData = {
-    labels: (summaryData?.breakdown.byLottoType || []).map((d) => d.name),
-    datasets: [
-      {
-        label: "จำนวนบิล",
-        data: (summaryData?.breakdown.byLottoType || []).map((d) =>
-          Number(d.billCount)
-        ),
-        backgroundColor: "rgba(59, 130, 246, 0.7)",
-        borderColor: "rgba(59, 130, 246, 1)",
-        borderWidth: 1,
-      },
-    ],
-  };
-
-  // ✨ --- [จุดที่แก้ไข] ปรับปรุง Logic การจัดกลุ่ม --- ✨
-  const grouped = items.reduce((acc, item) => {
-    const key = `${item.billRef}-${item.bet_number}`;
-    if (!acc[key]) {
-      acc[key] = {
-        id: key,
-        billRef: item.billRef,
-        username: item.username,
-        lottoName: item.lottoName,
-        lottoDrawDate: item.lottoDrawDate,
-        bet_number: item.bet_number,
-        totalPayout: 0,
-        details: [],
-      };
-    }
-    acc[key].totalPayout += parseFloat(item.payoutAmount as any);
-
-    // ตรวจสอบว่ามีรายละเอียดของ 'ประเภท' และ 'สไตล์' นี้อยู่แล้วหรือยัง
-    const existingDetail = acc[key].details.find(
-      d => d.bet_type === item.bet_type && d.bet_style === item.bet_style
+  // ✨ --- [เพิ่ม] ฟังก์ชันสำหรับจัดการการคลิก Legend --- ✨
+  const handleLegendClick = (label: string) => {
+    setHiddenLegends(prev => 
+      prev.includes(label)
+        ? prev.filter(l => l !== label)
+        : [...prev, label]
     );
-
-    if (existingDetail) {
-      // ถ้ามีอยู่แล้ว ให้อัปเดตยอดเงินรางวัล
-      existingDetail.payoutAmount += parseFloat(item.payoutAmount as any);
-    } else {
-      // ถ้ายังไม่มี ให้เพิ่มเข้าไปใหม่
-      acc[key].details.push({
-        bet_type: item.bet_type,
-        bet_style: item.bet_style,
-        payoutAmount: parseFloat(item.payoutAmount as any),
-      });
-    }
-    
-    return acc;
-  }, {} as Record<string, GroupedWinningItem>);
-
-  const groupedArray = Object.values(grouped).sort((a, b) => 
-      new Date(b.lottoDrawDate).getTime() - new Date(a.lottoDrawDate).getTime()
-  ); 
-
-  return {
-    winningItems: items,
-    displayTotalWinnings: totalWinnings,
-    displayNetProfit: netProfit,
-    winningsByBetType: winningsByType,
-    doughnutChartData: doughnutData,
-    lottoNameBarChartData: barData,
-    groupedWinningItems: groupedArray,
   };
-}, [checkableItems, summaryData]);
+
+  const {
+    winningItems,
+    displayTotalWinnings,
+    displayNetProfit,
+    winningsByBetType,
+    doughnutChartData,
+    lottoNameBarChartData,
+    groupedWinningItems,
+  } = useMemo(() => {
+    const items = checkableItems.filter(
+      (item) => calculatePrizeDetails(item).isWinner
+    );
+    const totalWinnings = items.reduce(
+      (sum, item) => sum + parseFloat(item.payoutAmount as any),
+      0
+    );
+    const netProfit = summaryData
+      ? totalWinnings - summaryData.summary.totalBetAmount
+      : 0;
+    const winningsSummary = items.reduce((acc, item) => {
+      const name = item.bet_type;
+      acc[name] = (acc[name] || 0) + parseFloat(item.payoutAmount as any);
+      return acc;
+    }, {} as Record<string, number>);
+    const winningsByType = Object.entries(winningsSummary)
+      .map(([name, total]) => ({ name, total }))
+      .sort((a, b) => b.total - a.total);
+
+    // ✨ --- [แก้ไข] กรองข้อมูลสำหรับ Doughnut Chart --- ✨
+    const originalData = summaryData?.breakdown.byLottoType || [];
+    const filteredData = originalData.filter(d => !hiddenLegends.includes(d.name));
+    
+    const doughnutData = {
+      labels: filteredData.map((d) => d.name),
+      datasets: [
+        {
+          data: filteredData.map((d) => d.totalAmount),
+          backgroundColor: originalData.map(d => {
+            const originalIndex = summaryData?.breakdown.byLottoType.findIndex(od => od.name === d.name) ?? 0;
+            const colors = ["#16A34A", "#DC2626", "#D97706", "#2563EB", "#7C3AED", "#DB2777", "#0891B2", "#65A30D"];
+            return colors[originalIndex % colors.length];
+          }),
+          borderColor: "#1F2937",
+          borderWidth: 4,
+          hoverOffset: 8,
+        },
+      ],
+    };
+
+    const barData = {
+      labels: (summaryData?.breakdown.byLottoType || []).map((d) => d.name),
+      datasets: [
+        {
+          label: "จำนวนบิล",
+          data: (summaryData?.breakdown.byLottoType || []).map((d) =>
+            Number(d.billCount)
+          ),
+          backgroundColor: "rgba(59, 130, 246, 0.7)",
+          borderColor: "rgba(59, 130, 246, 1)",
+          borderWidth: 1,
+        },
+      ],
+    };
+
+    const grouped = items.reduce((acc, item) => {
+      const key = `${item.billRef}-${item.bet_number}`;
+      if (!acc[key]) {
+        acc[key] = {
+          id: key,
+          billRef: item.billRef,
+          username: item.username,
+          lottoName: item.lottoName,
+          lottoDrawDate: item.lottoDrawDate,
+          bet_number: item.bet_number,
+          totalPayout: 0,
+          details: [],
+        };
+      }
+      acc[key].totalPayout += parseFloat(item.payoutAmount as any);
+      const existingDetail = acc[key].details.find(
+        d => d.bet_type === item.bet_type && d.bet_style === item.bet_style
+      );
+      if (existingDetail) {
+        existingDetail.payoutAmount += parseFloat(item.payoutAmount as any);
+      } else {
+        acc[key].details.push({
+          bet_type: item.bet_type,
+          bet_style: item.bet_style,
+          payoutAmount: parseFloat(item.payoutAmount as any),
+        });
+      }
+      return acc;
+    }, {} as Record<string, GroupedWinningItem>);
+
+    const groupedArray = Object.values(grouped).sort((a, b) => 
+        new Date(b.lottoDrawDate).getTime() - new Date(a.lottoDrawDate).getTime()
+    ); 
+
+    return {
+      winningItems: items,
+      displayTotalWinnings: totalWinnings,
+      displayNetProfit: netProfit,
+      winningsByBetType: winningsByType,
+      doughnutChartData: doughnutData,
+      lottoNameBarChartData: barData,
+      groupedWinningItems: groupedArray,
+    };
+  }, [checkableItems, summaryData, hiddenLegends]);
 
   const billWinnings = useMemo(() => {
     const winningsMap = new Map<string, number>();
@@ -580,6 +584,9 @@ const {
   }, [summaryData]);
 
   const topBetNumbersChartData = useMemo(() => {
+    if (!summaryData || !summaryData.allBetItemsSummary) {
+        return { labels: [], datasets: [] };
+    }
     const sortedNumbers = Object.entries(groupedBetSummary);
     if (sortedNumbers.length === 0) {
       return { labels: [], datasets: [] };
@@ -597,7 +604,11 @@ const {
         borderWidth: 1,
       }],
     };
-  }, [groupedBetSummary]);
+  }, [groupedBetSummary, summaryData]);
+
+  useEffect(() => { 
+    setChartKey(prevKey => prevKey + 1);
+  }, [topBetNumbersChartData]);
 
   const chartOptions = (titleText: string, legendDisplay = false): ChartOptions<'bar' | 'doughnut'> => ({
     responsive: true,
@@ -701,6 +712,10 @@ const {
         return <span className="px-2 py-1 text-xs font-semibold text-gray-800 bg-gray-200 rounded-full">{status}</span>;
     }
   };
+
+  const filteredAndSortedSummary = Object.entries(groupedBetSummary)
+    .filter(([number]) => number.includes(betSummarySearch))
+    .sort(([, dataA], [, dataB]) => dataB.totalAmount - dataA.totalAmount);
 
   const isMediumScreenOrLarger = useMediaQuery("(min-width: 768px)");
   const chartAxis = isMediumScreenOrLarger ? "x" : "y";
@@ -873,7 +888,6 @@ const {
                 icon={<TrophyIcon className="h-6 w-6" />}
                 colorClass="text-green-400"
               />
-            
               <KpiCard
                 title="กำไร / ขาดทุน"
                 value={displayNetProfit}
@@ -915,18 +929,67 @@ const {
               </KpiCard>
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-              <div className="kpi-card lg:col-span-2 h-96 flex flex-col">
-                <h3 className="chart-title">
-                  <ChartPieIcon className="h-6 w-6" />
-                  สัดส่วนยอดขายตามหวย
-                </h3>
-                <div className="relative flex-grow">
-                  <Doughnut
-                    data={doughnutChartData}
-                    options={chartOptions("สัดส่วนยอดขาย", true)}
-                  />
-                </div>
+             <div className="kpi-card lg:col-span-2 h-96 flex flex-col">
+  <h3 className="chart-title">
+    <ChartPieIcon className="h-6 w-6" />
+    สัดส่วนยอดขายตามหวย
+  </h3>
+  <div className="flex-grow flex flex-row items-center gap-4 overflow-hidden">
+    <div className="relative w-1/2 h-full">
+      <Doughnut
+        data={doughnutChartData}
+        options={{
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: "rgba(0, 0, 0, 0.8)",
+              callbacks: {
+                label: (c: any) =>
+                  `${c.label}: ${c.raw.toLocaleString()} บาท`,
+              },
+            },
+          },
+        }}
+      />
+    </div>
+    <div className="w-1/2 h-full overflow-y-auto custom-scrollbar pr-2">
+      <ul className="space-y-2">
+        {(summaryData?.breakdown.byLottoType || []).map((item, index) => {
+          const originalIndex = summaryData?.breakdown.byLottoType.findIndex(od => od.name === item.name) ?? 0;
+          const colors = ["#16A34A", "#DC2626", "#D97706", "#2563EB", "#7C3AED", "#DB2777", "#0891B2", "#65A30D"];
+          const backgroundColor = colors[originalIndex % colors.length];
+          const totalAmount = summaryData?.summary.totalBetAmount || 1;
+          const percentage = (item.totalAmount / totalAmount) * 100;
+          const isHidden = hiddenLegends.includes(item.name);
+
+          return (
+            <li 
+              key={item.name} 
+              className={`flex items-center text-sm justify-between cursor-pointer p-1 rounded-md transition-colors ${isHidden ? 'opacity-50 hover:bg-gray-700/50' : 'hover:bg-gray-700/50'}`}
+              onClick={() => handleLegendClick(item.name)}
+            >
+              {/* --- [จุดที่แก้ไข] --- */}
+              {/* 1. ลบ overflow-hidden ออก */}
+              <div className="flex items-center">
+                <span 
+                  className="w-3 h-3 rounded-full mr-3 shrink-0" 
+                  style={{ backgroundColor: isHidden ? '#6B7280' : backgroundColor }}
+                ></span>
+                {/* 2. ลบ class 'truncate' ออก */}
+                <span className={`${isHidden ? 'line-through text-gray-500' : 'text-gray-300'}`} title={item.name}>
+                  {item.name}
+                </span>
               </div>
+              <span className={`font-semibold ml-2 shrink-0 ${isHidden ? 'line-through text-gray-500' : 'text-white'}`}>{percentage.toFixed(1)}%</span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  </div>
+</div>
               <div className="kpi-card lg:col-span-3 h-96 flex flex-col">
                 <h3 className="chart-title">
                   <PresentationChartLineIcon className="h-6 w-6" />
@@ -943,145 +1006,161 @@ const {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="kpi-card">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="chart-title mb-0"><TableCellsIcon className="h-6 w-6" />สรุปยอดแทงตามตัวเลข</h3>
-                  <div className="relative">
-                    <input 
-                        type="text"
-                        value={betSummarySearch}
-                        onChange={e => setBetSummarySearch(e.target.value.replace(/[^0-9]/g, ''))}
-                        maxLength={3}
-                        placeholder="ค้นหาเลข..."
-                        className="input-dark w-32 !pl-8"
-                    />
-                    <MagnifyingGlassIcon className="h-5 w-5 text-gray-500 absolute top-1/2 left-2 -translate-y-1/2"/>
+        <div className="flex justify-between items-center mb-4">
+            <h3 className="chart-title mb-0"><TableCellsIcon className="h-6 w-6" />สรุปยอดแทงตามตัวเลข</h3>
+            <div className="relative">
+                <input 
+                    type="text"
+                    value={betSummarySearch}
+                    onChange={e => setBetSummarySearch(e.target.value.replace(/[^0-9]/g, ''))}
+                    maxLength={3}
+                    placeholder="ค้นหาเลข..."
+                    className="input-dark w-32 !pl-8"
+                />
+                <MagnifyingGlassIcon className="h-5 w-5 text-gray-500 absolute top-1/2 left-2 -translate-y-1/2"/>
+            </div>
+        </div>
+        <div className="space-y-3 max-h-96 overflow-y-auto custom-scrollbar pr-2">
+            {filteredAndSortedSummary.length > 0 ? (
+                filteredAndSortedSummary.map(([number, data]) => (
+                    <div key={number} className="bg-gray-800/50 p-3 rounded-lg">
+                        <div className="flex justify-between items-center mb-2 pb-2 border-b border-gray-700">
+                            <div className="flex items-center gap-3">
+                                <span className="font-mono text-xl text-cyan-400">{number}</span>
+                                <span className="text-sm font-semibold text-white">{data.totalCount.toLocaleString()} ชุด</span>
+                            </div>
+                            <div className="font-bold text-base text-white text-right">
+                                {formatCurrency(data.totalAmount)}
+                                <span className="text-xs text-gray-500 ml-1">บาท</span>
+                            </div>
+                        </div> 
+                        <div className="space-y-1">
+                            {data.styles.map((styleItem: any, styleIndex: number) => (
+                                <div key={styleIndex} className="flex justify-between items-center text-sm pl-2"> 
+                                    <span className="text-gray-300 capitalize"> 
+                                        <span className={`font-semibold ${(styleItem.style ==='บน' || styleItem.style ==='ตรง') ? "text-green-500" : (styleItem.style ==='ล่าง') ? "text-red-500" : "text-orange-400"}`}>
+                                            {styleItem.style}
+                                        </span> 
+                                        <span className="text-gray-500 ml-2"> ({styleItem.count} ชุด)</span>
+                                    </span>
+                                    <span className="font-semibold font-mono text-gray-300">{formatCurrency(styleItem.totalAmount)}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                ))
+            ) : ( 
+                <p className="text-gray-500 italic text-center py-4">
+                    {betSummarySearch ? `ไม่พบข้อมูลเลข "${betSummarySearch}"` : "ไม่พบข้อมูล"}
+                </p> 
+            )}
+        </div>
+    </div>
+              {/* <div className="kpi-card">
+                <h3 className="chart-title flex items-center text-lg font-semibold mb-4">
+                  <PresentationChartLineIcon className="h-6 w-6 mr-2" />
+                  อันดับเลขที่มียอดแทงสูงสุด
+                </h3>
+                <div 
+                  className={`relative custom-scrollbar min-h-[400px] ${
+                    isMediumScreenOrLarger 
+                      ? 'overflow-x-auto' 
+                      : 'max-h-96 overflow-y-auto'
+                  }`}
+                >
+                  <div 
+                    style={{ 
+                      height: isMediumScreenOrLarger ? '384px' : `${horizontalChartHeight}px`, 
+                      width: isMediumScreenOrLarger ? `${Math.max(100, topBetNumbersChartData.labels.length * 5)}%` : '100%',
+                      minWidth: '100%',
+                      position: 'relative' 
+                    }}
+                  >
+                    {(topBetNumbersChartData.labels && topBetNumbersChartData.labels.length > 0) ? (
+                      <Bar
+                        key={chartKey}
+                        data={topBetNumbersChartData}
+                        options={chartOptions2("ยอดแทงรวม", chartAxis)}
+                      />
+                    ) : (
+                      <div className="flex items-center justify-center h-full">
+                        <p className="text-gray-500 italic">
+                          {isLoading ? "กำลังโหลดข้อมูลกราฟ..." : "ไม่มีข้อมูลสำหรับแสดงกราฟ"}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
-                <div className="space-y-3 max-h-96 overflow-y-auto custom-scrollbar pr-2">
-                  {Object.entries(groupedBetSummary)
-                      .filter(([number]) => number.includes(betSummarySearch))
-                      .length > 0 ? (
-                      Object.entries(groupedBetSummary)
-                          .filter(([number]) => number.includes(betSummarySearch))
-                          .map(([number, data]) => (
-                              <div key={number} className="bg-gray-800/50 p-3 rounded-lg">
-                                  <div className="flex justify-between items-center mb-2 pb-2 border-b border-gray-700">
-                                      <div className="flex items-center gap-3">
-                                          <span className="font-mono text-xl text-cyan-400">{number}</span>
-                                          <span className="text-sm font-semibold text-white">{data.totalCount.toLocaleString()} ชุด</span>
-                                      </div>
-                                      <div className="font-bold text-base text-white text-right">
-                                          {formatCurrency(data.totalAmount)}
-                                          <span className="text-xs text-gray-500 ml-1">บาท</span>
-                                      </div>
-                                  </div> 
-                                  <div className="space-y-1">
-                                      {data.styles.map((styleItem: any, styleIndex: number) => (
-                                          <div key={styleIndex} className="flex justify-between items-center text-sm pl-2"> 
-                                              <span className="text-gray-300 capitalize"> 
-                                                  <span className={`font-semibold ${(styleItem.style ==='บน' || styleItem.style ==='ตรง') ? "text-green-500" : (styleItem.style ==='ล่าง') ? "text-red-500" : "text-orange-400"}`}>
-                                                      {styleItem.style}
-                                                  </span> 
-                                                  <span className="text-gray-500 ml-2"> ({styleItem.count} ชุด)</span>
-                                              </span>
-                                              <span className="font-semibold font-mono text-gray-300">{formatCurrency(styleItem.totalAmount)}</span>
-                                          </div>
-                                      ))}
+              </div> */}
+                 <div className="kpi-card">
+              <h2 className="text-xl font-bold mb-4 text-green-600">
+                รายการที่ถูกรางวัล
+              </h2>
+              {groupedWinningItems.length > 0 ? (
+                <>
+                  <p className="text-sm text-gray-400 -mt-3 mb-4">
+                    พบ {groupedWinningItems.length} รายการสรุป
+                  </p>
+                  <div className="overflow-x-auto max-h-96 custom-scrollbar">
+                    <table className="w-full text-sm text-left">
+                      <thead className="text-gray-400 sticky top-0 bg-gray-900">
+                        <tr className="border-b border-gray-700">
+                          <th className="p-3 whitespace-nowrap">เลขบิล</th>
+                          {(user?.role === "owner" || user?.role === 'admin') && (
+                            <th className="p-3 whitespace-nowrap">ผู้ใช้</th>
+                          )}
+                          <th className="p-3 whitespace-nowrap">งวดหวย</th>
+                          <th className="p-3 whitespace-nowrap">ประเภท</th>
+                          <th className="p-3 whitespace-nowrap">เลข</th>
+                          <th className="p-3 text-right whitespace-nowrap">เงินรางวัลรวม</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                          {groupedWinningItems.map((group) => (
+                              <tr
+                              key={group.id}
+                              className="border-b border-gray-800 hover:bg-gray-800/50 whitespace-nowrap"
+                              >
+                              <td className="p-3 font-mono text-blue-400 whitespace-nowrap">
+                                  {group.billRef}
+                              </td>
+                              {(user?.role === "owner" || user?.role === 'admin') && (
+                                  <td className="p-3 whitespace-nowrap">{group.username}</td>
+                              )}
+                              <td className="p-3 whitespace-nowrap">
+                                  {group.lottoName}
+                                  <br />
+                                  <span className="text-xs text-gray-500 whitespace-nowrap">
+                                  {formatDateString(group.lottoDrawDate, 'short')}
+                                  </span>
+                              </td>
+                              <td className="p-3 whitespace-nowrap text-xs">
+                                  {group.details.map((detail, index) => (
+                                  <div key={index}>
+                                      {getBetTypeName(detail.bet_type)} ({detail.bet_style})
                                   </div>
-                              </div>
-                          ))
-                  ) : ( 
-                      <p className="text-gray-500 italic text-center py-4">
-                          {betSummarySearch ? `ไม่พบข้อมูลเลข "${betSummarySearch}"` : "ไม่พบข้อมูล"}
-                      </p> 
-                  )}
+                                  ))}
+                              </td>
+                              <td className="p-3 font-mono whitespace-nowrap">{group.bet_number}</td>
+                              <td className="p-3 text-right font-semibold text-green-400 whitespace-nowrap">
+                                  {formatCurrency(group.totalPayout)}
+                              </td>
+                              </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-16">
+                  <TrophyIcon className="mx-auto h-12 w-12 text-gray-600" />
+                  <p className="mt-2 text-gray-500 italic">ยังไม่มีรายการที่ถูกรางวัล</p>
                 </div>
-              </div>
-
-              <div className="kpi-card">
-  <h3 className="chart-title flex items-center text-lg font-semibold mb-4">
-    <PresentationChartLineIcon className="h-6 w-6 mr-2" />
-    อันดับเลขที่มียอดแทงสูงสุด
-  </h3>
-
-  {/* --- [จุดที่แก้ไข] --- */}
-  {/* 1. div ด้านนอกสุดทำหน้าที่เป็น "กรอบ" ที่จะแสดง scrollbar แนวนอน */}
-  <div className="relative overflow-x-auto custom-scrollbar">
-    
-    {/* 2. div ด้านในจะมีความกว้างยืดหยุ่นตามจำนวนข้อมูล */}
-    <div 
-      style={{ 
-        height: isMediumScreenOrLarger ? '384px' : `${horizontalChartHeight}px`, 
-        width: isMediumScreenOrLarger ? `${Math.max(100, topBetNumbersChartData.labels.length * 5)}%` : '100%',
-        minWidth: '100%',
-        position: 'relative' 
-      }}
-    >
-      <Bar
-        data={topBetNumbersChartData}
-        options={chartOptions2("ยอดแทงรวม", chartAxis)}
-      />
-    </div>
-  </div>
-</div>
+              )}
+            </div>
             </div>
             
-            {groupedWinningItems.length > 0 && (
-              <div className="kpi-card">
-                <h2 className="text-xl font-bold mb-4">
-                  รายการที่ถูกรางวัล ({groupedWinningItems.length} รายการสรุป)
-                </h2>
-                <div className="overflow-x-auto max-h-96 custom-scrollbar">
-                  <table className="w-full text-sm text-left">
-                    <thead className="text-gray-400 sticky top-0 bg-gray-900">
-                      <tr className="border-b border-gray-700">
-                        <th className="p-3 whitespace-nowrap">เลขบิล</th>
-                        {(user?.role === "owner" || user?.role === 'admin') && (
-                          <th className="p-3 whitespace-nowrap">ผู้ใช้</th>
-                        )}
-                        <th className="p-3 whitespace-nowrap">งวดหวย</th>
-                        <th className="p-3 whitespace-nowrap">ประเภท</th>
-                        <th className="p-3 whitespace-nowrap">เลข</th>
-                        <th className="p-3 text-right whitespace-nowrap">เงินรางวัลรวม</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                        {groupedWinningItems.map((group) => (
-                            <tr
-                            key={group.id}
-                            className="border-b border-gray-800 hover:bg-gray-800/50 whitespace-nowrap"
-                            >
-                            <td className="p-3 font-mono text-blue-400 whitespace-nowrap">
-                                {group.billRef}
-                            </td>
-                            {(user?.role === "owner" || user?.role === 'admin') && (
-                                <td className="p-3 whitespace-nowrap">{group.username}</td>
-                            )}
-                            <td className="p-3 whitespace-nowrap">
-                                {group.lottoName}
-                                <br />
-                                <span className="text-xs text-gray-500 whitespace-nowrap">
-                                {formatDateString(group.lottoDrawDate, 'short')}
-                                </span>
-                            </td>
-                            <td className="p-3 whitespace-nowrap text-xs">
-                                {group.details.map((detail, index) => (
-                                <div key={index}>
-                                    {getBetTypeName(detail.bet_type)} ({detail.bet_style})
-                                </div>
-                                ))}
-                            </td>
-                            <td className="p-3 font-mono whitespace-nowrap">{group.bet_number}</td>
-                            <td className="p-3 text-right font-semibold text-green-400 whitespace-nowrap">
-                                {formatCurrency(group.totalPayout)}
-                            </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
+         
             
             <div className="kpi-card">
               <div className="flex justify-between items-center mb-4">
