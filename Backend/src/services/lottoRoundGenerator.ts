@@ -414,7 +414,6 @@ export async function generateLottoRoundsJob(db: Pool) {
     try {
         await client.query('BEGIN');
 
-        // ⭐ 1. แก้ไข SQL: แปลง NOW() เป็นเวลาไทยก่อนเปรียบเทียบ
         const updateExpiredAutoResult = await client.query(`
             UPDATE lotto_rounds 
             SET status = 'closed' 
@@ -424,7 +423,6 @@ export async function generateLottoRoundsJob(db: Pool) {
             console.log(`[Scheduled Job] Updated ${updateExpiredAutoResult.rowCount} auto rounds to 'closed'.`);
         }
 
-        // ⭐ 2. แก้ไข SQL: ใช้หลักการเดียวกันสำหรับ Manual
         const updateExpiredManualResult = await client.query(`
             UPDATE lotto_rounds 
             SET status = 'manual_closed' 
@@ -442,11 +440,9 @@ export async function generateLottoRoundsJob(db: Pool) {
         `);
 
         let generatedCount = 0;
-        // ✅ คงการบวก 7 ชม. สำหรับ 'now' ในฝั่ง Node.js ไว้
         const now = new Date(new Date().getTime() + (7 * 60 * 60 * 1000));
 
         for (const lottoType of lottoTypesResult.rows) {
-            // ⭐ 3. แก้ไข SQL: ตรวจสอบงวดในอนาคตโดยเทียบกับเวลาไทย
             const hasFutureActiveRoundResult = await client.query(`
                 SELECT 1 FROM lotto_rounds 
                 WHERE lotto_type_id = $1 AND cutoff_datetime > (NOW() AT TIME ZONE 'Asia/Bangkok') AND status = 'active' 
@@ -465,10 +461,21 @@ export async function generateLottoRoundsJob(db: Pool) {
             let baseDate;
             if (latestRoundResult.rows.length > 0) {
                 const dbCutoffDate = new Date(latestRoundResult.rows[0].cutoff_datetime);
-                // ✅ 4. แก้ไข Node.js: บวก 7 ชม. ให้กับ baseDate ที่ดึงมาจาก DB
-                baseDate = new Date(dbCutoffDate.getTime() + (7 * 60 * 60 * 1000));
+                const lastCutoff = new Date(dbCutoffDate.getTime() + (7 * 60 * 60 * 1000));
+                
+                // ✨ --- [จุดที่แก้ไข] --- ✨
+                if (lottoType.generation_strategy === 'interval') {
+                    // สำหรับหวยรายนาที ให้ใช้เวลาล่าสุดเป็นฐานในการคำนวณต่อ
+                    baseDate = lastCutoff;
+                } else {
+                    // สำหรับหวยประเภทอื่น ให้เริ่มค้นหางวดใหม่จาก "วันถัดไป" เสมอ
+                    lastCutoff.setDate(lastCutoff.getDate() + 1);
+                    lastCutoff.setHours(0, 0, 0, 0);
+                    baseDate = lastCutoff;
+                }
             } else {
-                baseDate = now; // ใช้ now ที่เป็นเวลาไทยแล้ว
+                // ถ้าไม่เคยมีงวดมาก่อน ให้เริ่มจากเวลาปัจจุบัน
+                baseDate = now; 
             }
 
             const nextRoundTimes = calculateNextRoundDatetimes(
