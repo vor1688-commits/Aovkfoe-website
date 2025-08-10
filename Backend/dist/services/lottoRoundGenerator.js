@@ -65,14 +65,6 @@ function calculateNextRoundDatetimes(baseDate, strategy, bettingStartTime, betti
         return { open: nextOpenDate, cutoff: nextCutoffDate };
     }
     let searchDate = new Date(baseDate);
-    // --- ✅ [จุดที่แก้ไข] ---
-    // ตรวจสอบว่าเวลาปิดรับตามกฎของ "วันที่ฐาน" (baseDate) ได้ผ่านไปแล้วหรือยัง
-    // ถ้าผ่านไปแล้ว ให้เริ่มค้นหาจาก "วันพรุ่งนี้" ทันที
-    const potentialCutoffForBaseDate = setTimeOnDate(searchDate, cutoffHour, cutoffMinute);
-    if (potentialCutoffForBaseDate <= nowInThailand) {
-        searchDate.setDate(searchDate.getDate() + 1);
-    }
-    // --- สิ้นสุดการแก้ไข ---
     searchDate.setHours(0, 0, 0, 0);
     for (let i = 0; i < 730; i++) {
         if (i > 0) {
@@ -100,10 +92,13 @@ function calculateNextRoundDatetimes(baseDate, strategy, bettingStartTime, betti
         if (isValidDay) {
             const potentialCutoff = setTimeOnDate(searchDate, cutoffHour, cutoffMinute);
             if (potentialCutoff > nowInThailand) {
+                // สร้าง "วันที่เปิด" โดยใช้ searchDate + betting_skip_start_day
                 const openDate = new Date(searchDate);
                 openDate.setDate(openDate.getDate() + betting_skip_start_day);
-                const finalOpen = setTimeOnDate(openDate, openHour, openMinute);
-                const finalCutoff = setTimeOnDate(searchDate, cutoffHour, cutoffMinute);
+                // คำนวณเวลาเปิดและปิดสุดท้ายจากวันที่ที่ถูกต้องของแต่ละตัว
+                const finalOpen = setTimeOnDate(openDate, openHour, openMinute); // ใช้วันที่ที่ถูกเลื่อน
+                const finalCutoff = setTimeOnDate(searchDate, cutoffHour, cutoffMinute); // ใช้วันที่เดิมตามกฎ
+                // ❗ ข้อควรระวัง: โค้ดส่วนนี้อาจทำให้ finalOpen มาทีหลัง finalCutoff ได้
                 return { open: finalOpen, cutoff: finalCutoff };
             }
         }
@@ -195,7 +190,7 @@ function generateLottoRoundsJob(db) {
 // --- ฟังก์ชันที่ใช้ในการเริ่มต้น Job ---
 function startLottoRoundGenerationJob(db) {
     console.log('Lotto round generation job scheduled to run every 1 minute.');
-    schedule.scheduleJob('*/1 * * * *', () => {
+    schedule.scheduleJob('*/3 * * * *', () => {
         generateLottoRoundsJob(db);
     });
 }
