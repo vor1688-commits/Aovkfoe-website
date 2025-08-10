@@ -26,6 +26,7 @@ function calculateNextRoundDatetimes(
     specificDaysOfWeek: number[] | null,
     betting_skip_start_day: number
 ): { open: Date; cutoff: Date } | null {
+
     const [openHour, openMinute] = bettingStartTime ? bettingStartTime.split(':').map(Number) : [0, 0];
     const [cutoffHour, cutoffMinute] = bettingCutoffTime ? bettingCutoffTime.split(':').map(Number) : [0, 0];
     
@@ -49,17 +50,16 @@ function calculateNextRoundDatetimes(
     }
     
     let searchDate = new Date(baseDate);
+    searchDate.setHours(0, 0, 0, 0);
 
     // --- ✅ [จุดที่แก้ไข] ---
     // ตรวจสอบว่าเวลาปิดรับตามกฎของ "วันที่ฐาน" (baseDate) ได้ผ่านไปแล้วหรือยัง
     // ถ้าผ่านไปแล้ว ให้เริ่มค้นหาจาก "วันพรุ่งนี้" ทันที
-    const potentialCutoffForBaseDate = setTimeOnDate(searchDate, cutoffHour, cutoffMinute);
+    const potentialCutoffForBaseDate = setTimeOnDate(new Date(baseDate), cutoffHour, cutoffMinute);
     if (potentialCutoffForBaseDate <= nowInThailand) {
         searchDate.setDate(searchDate.getDate() + 1);
     }
     // --- สิ้นสุดการแก้ไข ---
-
-    searchDate.setHours(0, 0, 0, 0);
 
     for (let i = 0; i < 730; i++) {
         if (i > 0) {
@@ -91,7 +91,8 @@ function calculateNextRoundDatetimes(
 
             if (potentialCutoff > nowInThailand) {
                 const openDate = new Date(searchDate);
-                openDate.setDate(openDate.getDate() + betting_skip_start_day);
+                // ใช้ betting_skip_start_day ในการคำนวณวันที่เปิดรับ
+                openDate.setDate(openDate.getDate() - betting_skip_start_day);
 
                 const finalOpen = setTimeOnDate(openDate, openHour, openMinute);
                 const finalCutoff = setTimeOnDate(searchDate, cutoffHour, cutoffMinute);
