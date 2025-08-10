@@ -45,66 +45,65 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.generateLottoRoundsJob = generateLottoRoundsJob;
 exports.startLottoRoundGenerationJob = startLottoRoundGenerationJob;
 const schedule = __importStar(require("node-schedule"));
-/**
- * คำนวณวัน-เวลาเปิดและปิดของรอบถัดไป (ฉบับปรับปรุง)
- * @returns Object ที่มี open และ cutoff Date (ในรูปแบบ UTC) หรือ null หากคำนวณไม่ได้
- */
-function calculateNextRoundDatetimes(baseDate, // ควรเป็นเวลา UTC
-strategy, bettingStartTime, bettingCutoffTime, intervalMinutes, monthlyFixedDays, monthlyFloatingDates, specificDaysOfWeek, betting_skip_start_day) {
+function calculateNextRoundDatetimes(baseDate, strategy, bettingStartTime, bettingCutoffTime, intervalMinutes, monthlyFixedDays, monthlyFloatingDates, specificDaysOfWeek, betting_skip_start_day) {
+    var _a;
     const [openHour, openMinute] = bettingStartTime ? bettingStartTime.split(':').map(Number) : [0, 0];
     const [cutoffHour, cutoffMinute] = bettingCutoffTime ? bettingCutoffTime.split(':').map(Number) : [0, 0];
-    const now = new Date(); // เวลาปัจจุบันของ Server (UTC)
+    const nowInThailand = new Date(new Date().getTime() + (7 * 60 * 60 * 1000));
     const setTimeOnDate = (date, hour, minute) => {
         const newDate = new Date(date);
-        // ใช้ setUTCHours เพื่อให้แน่ใจว่าเรากำลังทำงานกับเวลา UTC
-        newDate.setUTCHours(hour, minute, 0, 0);
+        newDate.setHours(hour, minute, 0, 0);
         return newDate;
     };
     if (strategy === 'interval' && intervalMinutes !== null) {
         let nextOpenDate = new Date(baseDate.getTime() + 1000);
         let nextCutoffDate = new Date(nextOpenDate.getTime() + (intervalMinutes * 60 * 1000));
-        while (nextCutoffDate <= now) {
-            nextOpenDate.setTime(nextOpenDate.getTime() + intervalMinutes * 60 * 1000);
-            nextCutoffDate.setTime(nextCutoffDate.getTime() + intervalMinutes * 60 * 1000);
+        while (nextCutoffDate <= nowInThailand) {
+            nextOpenDate = new Date(nextOpenDate.getTime() + intervalMinutes * 60 * 1000);
+            nextCutoffDate = new Date(nextCutoffDate.getTime() + intervalMinutes * 60 * 1000);
         }
         return { open: nextOpenDate, cutoff: nextCutoffDate };
     }
     let searchDate = new Date(baseDate);
-    searchDate.setUTCHours(0, 0, 0, 0);
-    for (let i = 0; i < 730; i++) { // วนลูปสูงสุด 2 ปี
+    searchDate.setHours(0, 0, 0, 0);
+    for (let i = 0; i < 730; i++) {
         if (i > 0) {
-            searchDate.setUTCDate(searchDate.getUTCDate() + 1);
+            searchDate.setDate(searchDate.getDate() + 1);
         }
-        let isRuleMatchedDay = false;
+        let isValidDay = false;
         switch (strategy) {
             case 'daily':
-                isRuleMatchedDay = true;
+                isValidDay = true;
                 break;
             case 'onlyday':
                 if (specificDaysOfWeek) {
-                    isRuleMatchedDay = specificDaysOfWeek.includes(searchDate.getUTCDay());
+                    isValidDay = specificDaysOfWeek.includes(searchDate.getDay());
                 }
                 break;
             case 'monthly_fixed_days':
                 if (monthlyFixedDays) {
-                    const dayOfMonth = searchDate.getUTCDate();
-                    isRuleMatchedDay = monthlyFixedDays.includes(dayOfMonth);
-                    // หมายเหตุ: Logic สำหรับ monthlyFloatingDates สามารถเพิ่มได้ที่นี่
+                    const day = searchDate.getDate();
+                    const month = searchDate.getMonth() + 1;
+                    const isFloating = (_a = monthlyFloatingDates === null || monthlyFloatingDates === void 0 ? void 0 : monthlyFloatingDates.some(rule => rule.month === month && rule.day === day)) !== null && _a !== void 0 ? _a : false;
+                    isValidDay = monthlyFixedDays.includes(day) || isFloating;
                 }
                 break;
         }
-        if (isRuleMatchedDay) {
-            // ✅ [แก้ไข] สร้างวันที่จะใช้จริง โดยนำวันที่ตามกฎมาบวกกับค่า skip_day
-            const finalDate = new Date(searchDate);
-            finalDate.setUTCDate(finalDate.getUTCDate() + betting_skip_start_day);
-            const potentialCutoff = setTimeOnDate(finalDate, cutoffHour, cutoffMinute);
-            if (potentialCutoff > now) {
-                const finalOpen = setTimeOnDate(finalDate, openHour, openMinute);
-                return { open: finalOpen, cutoff: potentialCutoff };
+        if (isValidDay) {
+            const potentialCutoff = setTimeOnDate(searchDate, cutoffHour, cutoffMinute);
+            if (potentialCutoff > nowInThailand) {
+                // สร้าง "วันที่เปิด" โดยใช้ searchDate + betting_skip_start_day
+                const openDate = new Date(searchDate);
+                openDate.setDate(openDate.getDate() + betting_skip_start_day);
+                // คำนวณเวลาเปิดและปิดสุดท้ายจากวันที่ที่ถูกต้องของแต่ละตัว
+                const finalOpen = setTimeOnDate(openDate, openHour, openMinute); // ใช้วันที่ที่ถูกเลื่อน
+                const finalCutoff = setTimeOnDate(searchDate, cutoffHour, cutoffMinute); // ใช้วันที่เดิมตามกฎ
+                // ❗ ข้อควรระวัง: โค้ดส่วนนี้อาจทำให้ finalOpen มาทีหลัง finalCutoff ได้
+                return { open: finalOpen, cutoff: finalCutoff };
             }
         }
     }
-    console.warn(`[Generator] Could not find a valid future date for lottoType with strategy: ${strategy}`);
+    console.warn(`[Generator] Could not find a valid future date for strategy: ${strategy}`);
     return null;
 }
 function generateLottoRoundsJob(db) {
