@@ -300,7 +300,7 @@ export async function generateLottoRoundsJob(db: Pool) {
 // --- ฟังก์ชันที่ใช้ในการเริ่มต้น Job ---
 export function startLottoRoundGenerationJob(db: Pool) {
     console.log('Lotto round generation job scheduled to run every 1 minute.');
-    schedule.scheduleJob('*/5 * * * *', () => { 
+    schedule.scheduleJob('*/3 * * * *', () => { 
         generateLottoRoundsJob(db);
     });
 }
