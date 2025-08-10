@@ -37,7 +37,6 @@ function calculateNextRoundDatetimes(
 
     const setTimeOnDate = (date: Date, hour: number, minute: number): Date => {
         const newDate = new Date(date);
-        // ใช้ setUTCHours เพื่อให้แน่ใจว่าเรากำลังทำงานกับเวลา UTC
         newDate.setUTCHours(hour, minute, 0, 0);
         return newDate;
     };
@@ -56,7 +55,7 @@ function calculateNextRoundDatetimes(
     let searchDate = new Date(baseDate);
     searchDate.setUTCHours(0, 0, 0, 0);
 
-    for (let i = 0; i < 730; i++) { // วนลูปสูงสุด 2 ปี
+    for (let i = 0; i < 730; i++) {
         if (i > 0) {
             searchDate.setUTCDate(searchDate.getUTCDate() + 1);
         }
@@ -75,13 +74,11 @@ function calculateNextRoundDatetimes(
                 if (monthlyFixedDays) {
                     const dayOfMonth = searchDate.getUTCDate();
                     isRuleMatchedDay = monthlyFixedDays.includes(dayOfMonth);
-                    // หมายเหตุ: Logic สำหรับ monthlyFloatingDates สามารถเพิ่มได้ที่นี่
                 }
                 break;
         }
 
         if (isRuleMatchedDay) {
-            // ✅ [แก้ไข] สร้างวันที่จะใช้จริง โดยนำวันที่ตามกฎมาบวกกับค่า skip_day
             const finalDate = new Date(searchDate);
             finalDate.setUTCDate(finalDate.getUTCDate() + betting_skip_start_day);
             const potentialCutoff = setTimeOnDate(finalDate, cutoffHour, cutoffMinute);
@@ -129,7 +126,7 @@ export async function generateLottoRoundsJob(db: Pool) {
         `);
 
         let generatedCount = 0;
-        const now = new Date(); // ✅ ใช้เวลา UTC ปัจจุบัน
+        const now = new Date();
 
         for (const lottoType of lottoTypesResult.rows) {
             const hasFutureActiveRoundResult = await client.query(`
@@ -152,13 +149,14 @@ export async function generateLottoRoundsJob(db: Pool) {
                 const lastCutoff = new Date(latestRoundResult.rows[0].cutoff_datetime);
                 
                 // ✨ --- [จุดที่แก้ไข] --- ✨
+                // แก้ไขตรรกะการกำหนดวันเริ่มต้น (baseDate) ให้ถูกต้อง
                 if (lottoType.generation_strategy === 'interval') {
                     // สำหรับหวยรายนาที ให้ใช้เวลาล่าสุดเป็นฐานในการคำนวณต่อ
                     baseDate = lastCutoff;
                 } else {
-                    // สำหรับหวยประเภทอื่น ให้เริ่มค้นหางวดใหม่จาก "วันถัดไป" เสมอ
-                    lastCutoff.setUTCDate(lastCutoff.getUTCDate() + 1);
-                    lastCutoff.setUTCHours(0, 0, 0, 0);
+                    // สำหรับหวยประเภทอื่น (รายวัน/สัปดาห์/เดือน) ให้เริ่มค้นหาจาก "วันเดียวกัน" กับงวดล่าสุด
+                    // เพื่อให้ calculateNextRoundDatetimes สามารถหาวันถัดไปที่ถูกต้องได้เอง
+                    // โดยไม่เกิดการบวกวันซ้ำซ้อน
                     baseDate = lastCutoff;
                 }
             } else {
