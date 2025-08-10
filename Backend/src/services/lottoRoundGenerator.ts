@@ -1,4 +1,3 @@
-
 import { Pool } from 'pg';
 import * as schedule from 'node-schedule';
 
@@ -54,7 +53,7 @@ function calculateNextRoundDatetimes(
 
     for (let i = 0; i < 730; i++) {
         if (i > 0) {
-          searchDate.setDate(searchDate.getDate() + 1);
+            searchDate.setDate(searchDate.getDate() + 1);
         }
 
         let isValidDay = false;
@@ -80,16 +79,16 @@ function calculateNextRoundDatetimes(
         if (isValidDay) {
             const potentialCutoff = setTimeOnDate(searchDate, cutoffHour, cutoffMinute);
 
-            if (potentialCutoff > nowInThailand) {
-                // สร้าง "วันที่เปิด" โดยใช้ searchDate + betting_skip_start_day
+            // ==========================================================
+            // ##                 จุดที่แก้ไข (The Fix)                 ##
+            // ==========================================================
+            if (potentialCutoff > nowInThailand && potentialCutoff > baseDate) {
                 const openDate = new Date(searchDate);
                 openDate.setDate(openDate.getDate() + betting_skip_start_day);
 
-                // คำนวณเวลาเปิดและปิดสุดท้ายจากวันที่ที่ถูกต้องของแต่ละตัว
-                const finalOpen = setTimeOnDate(openDate, openHour, openMinute); // ใช้วันที่ที่ถูกเลื่อน
-                const finalCutoff = setTimeOnDate(searchDate, cutoffHour, cutoffMinute); // ใช้วันที่เดิมตามกฎ
-
-                // ❗ ข้อควรระวัง: โค้ดส่วนนี้อาจทำให้ finalOpen มาทีหลัง finalCutoff ได้
+                const finalOpen = setTimeOnDate(openDate, openHour, openMinute);
+                const finalCutoff = setTimeOnDate(searchDate, cutoffHour, cutoffMinute);
+                
                 return { open: finalOpen, cutoff: finalCutoff };
             }
         }
@@ -107,7 +106,6 @@ export async function generateLottoRoundsJob(db: Pool) {
     try {
         await client.query('BEGIN');
 
-        // ⭐ 1. แก้ไข SQL: แปลง NOW() เป็นเวลาไทยก่อนเปรียบเทียบ
         const updateExpiredAutoResult = await client.query(`
             UPDATE lotto_rounds 
             SET status = 'closed' 
@@ -117,7 +115,6 @@ export async function generateLottoRoundsJob(db: Pool) {
             console.log(`[Scheduled Job] Updated ${updateExpiredAutoResult.rowCount} auto rounds to 'closed'.`);
         }
 
-        // ⭐ 2. แก้ไข SQL: ใช้หลักการเดียวกันสำหรับ Manual
         const updateExpiredManualResult = await client.query(`
             UPDATE lotto_rounds 
             SET status = 'manual_closed' 
@@ -135,11 +132,9 @@ export async function generateLottoRoundsJob(db: Pool) {
         `);
 
         let generatedCount = 0;
-        // ✅ คงการบวก 7 ชม. สำหรับ 'now' ในฝั่ง Node.js ไว้
         const now = new Date(new Date().getTime() + (7 * 60 * 60 * 1000));
 
         for (const lottoType of lottoTypesResult.rows) {
-            // ⭐ 3. แก้ไข SQL: ตรวจสอบงวดในอนาคตโดยเทียบกับเวลาไทย
             const hasFutureActiveRoundResult = await client.query(`
                 SELECT 1 FROM lotto_rounds 
                 WHERE lotto_type_id = $1 AND cutoff_datetime > (NOW() AT TIME ZONE 'Asia/Bangkok') AND status = 'active' 
@@ -158,10 +153,9 @@ export async function generateLottoRoundsJob(db: Pool) {
             let baseDate;
             if (latestRoundResult.rows.length > 0) {
                 const dbCutoffDate = new Date(latestRoundResult.rows[0].cutoff_datetime);
-                // ✅ 4. แก้ไข Node.js: บวก 7 ชม. ให้กับ baseDate ที่ดึงมาจาก DB
                 baseDate = new Date(dbCutoffDate.getTime() + (7 * 60 * 60 * 1000));
             } else {
-                baseDate = now; // ใช้ now ที่เป็นเวลาไทยแล้ว
+                baseDate = now;
             }
 
             const nextRoundTimes = calculateNextRoundDatetimes(
@@ -200,12 +194,9 @@ export async function generateLottoRoundsJob(db: Pool) {
     }
 }
 
-// --- ฟังก์ชันที่ใช้ในการเริ่มต้น Job ---
 export function startLottoRoundGenerationJob(db: Pool) {
     console.log('Lotto round generation job scheduled to run every 1 minute.');
     schedule.scheduleJob('*/1 * * * *', () => { 
         generateLottoRoundsJob(db);
     });
 }
-
- 
