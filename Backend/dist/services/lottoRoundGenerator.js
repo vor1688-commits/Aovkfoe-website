@@ -184,7 +184,7 @@ function generateLottoRoundsJob(db) {
 }
 function startLottoRoundGenerationJob(db) {
     console.log('Lotto round generation job scheduled to run every 1 minute.');
-    schedule.scheduleJob('*/1 * * * *', () => {
+    schedule.scheduleJob('*/3 * * * *', () => {
         generateLottoRoundsJob(db);
     });
 }
