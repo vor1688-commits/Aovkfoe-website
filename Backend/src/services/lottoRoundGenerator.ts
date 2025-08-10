@@ -1,3 +1,4 @@
+
 import { Pool } from 'pg';
 import * as schedule from 'node-schedule';
 
@@ -25,7 +26,6 @@ function calculateNextRoundDatetimes(
     specificDaysOfWeek: number[] | null,
     betting_skip_start_day: number
 ): { open: Date; cutoff: Date } | null {
-
     const [openHour, openMinute] = bettingStartTime ? bettingStartTime.split(':').map(Number) : [0, 0];
     const [cutoffHour, cutoffMinute] = bettingCutoffTime ? bettingCutoffTime.split(':').map(Number) : [0, 0];
     
@@ -49,11 +49,21 @@ function calculateNextRoundDatetimes(
     }
     
     let searchDate = new Date(baseDate);
+
+    // --- ✅ [จุดที่แก้ไข] ---
+    // ตรวจสอบว่าเวลาปิดรับตามกฎของ "วันที่ฐาน" (baseDate) ได้ผ่านไปแล้วหรือยัง
+    // ถ้าผ่านไปแล้ว ให้เริ่มค้นหาจาก "วันพรุ่งนี้" ทันที
+    const potentialCutoffForBaseDate = setTimeOnDate(searchDate, cutoffHour, cutoffMinute);
+    if (potentialCutoffForBaseDate <= nowInThailand) {
+        searchDate.setDate(searchDate.getDate() + 1);
+    }
+    // --- สิ้นสุดการแก้ไข ---
+
     searchDate.setHours(0, 0, 0, 0);
 
     for (let i = 0; i < 730; i++) {
         if (i > 0) {
-          searchDate.setDate(searchDate.getDate() + 1);
+            searchDate.setDate(searchDate.getDate() + 1);
         }
 
         let isValidDay = false;
@@ -80,15 +90,12 @@ function calculateNextRoundDatetimes(
             const potentialCutoff = setTimeOnDate(searchDate, cutoffHour, cutoffMinute);
 
             if (potentialCutoff > nowInThailand) {
-                // สร้าง "วันที่เปิด" โดยใช้ searchDate + betting_skip_start_day
                 const openDate = new Date(searchDate);
                 openDate.setDate(openDate.getDate() + betting_skip_start_day);
 
-                // คำนวณเวลาเปิดและปิดสุดท้ายจากวันที่ที่ถูกต้องของแต่ละตัว
-                const finalOpen = setTimeOnDate(openDate, openHour, openMinute); // ใช้วันที่ที่ถูกเลื่อน
-                const finalCutoff = setTimeOnDate(searchDate, cutoffHour, cutoffMinute); // ใช้วันที่เดิมตามกฎ
-
-                // ❗ ข้อควรระวัง: โค้ดส่วนนี้อาจทำให้ finalOpen มาทีหลัง finalCutoff ได้
+                const finalOpen = setTimeOnDate(openDate, openHour, openMinute);
+                const finalCutoff = setTimeOnDate(searchDate, cutoffHour, cutoffMinute);
+                
                 return { open: finalOpen, cutoff: finalCutoff };
             }
         }
@@ -96,29 +103,33 @@ function calculateNextRoundDatetimes(
 
     console.warn(`[Generator] Could not find a valid future date for strategy: ${strategy}`);
     return null;
-} 
+}
+
 
 export async function generateLottoRoundsJob(db: Pool) {
+    var _a, _b, _c;
     console.log('Running scheduled job: generate-next-rounds');
     const client = await db.connect();
     try {
         await client.query('BEGIN');
 
+        // ⭐ 1. แก้ไข SQL: แปลง NOW() เป็นเวลาไทยก่อนเปรียบเทียบ
         const updateExpiredAutoResult = await client.query(`
             UPDATE lotto_rounds 
             SET status = 'closed' 
             WHERE cutoff_datetime <= (NOW() AT TIME ZONE 'Asia/Bangkok') AND status = 'active'
         `);
-        if ((updateExpiredAutoResult.rowCount ?? 0) > 0) {
+        if (((_a = updateExpiredAutoResult.rowCount) !== null && _a !== void 0 ? _a : 0) > 0) {
             console.log(`[Scheduled Job] Updated ${updateExpiredAutoResult.rowCount} auto rounds to 'closed'.`);
         }
 
+        // ⭐ 2. แก้ไข SQL: ใช้หลักการเดียวกันสำหรับ Manual
         const updateExpiredManualResult = await client.query(`
             UPDATE lotto_rounds 
             SET status = 'manual_closed' 
             WHERE cutoff_datetime <= (NOW() AT TIME ZONE 'Asia/Bangkok') AND status = 'manual_active'
         `);
-        if ((updateExpiredManualResult.rowCount ?? 0) > 0) {
+        if (((_b = updateExpiredManualResult.rowCount) !== null && _b !== void 0 ? _b : 0) > 0) {
             console.log(`[Scheduled Job] Updated ${updateExpiredManualResult.rowCount} manual rounds to 'manual_closed'.`);
         }
 
@@ -130,16 +141,18 @@ export async function generateLottoRoundsJob(db: Pool) {
         `);
 
         let generatedCount = 0;
-        const now = new Date(); // ✅ ใช้เวลา UTC ปัจจุบัน
+        // ✅ คงการบวก 7 ชม. สำหรับ 'now' ในฝั่ง Node.js ไว้
+        const now = new Date(new Date().getTime() + (7 * 60 * 60 * 1000));
 
         for (const lottoType of lottoTypesResult.rows) {
+            // ⭐ 3. แก้ไข SQL: ตรวจสอบงวดในอนาคตโดยเทียบกับเวลาไทย
             const hasFutureActiveRoundResult = await client.query(`
                 SELECT 1 FROM lotto_rounds 
                 WHERE lotto_type_id = $1 AND cutoff_datetime > (NOW() AT TIME ZONE 'Asia/Bangkok') AND status = 'active' 
                 LIMIT 1
             `, [lottoType.id]);
 
-            if ((hasFutureActiveRoundResult.rowCount ?? 0) > 0) {
+            if (((_c = hasFutureActiveRoundResult.rowCount) !== null && _c !== void 0 ? _c : 0) > 0) {
                 continue;
             }
 
@@ -150,21 +163,11 @@ export async function generateLottoRoundsJob(db: Pool) {
 
             let baseDate;
             if (latestRoundResult.rows.length > 0) {
-                const lastCutoff = new Date(latestRoundResult.rows[0].cutoff_datetime);
-                
-                // ✨ --- [จุดที่แก้ไข] --- ✨
-                if (lottoType.generation_strategy === 'interval') {
-                    // สำหรับหวยรายนาที ให้ใช้เวลาล่าสุดเป็นฐานในการคำนวณต่อ
-                    baseDate = lastCutoff;
-                } else {
-                    // สำหรับหวยประเภทอื่น ให้เริ่มค้นหางวดใหม่จาก "วันถัดไป" เสมอ
-                    lastCutoff.setUTCDate(lastCutoff.getUTCDate() + 1);
-                    lastCutoff.setUTCHours(0, 0, 0, 0);
-                    baseDate = lastCutoff;
-                }
+                const dbCutoffDate = new Date(latestRoundResult.rows[0].cutoff_datetime);
+                // ✅ 4. แก้ไข Node.js: บวก 7 ชม. ให้กับ baseDate ที่ดึงมาจาก DB
+                baseDate = new Date(dbCutoffDate.getTime() + (7 * 60 * 60 * 1000));
             } else {
-                // ถ้าไม่เคยมีงวดมาก่อน ให้เริ่มจากเวลาปัจจุบัน
-                baseDate = now; 
+                baseDate = now; // ใช้ now ที่เป็นเวลาไทยแล้ว
             }
 
             const nextRoundTimes = calculateNextRoundDatetimes(
@@ -203,9 +206,12 @@ export async function generateLottoRoundsJob(db: Pool) {
     }
 }
 
+// --- ฟังก์ชันที่ใช้ในการเริ่มต้น Job ---
 export function startLottoRoundGenerationJob(db: Pool) {
-    console.log('Lotto round generation job scheduled to run every 3 minutes.');
+    console.log('Lotto round generation job scheduled to run every 1 minute.');
     schedule.scheduleJob('*/1 * * * *', () => { 
         generateLottoRoundsJob(db);
     });
 }
+
+ 
