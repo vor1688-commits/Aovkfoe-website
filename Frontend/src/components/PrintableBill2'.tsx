@@ -86,7 +86,7 @@ const PrintableBill2 = React.forwardRef<HTMLDivElement, Props>(({ order, details
       {/* 👇 แก้ไขสีพื้นหลังตรงนี้ 👇 */}
       <div className="bg-black text-white p-2 rounded-t-md text-sm text-center whitespace-nowrap">
         <span>
-          เลขที่บิล #{order.billRef} | {order.lottoName} | งวด {order.bill_lotto_draw}
+          เลขที่บิล #{order.billRef} | {order.lottoName} | งวด {formatDateBasicString(order.bill_lotto_draw, 'long')}
         </span>
       </div>
       

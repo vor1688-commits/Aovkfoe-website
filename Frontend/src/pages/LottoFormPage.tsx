@@ -6,7 +6,6 @@ import { toPng } from "html-to-image";
 import {
   generate6Glab,
   generate19Doors,
-  reverseNumbers,
   getNumble,
   generateBillRef,
   generatePermutations,
@@ -20,11 +19,8 @@ import { FullScreenLoader } from "../components/LoadingScreen";
 import PrintableReceipt from "../components/PrintAbleReceip";
 import { PrinterIcon, ArrowDownTrayIcon as DownloadIcon, XMarkIcon as XIcon, EyeIcon } from '@heroicons/react/24/solid';
 import { useModal } from "../components/Modal"; 
-import LimitCheckCard from "../components/LimitCheckCard";
-import SpentSummaryList from "../components/SpentSummaryList";
 import LimitAndSpentSummaryCard from "../components/LimitAndSpentSummaryCard";
 import api from "../api/axiosConfig";
- 
 
 // Interfaces
 interface BetNumber {
@@ -61,9 +57,6 @@ interface LottoTypeDetails {
   specific_days_of_week: number[] | null;
   betting_skip_start_day: number;
 }
-
-
-
 interface LottoRoundDetails {
   name: string;
   lottoDate: string;
@@ -76,7 +69,6 @@ interface SpecialNumbers {
   half_pay_numbers: string[];
 }
 
-
 const LottoFormPage = () => {
   const { user } = useAuth();
   const { lottoId } = useParams();
@@ -86,18 +78,13 @@ const LottoFormPage = () => {
   
   const [refreshKey, setRefreshKey] = useState(0);
   
-
   // State
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
-  const [specialNumbers, setSpecialNumbers] = useState<SpecialNumbers | null>(
-    null
-  );
+  const [specialNumbers, setSpecialNumbers] = useState<SpecialNumbers | null>(null);
   const [priceTote, setPriceTote] = useState("0");
   const [subTab, setSubTab] = useState("2d");
   const [note, setNote] = useState("");
-  const [roundDetails, setRoundDetails] = useState<LottoRoundDetails | null>(
-    null
-  );
+  const [roundDetails, setRoundDetails] = useState<LottoRoundDetails | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [number, setNumber] = useState("");
@@ -112,19 +99,15 @@ const LottoFormPage = () => {
     { value: "back", label: "รูด-หลัง" },
   ];
   const [bill, setBill] = useState<BillEntry[]>([]);
-  const [lottoTypeDetails, setLottoTypeDetails] =
-    useState<LottoTypeDetails | null>(null);
+  const [lottoTypeDetails, setLottoTypeDetails] = useState<LottoTypeDetails | null>(null);
   const [billToPrint, setBillToPrint] = useState<any | null>(null);
   const receiptRef = useRef<HTMLDivElement>(null);
   const [receiptImageUrl, setReceiptImageUrl] = useState<string | null>(null);
   const [loadingAddBills, setLoadingAddBills] = useState(false);
-
-  // NEW STATE: สำหรับควบคุมการแสดงผลของ Modal โดยเฉพาะ
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [isBillInvalid, setIsBillInvalid] = useState(false);
 
-  // --- Functions for generating image (Definitive fix) ---
-    const generateReceiptImage = useCallback(async () => {
+  const generateReceiptImage = useCallback(async () => {
     if (!receiptRef.current) {
         throw new Error("Receipt component is not available.");
     }
@@ -138,65 +121,49 @@ const LottoFormPage = () => {
     return await toPng(receiptRef.current, options);
   }, []);
 
-//The best lastday 5/08/2568  17:00
-const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
-  e.preventDefault();
-  const pastedText = e.clipboardData.getData('text').trim(); 
-  const normalizedText = pastedText.replace(/[\n,:=@!?.]+/g, ' ');
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    const pastedText = e.clipboardData.getData('text').trim(); 
+    const normalizedText = pastedText.replace(/[\n,:=@!?.]+/g, ' ');
+    const primaryGroups = normalizedText.split(/\s+/).filter(Boolean);
+    const tokens = primaryGroups.flatMap(group => 
+      group.includes('-') ? group.split('-') : [group]
+    ).filter(Boolean);
 
-  // 2. แยก "กลุ่มข้อมูลหลัก" ด้วย space
-  const primaryGroups = normalizedText.split(/\s+/).filter(Boolean);
-
-  // 3. นำแต่ละกลุ่มมาแยกย่อยด้วยขีดกลาง (-) อีกครั้ง
-  const tokens = primaryGroups.flatMap(group => 
-    group.includes('-') ? group.split('-') : [group]
-  ).filter(Boolean);
-
-  // --- ส่วนที่เหลือของฟังก์ชันทำงานเหมือนเดิม ---
-  const newBets: BetNumber[] = tokens.map(token => {
-    let isValid = false;
-    const isNumericOnly = /^\d+$/.test(token);
-    
-    if (isNumericOnly) {
-      if (subTab === '2d' && token.length === 2) {
-        isValid = true;
-      } else if (subTab === '3d' && token.length === 3) {
-        isValid = true;
-      } else if (subTab === 'run' && token.length === 1) {
-        isValid = true;
+    const newBets: BetNumber[] = tokens.map(token => {
+      let isValid = false;
+      const isNumericOnly = /^\d+$/.test(token);
+      
+      if (isNumericOnly) {
+        if (subTab === '2d' && token.length === 2) isValid = true;
+        else if (subTab === '3d' && token.length === 3) isValid = true;
+        else if (subTab === 'run' && token.length === 1) isValid = true;
       }
-    }
-    
-    return { 
-        value: token, 
-        selected: true, 
-        isValid: isValid 
-    };
-  });
+      
+      return { value: token, selected: true, isValid: isValid };
+    });
 
-  setBets(prevBets => {
-    const existingValues = new Set(prevBets.map(b => b.value));
-    const uniqueNewBets = newBets.filter(b => !existingValues.has(b.value));
-    return [...prevBets, ...uniqueNewBets];
-  });
-};
+    setBets(prevBets => {
+      const existingValues = new Set(prevBets.map(b => b.value));
+      const uniqueNewBets = newBets.filter(b => !existingValues.has(b.value));
+      return [...prevBets, ...uniqueNewBets];
+    });
+  };
 
   useEffect(() => {
     if (billToPrint) {
-      // ใช้ setTimeout เพื่อรอให้ DOM อัปเดตเสร็จสมบูรณ์
       const timer = setTimeout(() => {
         generateReceiptImage()
-          .then(setReceiptImageUrl) // เมื่อสร้างรูปเสร็จ ให้ set URL
+          .then(setReceiptImageUrl)
           .catch(err => console.error("Failed to generate receipt image:", err));
-      }, 200); // เพิ่มเวลาเล็กน้อยเพื่อความแน่นอน
+      }, 200);
       return () => clearTimeout(timer);
     } else {
-        setReceiptImageUrl(null); // เคลียร์รูปเมื่อปิดบิล
+        setReceiptImageUrl(null);
     }
   }, [billToPrint, generateReceiptImage]);
- 
-
-const fetchSpecialNumbersOnly = useCallback(async () => {
+  
+  const fetchSpecialNumbersOnly = useCallback(async () => {
     if (!lottoId) return;
     try { 
         const response = await api.get<SpecialNumbers>(`/api/lotto-rounds/${lottoId}/number-special`);
@@ -208,85 +175,76 @@ const fetchSpecialNumbersOnly = useCallback(async () => {
             console.error("Error fetching special numbers:", err);
         }
     }
-}, [lottoId]);
+  }, [lottoId]);
 
-useEffect(() => {
-    const loadInitialData = async () => {
-        if (!lottoId) {
-            setIsLoading(false);
-            setError("ไม่พบ ID ของงวดหวยใน URL");
-            return;
-        }
-        setIsLoading(true);
-        setError(null);
-        
-        try {
-            const results = await Promise.allSettled([
-                api.get(`/api/lotto-rounds/${lottoId}`),
-                fetchSpecialNumbersOnly()
-            ]);
-
-            const roundResult = results[0];
-            if (roundResult.status === 'fulfilled') {
-                const roundData = roundResult.value.data;
-                const cutoffDate = new Date(roundData.round.cutoff_datetime);
-
-                // --- ✅ แก้ไข: เพิ่มการลบ 7 ชั่วโมงกลับเข้ามา ---
-                // เนื่องจากข้อมูล cutoff_datetime จาก API สำหรับหวยหุ้นเป็น UTC ที่ไม่ถูกต้อง
-                // เราจึงต้องลบส่วนต่าง 7 ชั่วโมงนี้ออกไปเองที่ฝั่ง Client
-                const sevenHoursInMillis = 7 * 60 * 60 * 1000;
-                const correctedTimestamp = cutoffDate.getTime() - sevenHoursInMillis;
-                // ---------------------------------------------
-
-                setRoundDetails({
-                    name: roundData.round.name,
-                    lottoDate: formatDateString(new Date(correctedTimestamp).toISOString(), 'long'),
-                    lottoTime: new Date(correctedTimestamp).toLocaleTimeString("th-TH", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        timeZone: 'UTC', // ใช้ UTC เพื่อแสดงผลเวลาที่แก้ไขแล้วโดยตรง
-                    }),
-                    fullCutoffTimestamp: correctedTimestamp, // <-- ใช้เวลาที่ถูกแก้ไขแล้ว
-                    lotto_type_id: roundData.round.lotto_type_id,
-                });
-
-                setCurrentTime(new Date(roundData.serverTime));
-
-                const typeResponse = await api.get(`/api/lotto-types/${roundData.round.lotto_type_id}`);
-                setLottoTypeDetails(typeResponse.data);
-
-            } else {
-                throw new Error("ไม่พบข้อมูลงวดหวย");
-            }
-            
-            if (results[1].status === 'rejected') {
-                console.error("Failed to fetch special numbers:", results[1].reason);
-            }
-            
-        } catch (err: any) {
-            setError(err.response?.data?.error || err.message || "เกิดข้อผิดพลาดในการโหลดข้อมูล");
-        } finally {
-            setIsLoading(false);
-        }
-    };
+  const loadInitialData = useCallback(async () => {
+    if (!lottoId) {
+        setIsLoading(false);
+        setError("ไม่พบ ID ของงวดหวยใน URL");
+        return;
+    }
+    setIsLoading(true);
+    setError(null);
     
+    try {
+        const results = await Promise.allSettled([
+            api.get(`/api/lotto-rounds/${lottoId}`),
+            fetchSpecialNumbersOnly()
+        ]);
+
+        const roundResult = results[0];
+        if (roundResult.status === 'fulfilled') {
+            const roundData = roundResult.value.data;
+            const cutoffDate = new Date(roundData.round.cutoff_datetime);
+
+            // ✨ --- [จุดที่แก้ไข] นำ Logic การปรับ Timezone กลับมา --- ✨
+            // เนื่องจากข้อมูล cutoff_datetime จาก API สำหรับหวยบางประเภทอาจเป็น UTC ที่ไม่ถูกต้อง
+            // เราจึงต้องปรับส่วนต่างเวลาที่ฝั่ง Client
+            const sevenHoursInMillis = 7 * 60 * 60 * 1000;
+            const correctedTimestamp = cutoffDate.getTime() - sevenHoursInMillis;
+            // ----------------------------------------------------
+
+            setRoundDetails({
+                name: roundData.round.name,
+                lottoDate: formatDateString(new Date(correctedTimestamp).toISOString(), 'long'),
+                lottoTime: new Date(correctedTimestamp).toLocaleTimeString("th-TH", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    timeZone: 'UTC', // ใช้ UTC เพื่อแสดงผลเวลาที่แก้ไขแล้วโดยตรง
+                }),
+                fullCutoffTimestamp: correctedTimestamp, // <-- ใช้เวลาที่ถูกแก้ไขแล้ว
+                lotto_type_id: roundData.round.lotto_type_id,
+            });
+            setCurrentTime(new Date(roundData.serverTime));
+
+            const typeResponse = await api.get(`/api/lotto-types/${roundData.round.lotto_type_id}`);
+            setLottoTypeDetails(typeResponse.data);
+        } else {
+            throw new Error("ไม่พบข้อมูลงวดหวย");
+        }
+        
+        if (results[1].status === 'rejected') {
+            console.error("Failed to fetch special numbers:", results[1].reason);
+        }
+    } catch (err: any) {
+        setError(err.response?.data?.error || err.message || "เกิดข้อผิดพลาดในการโหลดข้อมูล");
+    } finally {
+        setIsLoading(false);
+    }
+  }, [lottoId, fetchSpecialNumbersOnly]);
+  
+  useEffect(() => {
     loadInitialData();
-}, [lottoId, fetchSpecialNumbersOnly]);
+  }, [loadInitialData]);
 
   useEffect(() => {
-    const intervalId = setInterval(
-      () => fetchSpecialNumbersOnly(),
-      1000 * 60 * 3
-    );
+    const intervalId = setInterval(() => fetchSpecialNumbersOnly(), 1000 * 60 * 3);
     return () => clearInterval(intervalId);
   }, [fetchSpecialNumbersOnly]);
 
   useEffect(() => {
     if (!currentTime) return;
-    const interval = setInterval(
-      () => setCurrentTime((prev) => new Date(prev!.getTime() + 1000)),
-      1000
-    );
+    const interval = setInterval(() => setCurrentTime((prev) => new Date(prev!.getTime() + 1000)), 1000);
     return () => clearInterval(interval);
   }, [currentTime]);
 
@@ -294,11 +252,45 @@ useEffect(() => {
     if (currentTime && roundDetails?.fullCutoffTimestamp) {
       if (currentTime.getTime() >= roundDetails.fullCutoffTimestamp) {
         alert("หมดเวลาซื้อแล้ว","ระบบจะนำท่านกลับสู่หน้าหลัก", 'light').then(() => navigate("/"));
-        navigate("/");
       }
     }
-  }, [currentTime, roundDetails, navigate]);
+  }, [currentTime, roundDetails, navigate, alert]);
 
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log("Tab is visible again, re-syncing time...");
+        loadInitialData();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [loadInitialData]);
+
+  useEffect(() => {
+    const closedNumbers = specialNumbers?.closed_numbers || [];
+    
+    const newTotal = bill.reduce((sum, entry) => {
+        const pricePerBet = (entry.priceTop || 0) + (entry.priceTote || 0) + (entry.priceBottom || 0);
+        const validBetsInEntry = entry.bets.filter(bet => !closedNumbers.includes(bet));
+        const entryTotal = validBetsInEntry.length * pricePerBet;
+        return sum + entryTotal;
+    }, 0);
+    setTotal(newTotal);
+
+    if (bill.length > 0) {
+        const allNumbersAreClosed = bill.every(entry => 
+            entry.bets.every(betNumber => 
+                closedNumbers.includes(betNumber)
+            )
+        );
+        setIsBillInvalid(allNumbersAreClosed);
+    } else {
+        setIsBillInvalid(false);
+    }
+  }, [bill, specialNumbers]);
 
 
 useEffect(() => {
