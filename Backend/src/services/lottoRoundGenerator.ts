@@ -205,7 +205,7 @@ export async function generateLottoRoundsJob(db: Pool) {
 
 export function startLottoRoundGenerationJob(db: Pool) {
     console.log('Lotto round generation job scheduled to run every 3 minutes.');
-    schedule.scheduleJob('*/3 * * * *', () => { 
+    schedule.scheduleJob('*/1 * * * *', () => { 
         generateLottoRoundsJob(db);
     });
 }
