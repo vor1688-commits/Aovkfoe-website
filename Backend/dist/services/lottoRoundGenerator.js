@@ -190,7 +190,7 @@ function generateLottoRoundsJob(db) {
 // --- ฟังก์ชันที่ใช้ในการเริ่มต้น Job ---
 function startLottoRoundGenerationJob(db) {
     console.log('Lotto round generation job scheduled to run every 1 minute.');
-    schedule.scheduleJob('*/3 * * * *', () => {
+    schedule.scheduleJob('*/1 * * * *', () => {
         generateLottoRoundsJob(db);
     });
 }
