@@ -23,7 +23,8 @@ function calculateNextRoundDatetimes(
     monthlyFixedDays: number[] | null,
     monthlyFloatingDates: any[] | null,
     specificDaysOfWeek: number[] | null,
-    betting_skip_start_day: number
+    betting_skip_start_day: number,
+    isCalculatingNextRound: boolean // รับ Flag
 ): { open: Date; cutoff: Date } | null {
 
     const [openHour, openMinute] = bettingStartTime ? bettingStartTime.split(':').map(Number) : [0, 0];
@@ -49,6 +50,12 @@ function calculateNextRoundDatetimes(
     }
     
     let searchDate = new Date(baseDate);
+
+    // [แก้ไข] เพิ่ม Logic การตัดสินใจโดยใช้ Flag
+    if (isCalculatingNextRound) {
+        searchDate.setDate(searchDate.getDate() + 1);
+    }
+
     searchDate.setHours(0, 0, 0, 0);
 
     for (let i = 0; i < 730; i++) {
@@ -79,10 +86,8 @@ function calculateNextRoundDatetimes(
         if (isValidDay) {
             const potentialCutoff = setTimeOnDate(searchDate, cutoffHour, cutoffMinute);
 
-            // ==========================================================
-            // ##                 จุดที่แก้ไข (The Fix)                 ##
-            // ==========================================================
-            if (potentialCutoff > nowInThailand && potentialCutoff > baseDate) {
+            // ใช้ Logic เดิมก็เพียงพอแล้ว เพราะเราจัดการวันที่เริ่มต้นค้นหาให้ถูกต้องแล้ว
+            if (potentialCutoff > nowInThailand) {
                 const openDate = new Date(searchDate);
                 openDate.setDate(openDate.getDate() + betting_skip_start_day);
 
@@ -151,9 +156,12 @@ export async function generateLottoRoundsJob(db: Pool) {
             `, [lottoType.id]);
 
             let baseDate;
+            let isCalculatingNextRound = false; // [แก้ไข] สร้าง Flag
+
             if (latestRoundResult.rows.length > 0) {
                 const dbCutoffDate = new Date(latestRoundResult.rows[0].cutoff_datetime);
                 baseDate = new Date(dbCutoffDate.getTime() + (7 * 60 * 60 * 1000));
+                isCalculatingNextRound = true; // [แก้ไข] ตั้ง Flag เป็น true
             } else {
                 baseDate = now;
             }
@@ -167,7 +175,8 @@ export async function generateLottoRoundsJob(db: Pool) {
                 lottoType.monthly_fixed_days, 
                 lottoType.monthly_floating_dates, 
                 lottoType.specific_days_of_week, 
-                lottoType.betting_skip_start_day
+                lottoType.betting_skip_start_day,
+                isCalculatingNextRound // [แก้ไข] ส่ง Flag เข้าไป
             );
 
             if (nextRoundTimes) {
@@ -196,7 +205,7 @@ export async function generateLottoRoundsJob(db: Pool) {
 
 export function startLottoRoundGenerationJob(db: Pool) {
     console.log('Lotto round generation job scheduled to run every 1 minute.');
-    schedule.scheduleJob('*/3 * * * *', () => { 
+    schedule.scheduleJob('*/1 * * * *', () => { 
         generateLottoRoundsJob(db);
     });
 }
