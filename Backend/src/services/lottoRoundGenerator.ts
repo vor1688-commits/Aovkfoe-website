@@ -14,6 +14,14 @@ interface LottoType {
     betting_skip_start_day: number;
 }
 
+// [แก้ไข] สร้างฟังก์ชัน Helper เพื่อแปลงวันที่เป็น YYYY-MM-DD โดยไม่ยุ่งกับ Timezone
+const toLocalDateString = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const day = date.getDate().toString().padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
 function calculateNextRoundDatetimes(
     baseDate: Date,
     strategy: string,
@@ -24,7 +32,7 @@ function calculateNextRoundDatetimes(
     monthlyFloatingDates: any[] | null,
     specificDaysOfWeek: number[] | null,
     betting_skip_start_day: number,
-    isFirstRoundEver: boolean // Flag ที่บอกว่าเป็น "งวดแรก" หรือไม่
+    isFirstRoundEver: boolean
 ): { open: Date; cutoff: Date } | null {
 
     const [openHour, openMinute] = bettingStartTime ? bettingStartTime.split(':').map(Number) : [0, 0];
@@ -59,33 +67,15 @@ function calculateNextRoundDatetimes(
 
         let isValidDay = false;
         switch (strategy) {
-            case 'daily':
-                isValidDay = true;
-                break;
-            case 'onlyday':
-                if (specificDaysOfWeek) {
-                    isValidDay = specificDaysOfWeek.includes(searchDate.getDay());
-                }
-                break;
-            case 'monthly_fixed_days':
-                if (monthlyFixedDays) {
-                    const day = searchDate.getDate();
-                    const month = searchDate.getMonth() + 1;
-                    const isFloating = monthlyFloatingDates?.some(rule => rule.month === month && rule.day === day) ?? false;
-                    isValidDay = monthlyFixedDays.includes(day) || isFloating;
-                }
-                break;
+            case 'daily': isValidDay = true; break;
+            case 'onlyday': if (specificDaysOfWeek) { isValidDay = specificDaysOfWeek.includes(searchDate.getDay()); } break;
+            case 'monthly_fixed_days': if (monthlyFixedDays) { const day = searchDate.getDate(); const month = searchDate.getMonth() + 1; const isFloating = monthlyFloatingDates?.some(rule => rule.month === month && rule.day === day) ?? false; isValidDay = monthlyFixedDays.includes(day) || isFloating; } break;
         }
 
         if (isValidDay) {
-            // [จุดแก้ไขที่ 1] - เพิ่มเงื่อนไขตรวจสอบ "วันเดียวกัน"
-            if (!isFirstRoundEver) {
-                // ถ้าไม่ใช่งวดแรกสุด ให้เช็คว่า "วันที่" ที่กำลังจะสร้าง เป็นวันเดียวกับ "วันที่" ของงวดล่าสุดหรือไม่
-                const searchDateDay = searchDate.toISOString().slice(0, 10);
-                const baseDateDay = baseDate.toISOString().slice(0, 10);
-                if (searchDateDay === baseDateDay) {
-                    continue; // ถ้าเป็นวันเดียวกัน ให้ข้ามไปวันถัดไปทันที
-                }
+            // [แก้ไข] เปลี่ยนมาใช้วิธีเปรียบเทียบวันที่ที่ถูกต้อง 100%
+            if (!isFirstRoundEver && (toLocalDateString(searchDate) === toLocalDateString(baseDate))) {
+                continue; // ถ้าเป็น "วันเดียวกัน" กับงวดล่าสุด ให้ข้ามไปเสมอ
             }
             
             const potentialCutoff = setTimeOnDate(searchDate, cutoffHour, cutoffMinute);
@@ -93,10 +83,8 @@ function calculateNextRoundDatetimes(
             if (potentialCutoff > nowInThailand) {
                 const openDate = new Date(searchDate);
                 openDate.setDate(openDate.getDate() + betting_skip_start_day);
-
                 const finalOpen = setTimeOnDate(openDate, openHour, openMinute);
                 const finalCutoff = setTimeOnDate(searchDate, cutoffHour, cutoffMinute);
-                
                 return { open: finalOpen, cutoff: finalCutoff };
             }
         }
@@ -114,55 +102,28 @@ export async function generateLottoRoundsJob(db: Pool) {
     try {
         await client.query('BEGIN');
 
-        const updateExpiredAutoResult = await client.query(`
-            UPDATE lotto_rounds 
-            SET status = 'closed' 
-            WHERE cutoff_datetime <= (NOW() AT TIME ZONE 'Asia/Bangkok') AND status = 'active'
-        `);
-        if (((_a = updateExpiredAutoResult.rowCount) !== null && _a !== void 0 ? _a : 0) > 0) {
-            console.log(`[Scheduled Job] Updated ${updateExpiredAutoResult.rowCount} auto rounds to 'closed'.`);
-        }
+        const updateExpiredAutoResult = await client.query(`UPDATE lotto_rounds SET status = 'closed' WHERE cutoff_datetime <= (NOW() AT TIME ZONE 'Asia/Bangkok') AND status = 'active'`);
+        if (((_a = updateExpiredAutoResult.rowCount) !== null && _a !== void 0 ? _a : 0) > 0) { console.log(`[Scheduled Job] Updated ${updateExpiredAutoResult.rowCount} auto rounds to 'closed'.`); }
 
-        const updateExpiredManualResult = await client.query(`
-            UPDATE lotto_rounds 
-            SET status = 'manual_closed' 
-            WHERE cutoff_datetime <= (NOW() AT TIME ZONE 'Asia/Bangkok') AND status = 'manual_active'
-        `);
-        if (((_b = updateExpiredManualResult.rowCount) !== null && _b !== void 0 ? _b : 0) > 0) {
-            console.log(`[Scheduled Job] Updated ${updateExpiredManualResult.rowCount} manual rounds to 'manual_closed'.`);
-        }
+        const updateExpiredManualResult = await client.query(`UPDATE lotto_rounds SET status = 'manual_closed' WHERE cutoff_datetime <= (NOW() AT TIME ZONE 'Asia/Bangkok') AND status = 'manual_active'`);
+        if (((_b = updateExpiredManualResult.rowCount) !== null && _b !== void 0 ? _b : 0) > 0) { console.log(`[Scheduled Job] Updated ${updateExpiredManualResult.rowCount} manual rounds to 'manual_closed'.`); }
 
-        const lottoTypesResult = await client.query<LottoType>(`
-            SELECT id, name, betting_start_time, betting_cutoff_time,
-                   generation_strategy, interval_minutes, monthly_fixed_days, monthly_floating_dates,
-                   specific_days_of_week, betting_skip_start_day
-            FROM lotto_types ORDER BY id
-        `);
+        const lottoTypesResult = await client.query<LottoType>(`SELECT id, name, betting_start_time, betting_cutoff_time, generation_strategy, interval_minutes, monthly_fixed_days, monthly_floating_dates, specific_days_of_week, betting_skip_start_day FROM lotto_types ORDER BY id`);
 
         let generatedCount = 0;
         const now = new Date(new Date().getTime() + (7 * 60 * 60 * 1000));
 
         for (const lottoType of lottoTypesResult.rows) {
-            const hasFutureActiveRoundResult = await client.query(`
-                SELECT 1 FROM lotto_rounds 
-                WHERE lotto_type_id = $1 AND cutoff_datetime > (NOW() AT TIME ZONE 'Asia/Bangkok') AND status = 'active' 
-                LIMIT 1
-            `, [lottoType.id]);
+            const hasFutureActiveRoundResult = await client.query(`SELECT 1 FROM lotto_rounds WHERE lotto_type_id = $1 AND cutoff_datetime > (NOW() AT TIME ZONE 'Asia/Bangkok') AND status = 'active' LIMIT 1`, [lottoType.id]);
+            if (((_c = hasFutureActiveRoundResult.rowCount) !== null && _c !== void 0 ? _c : 0) > 0) { continue; }
 
-            if (((_c = hasFutureActiveRoundResult.rowCount) !== null && _c !== void 0 ? _c : 0) > 0) {
-                continue;
-            }
-
-            const latestRoundResult = await client.query(`
-                SELECT cutoff_datetime FROM lotto_rounds
-                WHERE lotto_type_id = $1 ORDER BY cutoff_datetime DESC LIMIT 1
-            `, [lottoType.id]);
+            const latestRoundResult = await client.query(`SELECT cutoff_datetime FROM lotto_rounds WHERE lotto_type_id = $1 ORDER BY cutoff_datetime DESC LIMIT 1`, [lottoType.id]);
 
             let baseDate;
-            const isFirstRoundEver = latestRoundResult.rows.length === 0; // [จุดแก้ไขที่ 2] - สร้าง Flag
+            const isFirstRoundEver = latestRoundResult.rows.length === 0;
 
             if (isFirstRoundEver) {
-                baseDate = now; // ถ้าเป็นงวดแรกสุด ให้ใช้เวลาปัจจุบัน
+                baseDate = now;
             } else {
                 const dbCutoffDate = new Date(latestRoundResult.rows[0].cutoff_datetime);
                 baseDate = new Date(dbCutoffDate.getTime() + (7 * 60 * 60 * 1000));
@@ -178,23 +139,18 @@ export async function generateLottoRoundsJob(db: Pool) {
                 lottoType.monthly_floating_dates, 
                 lottoType.specific_days_of_week, 
                 lottoType.betting_skip_start_day,
-                isFirstRoundEver // [จุดแก้ไขที่ 3] - ส่ง Flag เข้าไป
+                isFirstRoundEver
             );
 
             if (nextRoundTimes) {
-                await client.query(`
-                    INSERT INTO lotto_rounds (name, open_datetime, cutoff_datetime, lotto_type_id, status)
-                    VALUES ($1, $2, $3, $4, 'active')
-                `, [lottoType.name, nextRoundTimes.open, nextRoundTimes.cutoff, lottoType.id]);
+                await client.query(`INSERT INTO lotto_rounds (name, open_datetime, cutoff_datetime, lotto_type_id, status) VALUES ($1, $2, $3, $4, 'active')`, [lottoType.name, nextRoundTimes.open, nextRoundTimes.cutoff, lottoType.id]);
                 generatedCount++;
                 console.log(`[Scheduled Job] Generated new round for ${lottoType.name}: Open=${nextRoundTimes.open.toISOString()}, Cutoff=${nextRoundTimes.cutoff.toISOString()}`);
             }
         }
 
         await client.query('COMMIT');
-        if (generatedCount > 0) {
-            console.log(`[Scheduled Job] Finished. Generated ${generatedCount} new rounds.`);
-        }
+        if (generatedCount > 0) { console.log(`[Scheduled Job] Finished. Generated ${generatedCount} new rounds.`); }
     }
     catch (innerErr) {
         await client.query('ROLLBACK');
