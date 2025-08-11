@@ -45,13 +45,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.generateLottoRoundsJob = generateLottoRoundsJob;
 exports.startLottoRoundGenerationJob = startLottoRoundGenerationJob;
 const schedule = __importStar(require("node-schedule"));
-const toLocalDateString = (date) => {
-    const year = date.getFullYear();
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
-    const day = date.getDate().toString().padStart(2, '0');
-    return `${year}-${month}-${day}`;
-};
-function calculateNextRoundDatetimes(baseDate, strategy, bettingStartTime, bettingCutoffTime, intervalMinutes, monthlyFixedDays, monthlyFloatingDates, specificDaysOfWeek, betting_skip_start_day, isFirstRoundEver) {
+function calculateNextRoundDatetimes(baseDate, strategy, bettingStartTime, bettingCutoffTime, intervalMinutes, monthlyFixedDays, monthlyFloatingDates, specificDaysOfWeek, betting_skip_start_day) {
     var _d;
     const [openHour, openMinute] = bettingStartTime ? bettingStartTime.split(':').map(Number) : [0, 0];
     const [cutoffHour, cutoffMinute] = bettingCutoffTime ? bettingCutoffTime.split(':').map(Number) : [0, 0];
@@ -61,7 +55,6 @@ function calculateNextRoundDatetimes(baseDate, strategy, bettingStartTime, betti
         newDate.setHours(hour, minute, 0, 0);
         return newDate;
     };
-    // [แก้ไข] เพิ่มเงื่อนไข && intervalMinutes !== null
     if (strategy === 'interval' && intervalMinutes !== null) {
         let nextOpenDate = new Date(baseDate.getTime() + 1000);
         let nextCutoffDate = new Date(nextOpenDate.getTime() + (intervalMinutes * 60 * 1000));
@@ -97,15 +90,15 @@ function calculateNextRoundDatetimes(baseDate, strategy, bettingStartTime, betti
                 break;
         }
         if (isValidDay) {
-            if (!isFirstRoundEver && (toLocalDateString(searchDate) === toLocalDateString(baseDate))) {
-                continue;
-            }
             const potentialCutoff = setTimeOnDate(searchDate, cutoffHour, cutoffMinute);
             if (potentialCutoff > nowInThailand) {
+                // สร้าง "วันที่เปิด" โดยใช้ searchDate + betting_skip_start_day
                 const openDate = new Date(searchDate);
                 openDate.setDate(openDate.getDate() + betting_skip_start_day);
-                const finalOpen = setTimeOnDate(openDate, openHour, openMinute);
-                const finalCutoff = setTimeOnDate(searchDate, cutoffHour, cutoffMinute);
+                // คำนวณเวลาเปิดและปิดสุดท้ายจากวันที่ที่ถูกต้องของแต่ละตัว
+                const finalOpen = setTimeOnDate(openDate, openHour, openMinute); // ใช้วันที่ที่ถูกเลื่อน
+                const finalCutoff = setTimeOnDate(searchDate, cutoffHour, cutoffMinute); // ใช้วันที่เดิมตามกฎ
+                // ❗ ข้อควรระวัง: โค้ดส่วนนี้อาจทำให้ finalOpen มาทีหลัง finalCutoff ได้
                 return { open: finalOpen, cutoff: finalCutoff };
             }
         }
@@ -120,35 +113,62 @@ function generateLottoRoundsJob(db) {
         const client = yield db.connect();
         try {
             yield client.query('BEGIN');
-            const updateExpiredAutoResult = yield client.query(`UPDATE lotto_rounds SET status = 'closed' WHERE cutoff_datetime <= (NOW() AT TIME ZONE 'Asia/Bangkok') AND status = 'active'`);
+            // ⭐ 1. แก้ไข SQL: แปลง NOW() เป็นเวลาไทยก่อนเปรียบเทียบ
+            const updateExpiredAutoResult = yield client.query(`
+            UPDATE lotto_rounds 
+            SET status = 'closed' 
+            WHERE cutoff_datetime <= (NOW() AT TIME ZONE 'Asia/Bangkok') AND status = 'active'
+        `);
             if (((_a = updateExpiredAutoResult.rowCount) !== null && _a !== void 0 ? _a : 0) > 0) {
                 console.log(`[Scheduled Job] Updated ${updateExpiredAutoResult.rowCount} auto rounds to 'closed'.`);
             }
-            const updateExpiredManualResult = yield client.query(`UPDATE lotto_rounds SET status = 'manual_closed' WHERE cutoff_datetime <= (NOW() AT TIME ZONE 'Asia/Bangkok') AND status = 'manual_active'`);
+            // ⭐ 2. แก้ไข SQL: ใช้หลักการเดียวกันสำหรับ Manual
+            const updateExpiredManualResult = yield client.query(`
+            UPDATE lotto_rounds 
+            SET status = 'manual_closed' 
+            WHERE cutoff_datetime <= (NOW() AT TIME ZONE 'Asia/Bangkok') AND status = 'manual_active'
+        `);
             if (((_b = updateExpiredManualResult.rowCount) !== null && _b !== void 0 ? _b : 0) > 0) {
                 console.log(`[Scheduled Job] Updated ${updateExpiredManualResult.rowCount} manual rounds to 'manual_closed'.`);
             }
-            const lottoTypesResult = yield client.query(`SELECT id, name, betting_start_time, betting_cutoff_time, generation_strategy, interval_minutes, monthly_fixed_days, monthly_floating_dates, specific_days_of_week, betting_skip_start_day FROM lotto_types ORDER BY id`);
+            const lottoTypesResult = yield client.query(`
+            SELECT id, name, betting_start_time, betting_cutoff_time,
+                   generation_strategy, interval_minutes, monthly_fixed_days, monthly_floating_dates,
+                   specific_days_of_week, betting_skip_start_day
+            FROM lotto_types ORDER BY id
+        `);
             let generatedCount = 0;
+            // ✅ คงการบวก 7 ชม. สำหรับ 'now' ในฝั่ง Node.js ไว้
             const now = new Date(new Date().getTime() + (7 * 60 * 60 * 1000));
             for (const lottoType of lottoTypesResult.rows) {
-                const hasFutureActiveRoundResult = yield client.query(`SELECT 1 FROM lotto_rounds WHERE lotto_type_id = $1 AND cutoff_datetime > (NOW() AT TIME ZONE 'Asia/Bangkok') AND status = 'active' LIMIT 1`, [lottoType.id]);
+                // ⭐ 3. แก้ไข SQL: ตรวจสอบงวดในอนาคตโดยเทียบกับเวลาไทย
+                const hasFutureActiveRoundResult = yield client.query(`
+                SELECT 1 FROM lotto_rounds 
+                WHERE lotto_type_id = $1 AND cutoff_datetime > (NOW() AT TIME ZONE 'Asia/Bangkok') AND status = 'active' 
+                LIMIT 1
+            `, [lottoType.id]);
                 if (((_c = hasFutureActiveRoundResult.rowCount) !== null && _c !== void 0 ? _c : 0) > 0) {
                     continue;
                 }
-                const latestRoundResult = yield client.query(`SELECT cutoff_datetime FROM lotto_rounds WHERE lotto_type_id = $1 ORDER BY cutoff_datetime DESC LIMIT 1`, [lottoType.id]);
+                const latestRoundResult = yield client.query(`
+                SELECT cutoff_datetime FROM lotto_rounds
+                WHERE lotto_type_id = $1 ORDER BY cutoff_datetime DESC LIMIT 1
+            `, [lottoType.id]);
                 let baseDate;
-                const isFirstRoundEver = latestRoundResult.rows.length === 0;
-                if (isFirstRoundEver) {
-                    baseDate = now;
-                }
-                else {
+                if (latestRoundResult.rows.length > 0) {
                     const dbCutoffDate = new Date(latestRoundResult.rows[0].cutoff_datetime);
+                    // ✅ 4. แก้ไข Node.js: บวก 7 ชม. ให้กับ baseDate ที่ดึงมาจาก DB
                     baseDate = new Date(dbCutoffDate.getTime() + (7 * 60 * 60 * 1000));
                 }
-                const nextRoundTimes = calculateNextRoundDatetimes(baseDate, lottoType.generation_strategy, lottoType.betting_start_time, lottoType.betting_cutoff_time, lottoType.interval_minutes, lottoType.monthly_fixed_days, lottoType.monthly_floating_dates, lottoType.specific_days_of_week, lottoType.betting_skip_start_day, isFirstRoundEver);
+                else {
+                    baseDate = now; // ใช้ now ที่เป็นเวลาไทยแล้ว
+                }
+                const nextRoundTimes = calculateNextRoundDatetimes(baseDate, lottoType.generation_strategy, lottoType.betting_start_time, lottoType.betting_cutoff_time, lottoType.interval_minutes, lottoType.monthly_fixed_days, lottoType.monthly_floating_dates, lottoType.specific_days_of_week, lottoType.betting_skip_start_day);
                 if (nextRoundTimes) {
-                    yield client.query(`INSERT INTO lotto_rounds (name, open_datetime, cutoff_datetime, lotto_type_id, status) VALUES ($1, $2, $3, $4, 'active')`, [lottoType.name, nextRoundTimes.open, nextRoundTimes.cutoff, lottoType.id]);
+                    yield client.query(`
+                    INSERT INTO lotto_rounds (name, open_datetime, cutoff_datetime, lotto_type_id, status)
+                    VALUES ($1, $2, $3, $4, 'active')
+                `, [lottoType.name, nextRoundTimes.open, nextRoundTimes.cutoff, lottoType.id]);
                     generatedCount++;
                     console.log(`[Scheduled Job] Generated new round for ${lottoType.name}: Open=${nextRoundTimes.open.toISOString()}, Cutoff=${nextRoundTimes.cutoff.toISOString()}`);
                 }
@@ -167,9 +187,10 @@ function generateLottoRoundsJob(db) {
         }
     });
 }
+// --- ฟังก์ชันที่ใช้ในการเริ่มต้น Job ---
 function startLottoRoundGenerationJob(db) {
     console.log('Lotto round generation job scheduled to run every 1 minute.');
-    schedule.scheduleJob('*/3 * * * *', () => {
+    schedule.scheduleJob('*/1 * * * *', () => {
         generateLottoRoundsJob(db);
     });
 }

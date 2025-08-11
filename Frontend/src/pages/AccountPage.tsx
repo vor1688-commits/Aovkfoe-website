@@ -422,114 +422,118 @@ const AccountPage: React.FC = () => {
     );
   };
 
-  const {
-    winningItems,
-    displayTotalWinnings,
-    displayNetProfit,
-    winningsByBetType,
-    doughnutChartData,
-    lottoNameBarChartData,
-    groupedWinningItems,
-  } = useMemo(() => {
-    const items = checkableItems.filter(
-      (item) => calculatePrizeDetails(item).isWinner
-    );
-    const totalWinnings = items.reduce(
-      (sum, item) => sum + parseFloat(item.payoutAmount as any),
-      0
-    );
-    const netProfit = summaryData
-      ? totalWinnings - summaryData.summary.totalBetAmount
-      : 0;
-    const winningsSummary = items.reduce((acc, item) => {
-      const name = item.bet_type;
-      acc[name] = (acc[name] || 0) + parseFloat(item.payoutAmount as any);
-      return acc;
-    }, {} as Record<string, number>);
-    const winningsByType = Object.entries(winningsSummary)
-      .map(([name, total]) => ({ name, total }))
-      .sort((a, b) => b.total - a.total);
+const {
+    winningItems,
+    displayTotalWinnings,
+    displayNetProfit,
+    winningsByBetType,
+    doughnutChartData,
+    lottoNameBarChartData,
+    groupedWinningItems,
+  } = useMemo(() => {
+    const items = checkableItems.filter(
+      (item) => calculatePrizeDetails(item).isWinner
+    );
+    const totalWinnings = items.reduce(
+      (sum, item) => sum + parseFloat(item.payoutAmount as any),
+      0
+    );
 
-    // ✨ --- [แก้ไข] กรองข้อมูลสำหรับ Doughnut Chart --- ✨
-    const originalData = summaryData?.breakdown.byLottoType || [];
-    const filteredData = originalData.filter(d => !hiddenLegends.includes(d.name));
-    
-    const doughnutData = {
-      labels: filteredData.map((d) => d.name),
-      datasets: [
-        {
-          data: filteredData.map((d) => d.totalAmount),
-          backgroundColor: originalData.map(d => {
-            const originalIndex = summaryData?.breakdown.byLottoType.findIndex(od => od.name === d.name) ?? 0;
-            const colors = ["#16A34A", "#DC2626", "#D97706", "#2563EB", "#7C3AED", "#DB2777", "#0891B2", "#65A30D"];
-            return colors[originalIndex % colors.length];
-          }),
-          borderColor: "#1F2937",
-          borderWidth: 4,
-          hoverOffset: 8,
-        },
-      ],
-    };
+    // --- ✅ [จุดที่แก้ไข] ---
+    // สลับที่ระหว่าง totalBetAmount และ totalWinnings
+    const netProfit = summaryData
+      ? summaryData.summary.totalBetAmount - totalWinnings 
+      : 0;
+    // --- สิ้นสุดการแก้ไข ---
 
-    const barData = {
-      labels: (summaryData?.breakdown.byLottoType || []).map((d) => d.name),
-      datasets: [
-        {
-          label: "จำนวนบิล",
-          data: (summaryData?.breakdown.byLottoType || []).map((d) =>
-            Number(d.billCount)
-          ),
-          backgroundColor: "rgba(59, 130, 246, 0.7)",
-          borderColor: "rgba(59, 130, 246, 1)",
-          borderWidth: 1,
-        },
-      ],
-    };
+    const winningsSummary = items.reduce((acc, item) => {
+      const name = item.bet_type;
+      acc[name] = (acc[name] || 0) + parseFloat(item.payoutAmount as any);
+      return acc;
+    }, {} as Record<string, number>);
+    const winningsByType = Object.entries(winningsSummary)
+      .map(([name, total]) => ({ name, total }))
+      .sort((a, b) => b.total - a.total);
+    
+    const originalData = summaryData?.breakdown.byLottoType || [];
+    const filteredData = originalData.filter(d => !hiddenLegends.includes(d.name));
+    
+    const doughnutData = {
+      labels: filteredData.map((d) => d.name),
+      datasets: [
+        {
+          data: filteredData.map((d) => d.totalAmount),
+          backgroundColor: originalData.map(d => {
+            const originalIndex = summaryData?.breakdown.byLottoType.findIndex(od => od.name === d.name) ?? 0;
+            const colors = ["#16A34A", "#DC2626", "#D97706", "#2563EB", "#7C3AED", "#DB2777", "#0891B2", "#65A30D"];
+            return colors[originalIndex % colors.length];
+          }),
+          borderColor: "#1F2937",
+          borderWidth: 4,
+          hoverOffset: 8,
+        },
+      ],
+    };
 
-    const grouped = items.reduce((acc, item) => {
-      const key = `${item.billRef}-${item.bet_number}`;
-      if (!acc[key]) {
-        acc[key] = {
-          id: key,
-          billRef: item.billRef,
-          username: item.username,
-          lottoName: item.lottoName,
-          lottoDrawDate: item.lottoDrawDate,
-          bet_number: item.bet_number,
-          totalPayout: 0,
-          details: [],
-        };
-      }
-      acc[key].totalPayout += parseFloat(item.payoutAmount as any);
-      const existingDetail = acc[key].details.find(
-        d => d.bet_type === item.bet_type && d.bet_style === item.bet_style
-      );
-      if (existingDetail) {
-        existingDetail.payoutAmount += parseFloat(item.payoutAmount as any);
-      } else {
-        acc[key].details.push({
-          bet_type: item.bet_type,
-          bet_style: item.bet_style,
-          payoutAmount: parseFloat(item.payoutAmount as any),
-        });
-      }
-      return acc;
-    }, {} as Record<string, GroupedWinningItem>);
+    const barData = {
+      labels: (summaryData?.breakdown.byLottoType || []).map((d) => d.name),
+      datasets: [
+        {
+          label: "จำนวนบิล",
+          data: (summaryData?.breakdown.byLottoType || []).map((d) =>
+            Number(d.billCount)
+          ),
+          backgroundColor: "rgba(59, 130, 246, 0.7)",
+          borderColor: "rgba(59, 130, 246, 1)",
+          borderWidth: 1,
+        },
+      ],
+    };
 
-    const groupedArray = Object.values(grouped).sort((a, b) => 
-        new Date(b.lottoDrawDate).getTime() - new Date(a.lottoDrawDate).getTime()
-    ); 
+    const grouped = items.reduce((acc, item) => {
+      const key = `${item.billRef}-${item.bet_number}`;
+      if (!acc[key]) {
+        acc[key] = {
+          id: key,
+          billRef: item.billRef,
+          username: item.username,
+          lottoName: item.lottoName,
+          lottoDrawDate: item.lottoDrawDate,
+          bet_number: item.bet_number,
+          totalPayout: 0,
+          details: [],
+        };
+      }
+      acc[key].totalPayout += parseFloat(item.payoutAmount as any);
+      const existingDetail = acc[key].details.find(
+        d => d.bet_type === item.bet_type && d.bet_style === item.bet_style
+      );
+      if (existingDetail) {
+        existingDetail.payoutAmount += parseFloat(item.payoutAmount as any);
+      } else {
+        acc[key].details.push({
+          bet_type: item.bet_type,
+          bet_style: item.bet_style,
+          payoutAmount: parseFloat(item.payoutAmount as any),
+        });
+      }
+      return acc;
+    }, {} as Record<string, GroupedWinningItem>);
 
-    return {
-      winningItems: items,
-      displayTotalWinnings: totalWinnings,
-      displayNetProfit: netProfit,
-      winningsByBetType: winningsByType,
-      doughnutChartData: doughnutData,
-      lottoNameBarChartData: barData,
-      groupedWinningItems: groupedArray,
-    };
-  }, [checkableItems, summaryData, hiddenLegends]);
+    const groupedArray = Object.values(grouped).sort((a, b) => 
+        new Date(b.lottoDrawDate).getTime() - new Date(a.lottoDrawDate).getTime()
+    ); 
+
+    return {
+      winningItems: items,
+      displayTotalWinnings: totalWinnings,
+      displayNetProfit: netProfit,
+      winningsByBetType: winningsByType,
+      doughnutChartData: doughnutData,
+      lottoNameBarChartData: barData,
+      groupedWinningItems: groupedArray,
+    };
+  }, [checkableItems, summaryData, hiddenLegends]);
 
   const billWinnings = useMemo(() => {
     const winningsMap = new Map<string, number>();
@@ -883,7 +887,7 @@ const AccountPage: React.FC = () => {
                 colorClass="text-gray-400"
               />
               <KpiCard
-                title="ยอดชนะทั้งหมด"
+                title="ยอดถูกรางวัลทั้งหมด"
                 value={displayTotalWinnings}
                 icon={<TrophyIcon className="h-6 w-6" />}
                 colorClass="text-green-400"
