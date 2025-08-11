@@ -14,13 +14,6 @@ interface LottoType {
     betting_skip_start_day: number;
 }
 
-const toLocalDateString = (date: Date): string => {
-    const year = date.getFullYear();
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
-    const day = date.getDate().toString().padStart(2, '0');
-    return `${year}-${month}-${day}`;
-};
-
 function calculateNextRoundDatetimes(
     baseDate: Date,
     strategy: string,
@@ -30,9 +23,14 @@ function calculateNextRoundDatetimes(
     monthlyFixedDays: number[] | null,
     monthlyFloatingDates: any[] | null,
     specificDaysOfWeek: number[] | null,
-    betting_skip_start_day: number,
-    isFirstRoundEver: boolean
+    betting_skip_start_day: number
 ): { open: Date; cutoff: Date } | null {
+
+    // --- LOGGING ---
+    console.log(`\n--- [Calculator LOG] Starting Calculation ---`);
+    console.log(`[Calculator LOG] Received baseDate: ${baseDate.toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}`);
+    console.log(`[Calculator LOG] Received strategy: "${strategy}"`);
+    // ---------------
 
     const [openHour, openMinute] = bettingStartTime ? bettingStartTime.split(':').map(Number) : [0, 0];
     const [cutoffHour, cutoffMinute] = bettingCutoffTime ? bettingCutoffTime.split(':').map(Number) : [0, 0];
@@ -45,7 +43,6 @@ function calculateNextRoundDatetimes(
         return newDate;
     };
 
-    // [แก้ไข] เพิ่มเงื่อนไข && intervalMinutes !== null
     if (strategy === 'interval' && intervalMinutes !== null) {
         let nextOpenDate = new Date(baseDate.getTime() + 1000); 
         let nextCutoffDate = new Date(nextOpenDate.getTime() + (intervalMinutes * 60 * 1000));
@@ -65,6 +62,10 @@ function calculateNextRoundDatetimes(
             searchDate.setDate(searchDate.getDate() + 1);
         }
 
+        // --- LOGGING ---
+        console.log(`\n[Calculator LOG] Loop ${i}: Checking Date = ${searchDate.toLocaleDateString('th-TH')}`);
+        // ---------------
+
         let isValidDay = false;
         switch (strategy) {
             case 'daily': isValidDay = true; break;
@@ -72,18 +73,29 @@ function calculateNextRoundDatetimes(
             case 'monthly_fixed_days': if (monthlyFixedDays) { const day = searchDate.getDate(); const month = searchDate.getMonth() + 1; const isFloating = monthlyFloatingDates?.some(rule => rule.month === month && rule.day === day) ?? false; isValidDay = monthlyFixedDays.includes(day) || isFloating; } break;
         }
 
-        if (isValidDay) {
-            if (!isFirstRoundEver && (toLocalDateString(searchDate) === toLocalDateString(baseDate))) {
-                continue;
-            }
-            
-            const potentialCutoff = setTimeOnDate(searchDate, cutoffHour, cutoffMinute);
+        console.log(`[Calculator LOG] Is it a valid day? ${isValidDay}`);
 
-            if (potentialCutoff > nowInThailand) {
+        if (isValidDay) {
+            const potentialCutoff = setTimeOnDate(searchDate, cutoffHour, cutoffMinute);
+            
+            // --- LOGGING ---
+            console.log(`[Calculator LOG] --- Condition Check ---`);
+            console.log(`[Calculator LOG] potentialCutoff > nowInThailand ? (${potentialCutoff.toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })} > ${nowInThailand.toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}) = ${potentialCutoff > nowInThailand}`);
+            console.log(`[Calculator LOG] potentialCutoff > baseDate        ? (${potentialCutoff.toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })} > ${baseDate.toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}) = ${potentialCutoff > baseDate}`);
+            console.log(`[Calculator LOG] --- End Condition Check ---`);
+            // ---------------
+
+            if (potentialCutoff > nowInThailand && potentialCutoff > baseDate) {
+                console.log(`[Calculator LOG] SUCCESS: Conditions met. Generating round...`);
                 const openDate = new Date(searchDate);
                 openDate.setDate(openDate.getDate() + betting_skip_start_day);
+
                 const finalOpen = setTimeOnDate(openDate, openHour, openMinute);
                 const finalCutoff = setTimeOnDate(searchDate, cutoffHour, cutoffMinute);
+                
+                console.log(`[Calculator LOG] Final Open Time  : ${finalOpen.toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}`);
+                console.log(`[Calculator LOG] Final Cutoff Time: ${finalCutoff.toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}`);
+                console.log(`--- [Calculator LOG] Calculation Finished ---`);
                 return { open: finalOpen, cutoff: finalCutoff };
             }
         }
@@ -101,31 +113,56 @@ export async function generateLottoRoundsJob(db: Pool) {
     try {
         await client.query('BEGIN');
 
-        const updateExpiredAutoResult = await client.query(`UPDATE lotto_rounds SET status = 'closed' WHERE cutoff_datetime <= (NOW() AT TIME ZONE 'Asia/Bangkok') AND status = 'active'`);
-        if (((_a = updateExpiredAutoResult.rowCount) !== null && _a !== void 0 ? _a : 0) > 0) { console.log(`[Scheduled Job] Updated ${updateExpiredAutoResult.rowCount} auto rounds to 'closed'.`); }
+        const updateExpiredAutoResult = await client.query(`
+            UPDATE lotto_rounds 
+            SET status = 'closed' 
+            WHERE cutoff_datetime <= (NOW() AT TIME ZONE 'Asia/Bangkok') AND status = 'active'
+        `);
+        if (((_a = updateExpiredAutoResult.rowCount) !== null && _a !== void 0 ? _a : 0) > 0) {
+            console.log(`[Scheduled Job] Updated ${updateExpiredAutoResult.rowCount} auto rounds to 'closed'.`);
+        }
 
-        const updateExpiredManualResult = await client.query(`UPDATE lotto_rounds SET status = 'manual_closed' WHERE cutoff_datetime <= (NOW() AT TIME ZONE 'Asia/Bangkok') AND status = 'manual_active'`);
-        if (((_b = updateExpiredManualResult.rowCount) !== null && _b !== void 0 ? _b : 0) > 0) { console.log(`[Scheduled Job] Updated ${updateExpiredManualResult.rowCount} manual rounds to 'manual_closed'.`); }
+        const updateExpiredManualResult = await client.query(`
+            UPDATE lotto_rounds 
+            SET status = 'manual_closed' 
+            WHERE cutoff_datetime <= (NOW() AT TIME ZONE 'Asia/Bangkok') AND status = 'manual_active'
+        `);
+        if (((_b = updateExpiredManualResult.rowCount) !== null && _b !== void 0 ? _b : 0) > 0) {
+            console.log(`[Scheduled Job] Updated ${updateExpiredManualResult.rowCount} manual rounds to 'manual_closed'.`);
+        }
 
-        const lottoTypesResult = await client.query<LottoType>(`SELECT id, name, betting_start_time, betting_cutoff_time, generation_strategy, interval_minutes, monthly_fixed_days, monthly_floating_dates, specific_days_of_week, betting_skip_start_day FROM lotto_types ORDER BY id`);
+        const lottoTypesResult = await client.query<LottoType>(`
+            SELECT id, name, betting_start_time, betting_cutoff_time,
+                   generation_strategy, interval_minutes, monthly_fixed_days, monthly_floating_dates,
+                   specific_days_of_week, betting_skip_start_day
+            FROM lotto_types ORDER BY id
+        `);
 
         let generatedCount = 0;
         const now = new Date(new Date().getTime() + (7 * 60 * 60 * 1000));
 
         for (const lottoType of lottoTypesResult.rows) {
-            const hasFutureActiveRoundResult = await client.query(`SELECT 1 FROM lotto_rounds WHERE lotto_type_id = $1 AND cutoff_datetime > (NOW() AT TIME ZONE 'Asia/Bangkok') AND status = 'active' LIMIT 1`, [lottoType.id]);
-            if (((_c = hasFutureActiveRoundResult.rowCount) !== null && _c !== void 0 ? _c : 0) > 0) { continue; }
+            const hasFutureActiveRoundResult = await client.query(`
+                SELECT 1 FROM lotto_rounds 
+                WHERE lotto_type_id = $1 AND cutoff_datetime > (NOW() AT TIME ZONE 'Asia/Bangkok') AND status = 'active' 
+                LIMIT 1
+            `, [lottoType.id]);
 
-            const latestRoundResult = await client.query(`SELECT cutoff_datetime FROM lotto_rounds WHERE lotto_type_id = $1 ORDER BY cutoff_datetime DESC LIMIT 1`, [lottoType.id]);
+            if (((_c = hasFutureActiveRoundResult.rowCount) !== null && _c !== void 0 ? _c : 0) > 0) {
+                continue;
+            }
+
+            const latestRoundResult = await client.query(`
+                SELECT cutoff_datetime FROM lotto_rounds
+                WHERE lotto_type_id = $1 ORDER BY cutoff_datetime DESC LIMIT 1
+            `, [lottoType.id]);
 
             let baseDate;
-            const isFirstRoundEver = latestRoundResult.rows.length === 0;
-
-            if (isFirstRoundEver) {
-                baseDate = now;
-            } else {
+            if (latestRoundResult.rows.length > 0) {
                 const dbCutoffDate = new Date(latestRoundResult.rows[0].cutoff_datetime);
                 baseDate = new Date(dbCutoffDate.getTime() + (7 * 60 * 60 * 1000));
+            } else {
+                baseDate = now;
             }
 
             const nextRoundTimes = calculateNextRoundDatetimes(
@@ -137,19 +174,23 @@ export async function generateLottoRoundsJob(db: Pool) {
                 lottoType.monthly_fixed_days, 
                 lottoType.monthly_floating_dates, 
                 lottoType.specific_days_of_week, 
-                lottoType.betting_skip_start_day,
-                isFirstRoundEver
+                lottoType.betting_skip_start_day
             );
 
             if (nextRoundTimes) {
-                await client.query(`INSERT INTO lotto_rounds (name, open_datetime, cutoff_datetime, lotto_type_id, status) VALUES ($1, $2, $3, $4, 'active')`, [lottoType.name, nextRoundTimes.open, nextRoundTimes.cutoff, lottoType.id]);
+                await client.query(`
+                    INSERT INTO lotto_rounds (name, open_datetime, cutoff_datetime, lotto_type_id, status)
+                    VALUES ($1, $2, $3, $4, 'active')
+                `, [lottoType.name, nextRoundTimes.open, nextRoundTimes.cutoff, lottoType.id]);
                 generatedCount++;
                 console.log(`[Scheduled Job] Generated new round for ${lottoType.name}: Open=${nextRoundTimes.open.toISOString()}, Cutoff=${nextRoundTimes.cutoff.toISOString()}`);
             }
         }
 
         await client.query('COMMIT');
-        if (generatedCount > 0) { console.log(`[Scheduled Job] Finished. Generated ${generatedCount} new rounds.`); }
+        if (generatedCount > 0) {
+            console.log(`[Scheduled Job] Finished. Generated ${generatedCount} new rounds.`);
+        }
     }
     catch (innerErr) {
         await client.query('ROLLBACK');
