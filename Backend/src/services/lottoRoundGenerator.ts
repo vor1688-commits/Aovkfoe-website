@@ -14,7 +14,6 @@ interface LottoType {
     betting_skip_start_day: number;
 }
 
-// [แก้ไข] สร้างฟังก์ชัน Helper เพื่อแปลงวันที่เป็น YYYY-MM-DD โดยไม่ยุ่งกับ Timezone
 const toLocalDateString = (date: Date): string => {
     const year = date.getFullYear();
     const month = (date.getMonth() + 1).toString().padStart(2, '0');
@@ -46,6 +45,7 @@ function calculateNextRoundDatetimes(
         return newDate;
     };
 
+    // [แก้ไข] เพิ่มเงื่อนไข && intervalMinutes !== null
     if (strategy === 'interval' && intervalMinutes !== null) {
         let nextOpenDate = new Date(baseDate.getTime() + 1000); 
         let nextCutoffDate = new Date(nextOpenDate.getTime() + (intervalMinutes * 60 * 1000));
@@ -73,9 +73,8 @@ function calculateNextRoundDatetimes(
         }
 
         if (isValidDay) {
-            // [แก้ไข] เปลี่ยนมาใช้วิธีเปรียบเทียบวันที่ที่ถูกต้อง 100%
             if (!isFirstRoundEver && (toLocalDateString(searchDate) === toLocalDateString(baseDate))) {
-                continue; // ถ้าเป็น "วันเดียวกัน" กับงวดล่าสุด ให้ข้ามไปเสมอ
+                continue;
             }
             
             const potentialCutoff = setTimeOnDate(searchDate, cutoffHour, cutoffMinute);
