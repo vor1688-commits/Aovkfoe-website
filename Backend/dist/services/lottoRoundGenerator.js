@@ -45,7 +45,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.generateLottoRoundsJob = generateLottoRoundsJob;
 exports.startLottoRoundGenerationJob = startLottoRoundGenerationJob;
 const schedule = __importStar(require("node-schedule"));
-function calculateNextRoundDatetimes(baseDate, strategy, bettingStartTime, bettingCutoffTime, intervalMinutes, monthlyFixedDays, monthlyFloatingDates, specificDaysOfWeek, betting_skip_start_day) {
+function calculateNextRoundDatetimes(baseDate, strategy, bettingStartTime, bettingCutoffTime, intervalMinutes, monthlyFixedDays, monthlyFloatingDates, specificDaysOfWeek, betting_skip_start_day, isFirstRoundEver // Flag ที่บอกว่าเป็น "งวดแรก" หรือไม่
+) {
     var _d;
     const [openHour, openMinute] = bettingStartTime ? bettingStartTime.split(':').map(Number) : [0, 0];
     const [cutoffHour, cutoffMinute] = bettingCutoffTime ? bettingCutoffTime.split(':').map(Number) : [0, 0];
@@ -90,9 +91,17 @@ function calculateNextRoundDatetimes(baseDate, strategy, bettingStartTime, betti
                 break;
         }
         if (isValidDay) {
+            // [จุดแก้ไขที่ 1] - เพิ่มเงื่อนไขตรวจสอบ "วันเดียวกัน"
+            if (!isFirstRoundEver) {
+                // ถ้าไม่ใช่งวดแรกสุด ให้เช็คว่า "วันที่" ที่กำลังจะสร้าง เป็นวันเดียวกับ "วันที่" ของงวดล่าสุดหรือไม่
+                const searchDateDay = searchDate.toISOString().slice(0, 10);
+                const baseDateDay = baseDate.toISOString().slice(0, 10);
+                if (searchDateDay === baseDateDay) {
+                    continue; // ถ้าเป็นวันเดียวกัน ให้ข้ามไปวันถัดไปทันที
+                }
+            }
             const potentialCutoff = setTimeOnDate(searchDate, cutoffHour, cutoffMinute);
-            // [แก้ไข] กลับมาใช้เงื่อนไขที่เรียบง่ายและครอบคลุมที่สุด
-            if (potentialCutoff > nowInThailand && potentialCutoff > baseDate) {
+            if (potentialCutoff > nowInThailand) {
                 const openDate = new Date(searchDate);
                 openDate.setDate(openDate.getDate() + betting_skip_start_day);
                 const finalOpen = setTimeOnDate(openDate, openHour, openMinute);
@@ -149,16 +158,15 @@ function generateLottoRoundsJob(db) {
                 WHERE lotto_type_id = $1 ORDER BY cutoff_datetime DESC LIMIT 1
             `, [lottoType.id]);
                 let baseDate;
-                // [แก้ไข] เอา Flag isCalculatingNextRound ออกทั้งหมด
-                if (latestRoundResult.rows.length > 0) {
+                const isFirstRoundEver = latestRoundResult.rows.length === 0; // [จุดแก้ไขที่ 2] - สร้าง Flag
+                if (isFirstRoundEver) {
+                    baseDate = now; // ถ้าเป็นงวดแรกสุด ให้ใช้เวลาปัจจุบัน
+                }
+                else {
                     const dbCutoffDate = new Date(latestRoundResult.rows[0].cutoff_datetime);
                     baseDate = new Date(dbCutoffDate.getTime() + (7 * 60 * 60 * 1000));
                 }
-                else {
-                    baseDate = now;
-                }
-                const nextRoundTimes = calculateNextRoundDatetimes(baseDate, lottoType.generation_strategy, lottoType.betting_start_time, lottoType.betting_cutoff_time, lottoType.interval_minutes, lottoType.monthly_fixed_days, lottoType.monthly_floating_dates, lottoType.specific_days_of_week, lottoType.betting_skip_start_day
-                // [แก้ไข] ไม่ต้องส่ง Flag เข้าไป
+                const nextRoundTimes = calculateNextRoundDatetimes(baseDate, lottoType.generation_strategy, lottoType.betting_start_time, lottoType.betting_cutoff_time, lottoType.interval_minutes, lottoType.monthly_fixed_days, lottoType.monthly_floating_dates, lottoType.specific_days_of_week, lottoType.betting_skip_start_day, isFirstRoundEver // [จุดแก้ไขที่ 3] - ส่ง Flag เข้าไป
                 );
                 if (nextRoundTimes) {
                     yield client.query(`
