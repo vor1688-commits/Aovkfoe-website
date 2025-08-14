@@ -93,7 +93,7 @@ export const reverseNumbers = (numbers: string[]): string[] => {
 
 export const getNumble = (mode:string): string[] => {
   const numberList:string[] = [];
-  for(let i=1; i<10; i++){
+  for(let i=0; i<10; i++){
     const doubleNumber = `${i}${i}`; 
     const finalNumber = (mode==='3d')? `${doubleNumber}${i}`:doubleNumber;
     numberList.push(finalNumber)
