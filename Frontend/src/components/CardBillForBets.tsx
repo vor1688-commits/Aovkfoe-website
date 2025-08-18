@@ -39,6 +39,8 @@ const CardBillForBets: React.FC<CardBillForBetProps> = ({
   const validBets = bets.filter(bet => !closedNumbersSet.has(bet));
   const closedBets = bets.filter(bet => closedNumbersSet.has(bet));
 
+  const halfPaidBets = bets.filter(bet => halfPayNumbersSet.has(bet));
+
   const pricePerBet = priceTop + priceTote + priceBottom;
   const actualCalculatedTotal = validBets.length * pricePerBet;
   // --- สิ้นสุดการแก้ไข ---
@@ -84,7 +86,7 @@ const CardBillForBets: React.FC<CardBillForBetProps> = ({
                     return 'text-red-500 font-bold line-through'; // เลขปิด
                 }
                 if (halfPayNumbersSet.has(betNumber)) {
-                    return 'text-amber-200 font-bold'; // เลขจ่ายครึ่ง
+                    return 'text-amber-300 font-bold'; // เลขจ่ายครึ่ง
                 }
                 return 'text-gray-800'; // เลขปกติ
             };
@@ -105,6 +107,14 @@ const CardBillForBets: React.FC<CardBillForBetProps> = ({
         {closedBets.length > 0 && (
           <div className="text-xs text-red-500 mt-1 italic">
             *เลขปิดจำนวน {closedBets.length} ตัว ไม่ถูกนำมาคำนวณในยอดรวมนี้
+          </div>
+        )}
+        
+        {halfPaidBets.length > 0 && (
+          <div className="mt-1"> 
+            <div className="text-xs text-amber-400 italic">
+              *เลขจ่ายครึ่งจะแสดงเป็นสีเหลือง มีจำนวน {halfPaidBets.length} ตัว (กรุณาเช็คบิลก่อนดำเนินการบันทึก)
+            </div>
           </div>
         )}
       </div>

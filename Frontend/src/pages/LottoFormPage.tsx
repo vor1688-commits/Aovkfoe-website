@@ -238,7 +238,9 @@ const LottoFormPage = () => {
   }, [loadInitialData]);
 
   useEffect(() => {
-    const intervalId = setInterval(() => fetchSpecialNumbersOnly(), 1000 * 60 * 3);
+    const intervalId = setInterval(() => {
+      fetchSpecialNumbersOnly();
+    }, 5000); 
     return () => clearInterval(intervalId);
   }, [fetchSpecialNumbersOnly]);
 
@@ -269,29 +271,70 @@ const LottoFormPage = () => {
     };
   }, [loadInitialData]);
 
-  useEffect(() => {
-    const closedNumbers = specialNumbers?.closed_numbers || [];
+  // useEffect(() => {
+  //   const closedNumbers = specialNumbers?.closed_numbers || [];
     
-    const newTotal = bill.reduce((sum, entry) => {
-        const pricePerBet = (entry.priceTop || 0) + (entry.priceTote || 0) + (entry.priceBottom || 0);
-        const validBetsInEntry = entry.bets.filter(bet => !closedNumbers.includes(bet));
-        const entryTotal = validBetsInEntry.length * pricePerBet;
-        return sum + entryTotal;
-    }, 0);
-    setTotal(newTotal);
+  //   const newTotal = bill.reduce((sum, entry) => {
+  //       const pricePerBet = (entry.priceTop || 0) + (entry.priceTote || 0) + (entry.priceBottom || 0);
+  //       const validBetsInEntry = entry.bets.filter(bet => !closedNumbers.includes(bet));
+  //       const entryTotal = validBetsInEntry.length * pricePerBet;
+  //       return sum + entryTotal;
+  //   }, 0);
+  //   setTotal(newTotal);
 
-    if (bill.length > 0) {
-        const allNumbersAreClosed = bill.every(entry => 
-            entry.bets.every(betNumber => 
-                closedNumbers.includes(betNumber)
-            )
-        );
-        setIsBillInvalid(allNumbersAreClosed);
-    } else {
-        setIsBillInvalid(false);
-    }
-  }, [bill, specialNumbers]);
+  //   if (bill.length > 0) {
+  //       const allNumbersAreClosed = bill.every(entry => 
+  //           entry.bets.every(betNumber => 
+  //               closedNumbers.includes(betNumber)
+  //           )
+  //       );
+  //       setIsBillInvalid(allNumbersAreClosed);
+  //   } else {
+  //       setIsBillInvalid(false);
+  //   }
+  // }, [bill, specialNumbers]);
 
+useEffect(() => { 
+  
+  const closedNumbers = specialNumbers?.closed_numbers || [];
+  const halfPayNumbers = specialNumbers?.half_pay_numbers || [];
+  
+  // คำนวณยอดรวมใหม่ทุกครั้งที่ bill หรือ specialNumbers เปลี่ยนแปลง
+  const newTotal = bill.reduce((sum, entry) => {
+      const pricePerBet = (entry.priceTop || 0) + (entry.priceTote || 0) + (entry.priceBottom || 0);
+      
+      // กรองเอาเฉพาะเลขที่ไม่ใช่เลขปิดออกจากรายการนี้
+      const validBetsInEntry = entry.bets.filter(bet => !closedNumbers.includes(bet));
+      
+      let entryTotal = 0;
+      
+      // วนลูปในรายการที่สามารถคำนวณได้
+      validBetsInEntry.forEach(bet => {
+          if (halfPayNumbers.includes(bet)) {
+              // ถ้าเป็นเลขจ่ายครึ่ง จะบวกยอดแค่ครึ่งเดียว
+              entryTotal += pricePerBet / 2;
+          } else {
+              // ถ้าเป็นเลขปกติ จะบวกยอดเต็ม
+              entryTotal += pricePerBet;
+          }
+      });
+       
+      return sum + entryTotal;
+  }, 0); // 0 คือค่าเริ่มต้นของ 'sum'
+   
+  setTotal(newTotal);
+ 
+  if (bill.length > 0) {
+      const allNumbersAreClosed = bill.every(entry => 
+          entry.bets.every(betNumber => 
+              closedNumbers.includes(betNumber)
+          )
+      );
+      setIsBillInvalid(allNumbersAreClosed);
+  } else {
+      setIsBillInvalid(false);
+  }
+}, [bill, specialNumbers]); // dependency array: ให้ useEffect นี้ทำงานใหม่เมื่อค่า bill หรือ specialNumbers เปลี่ยนไป
 
 useEffect(() => {
     const closedNumbers = specialNumbers?.closed_numbers || [];

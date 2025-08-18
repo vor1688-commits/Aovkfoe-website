@@ -3,7 +3,6 @@ import { PencilIcon, CheckCircleIcon, XCircleIcon } from '@heroicons/react/24/ou
 import { useAuth } from '../contexts/AuthContext';
 import { useModal } from './Modal';
 import api from '../api/axiosConfig';
- 
 
 // --- Interfaces ---
 interface SpecialNumbers {
@@ -32,19 +31,20 @@ const handleNumericArrayInputChange = (value: string, maxLength: number): string
 
 // --- Main Component ---
 const SpecialNumbersCard: React.FC<SpecialNumbersCardProps> = ({ lottoId, specialNumbers, onUpdate }) => {
-     const { alert, confirm, showStatus, hideStatus } = useModal();
-
+    const { alert, confirm, showStatus, hideStatus } = useModal();
     const { user } = useAuth();
     const [isEditing, setIsEditing] = useState(false);
     const [closedInput, setClosedInput] = useState('');
     const [halfPayInput, setHalfPayInput] = useState('');
     
     useEffect(() => {
-        if (specialNumbers) {
+        // ✅✅✅ [จุดที่แก้ไข] ✅✅✅
+        // เพิ่มเงื่อนไข !isEditing เพื่อไม่ให้อัปเดตค่าขณะกำลังพิมพ์
+        if (specialNumbers && !isEditing) { 
             setClosedInput(specialNumbers.closed_numbers.join(', '));
             setHalfPayInput(specialNumbers.half_pay_numbers.join(', '));
         }
-    }, [specialNumbers]);
+    }, [specialNumbers, isEditing]); // เพิ่ม isEditing เข้าไปใน dependency array
 
     const handleEdit = () => setIsEditing(true);
 
