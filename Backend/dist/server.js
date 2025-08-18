@@ -722,108 +722,103 @@ app.get("/api/users", isAuthenticated, isAdminOrOwner, (req, res) => __awaiter(v
 }));
 app.get('/api/bills', isAuthenticated, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const loggedInUser = req.user;
-    // --- [MODIFY] ตรวจสอบว่ามีการส่ง limit มาหรือไม่ ---
-    const hasPagination = req.query.limit && !isNaN(parseInt(req.query.limit, 10));
-    // --- Filter States (เหมือนเดิม) ---
     const { startDate, endDate, status, billRef, noteRef, username, lottoCategory, lottoName } = req.query;
+    let query = `
+        SELECT 
+            b.id, 
+            b.bill_ref as "billRef", 
+            b.created_at as "createdAt",
+            b.bet_name as "lottoName", 
+            b.total_amount as "totalAmount",
+            b.status, 
+            b.note, 
+            b.bill_lotto_draw, 
+            u.username,
+            COUNT(DISTINCT bi.id) as "itemCount",
+            -- คำนวณยอดที่ถูกคืนเงินในแต่ละบิล
+            COALESCE((
+                SELECT SUM(bi_ret.price)
+                FROM bet_items bi_ret
+                JOIN bill_entries be_ret ON bi_ret.bill_entry_id = be_ret.id
+                WHERE be_ret.bill_id = b.id AND bi_ret.status = 'คืนเลข'
+            ), 0) AS "returnedAmount",
+            -- คำนวณยอดสุทธิ
+            (b.total_amount - COALESCE((
+                SELECT SUM(bi_ret.price)
+                FROM bet_items bi_ret
+                JOIN bill_entries be_ret ON bi_ret.bill_entry_id = be_ret.id
+                WHERE be_ret.bill_id = b.id AND bi_ret.status = 'คืนเลข'
+            ), 0)) AS "netAmount",
+            CASE 
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM bet_items bi_sub
+                    JOIN bill_entries be_sub ON bi_sub.bill_entry_id = be_sub.id
+                    WHERE be_sub.bill_id = b.id AND (bi_sub.price * 0.5) = bi_sub.rate
+                ) 
+                THEN true 
+                ELSE false 
+            END as "hasHalfRateItem"
+        FROM 
+            bills b
+        JOIN 
+            users u ON b.user_id = u.id
+        LEFT JOIN 
+            bill_entries be ON be.bill_id = b.id
+        LEFT JOIN 
+            bet_items bi ON bi.bill_entry_id = be.id
+        WHERE 1=1
+    `;
     const queryParams = [];
-    const whereConditions = ['1=1'];
-    // ... (ส่วนของการสร้างเงื่อนไข whereConditions และ queryParams เหมือนเดิมทุกประการ) ...
     if (loggedInUser.role === 'user') {
         queryParams.push(loggedInUser.id);
-        whereConditions.push(`b.user_id = $${queryParams.length}`);
+        query += ` AND b.user_id = $${queryParams.length}`;
     }
-    else if ((loggedInUser.role === 'admin' || loggedInUser.role === 'owner') && username) {
-        queryParams.push(username);
-        whereConditions.push(`u.username = $${queryParams.length}`);
+    else if (loggedInUser.role === 'admin' || loggedInUser.role === 'owner') {
+        if (username) {
+            queryParams.push(username);
+            query += ` AND u.username = $${queryParams.length}`;
+        }
     }
     if (startDate) {
         queryParams.push(startDate);
-        whereConditions.push(`b.created_at >= $${queryParams.length}`);
+        query += ` AND b.created_at::date >= $${queryParams.length}`;
     }
     if (endDate) {
-        queryParams.push(`${endDate} 23:59:59`);
-        whereConditions.push(`b.created_at <= $${queryParams.length}`);
+        const nextDay = new Date(endDate);
+        nextDay.setDate(nextDay.getDate() + 1);
+        queryParams.push(nextDay.toISOString().split('T')[0]);
+        query += ` AND b.created_at < $${queryParams.length}`;
     }
     if (status) {
         queryParams.push(status);
-        whereConditions.push(`b.status = $${queryParams.length}`);
+        query += ` AND b.status = $${queryParams.length}`;
     }
     if (billRef) {
         queryParams.push(`%${billRef}%`);
-        whereConditions.push(`b.bill_ref ILIKE $${queryParams.length}`);
+        query += ` AND b.bill_ref ILIKE $${queryParams.length}`;
     }
     if (noteRef) {
         queryParams.push(`%${noteRef}%`);
-        whereConditions.push(`b.note ILIKE $${queryParams.length}`);
+        query += ` AND b.note ILIKE $${queryParams.length}`;
     }
     if (lottoCategory) {
         queryParams.push(`%${lottoCategory}%`);
-        whereConditions.push(`b.bet_name ILIKE $${queryParams.length}`);
+        query += ` AND b.bet_name ILIKE $${queryParams.length}`;
     }
     if (lottoName) {
         queryParams.push(lottoName);
-        whereConditions.push(`lr.name = $${queryParams.length}`);
+        query += ` AND b.bet_name = $${queryParams.length}`;
     }
-    const whereClause = whereConditions.join(' AND ');
+    query += `
+        GROUP BY 
+            b.id, u.username
+        ORDER BY 
+            b.id DESC
+    `;
     try {
-        // --- [MODIFY] สร้าง Query หลัก แต่ยังไม่ใส่ LIMIT ---
-        let dataQuery = `
-            SELECT 
-                b.id, b.bill_ref AS "billRef", b.created_at AS "createdAt",
-                b.bet_name AS "lottoName", b.total_amount AS "totalAmount",
-                b.status, b.note, b.bill_lotto_draw AS "billLottoDraw",
-                u.username,
-                COALESCE(agg.returned_amount, 0)::float AS "returnedAmount",
-                (b.total_amount - COALESCE(agg.returned_amount, 0))::float AS "netAmount",
-                COALESCE(agg.item_count, 0)::int AS "itemCount"
-            FROM bills b
-            JOIN users u ON b.user_id = u.id
-            LEFT JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
-            LEFT JOIN (
-                SELECT be.bill_id,
-                       SUM(CASE WHEN bi.status = 'คืนเลข' THEN bi.price ELSE 0 END) as returned_amount,
-                       COUNT(bi.id) as item_count
-                FROM bill_entries be
-                JOIN bet_items bi ON be.id = bi.bill_entry_id
-                GROUP BY be.bill_id
-            ) agg ON b.id = agg.bill_id
-            WHERE ${whereClause}
-            ORDER BY b.id DESC
-        `;
-        if (hasPagination) {
-            // --- [MODIFY] ถ้ามีการส่ง limit มา ให้ทำงานแบบ Pagination ---
-            const limit = parseInt(req.query.limit, 10);
-            const page = parseInt(req.query.page, 10) || 1;
-            const offset = (page - 1) * limit;
-            const countQuery = `SELECT COUNT(b.id) as "total" FROM bills b JOIN users u ON b.user_id = u.id LEFT JOIN lotto_rounds lr ON b.lotto_round_id = lr.id WHERE ${whereClause};`;
-            // เพิ่ม LIMIT และ OFFSET เข้าไปใน Query
-            const paginatedDataQuery = `${dataQuery} LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2};`;
-            const [countResult, dataResult] = yield Promise.all([
-                db.query(countQuery, queryParams),
-                db.query(paginatedDataQuery, [...queryParams, limit, offset])
-            ]);
-            const totalBills = parseInt(countResult.rows[0].total, 10);
-            const totalPages = Math.ceil(totalBills / limit);
-            res.json({
-                bills: dataResult.rows,
-                pagination: {
-                    currentPage: page,
-                    totalPages,
-                    totalBills,
-                    limit
-                }
-            });
-        }
-        else {
-            // --- [MODIFY] ถ้าไม่มี limit ส่งมา ให้ดึงข้อมูลทั้งหมด ---
-            const dataResult = yield db.query(dataQuery, queryParams);
-            res.json({
-                bills: dataResult.rows,
-                // ส่ง pagination เป็น null เพื่อให้ Frontend รู้ว่านี่คือข้อมูลทั้งหมด
-                pagination: null
-            });
-        }
+        const result = yield db.query(query, queryParams);
+        res.json(result.rows);
     }
     catch (err) {
         console.error('Error fetching bills:', err);
