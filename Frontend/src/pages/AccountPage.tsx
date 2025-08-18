@@ -1059,44 +1059,8 @@ const {
                 </p> 
             )}
         </div>
-    </div>
-              {/* <div className="kpi-card">
-                <h3 className="chart-title flex items-center text-lg font-semibold mb-4">
-                  <PresentationChartLineIcon className="h-6 w-6 mr-2" />
-                  อันดับเลขที่มียอดแทงสูงสุด
-                </h3>
-                <div 
-                  className={`relative custom-scrollbar min-h-[400px] ${
-                    isMediumScreenOrLarger 
-                      ? 'overflow-x-auto' 
-                      : 'max-h-96 overflow-y-auto'
-                  }`}
-                >
-                  <div 
-                    style={{ 
-                      height: isMediumScreenOrLarger ? '384px' : `${horizontalChartHeight}px`, 
-                      width: isMediumScreenOrLarger ? `${Math.max(100, topBetNumbersChartData.labels.length * 5)}%` : '100%',
-                      minWidth: '100%',
-                      position: 'relative' 
-                    }}
-                  >
-                    {(topBetNumbersChartData.labels && topBetNumbersChartData.labels.length > 0) ? (
-                      <Bar
-                        key={chartKey}
-                        data={topBetNumbersChartData}
-                        options={chartOptions2("ยอดแทงรวม", chartAxis)}
-                      />
-                    ) : (
-                      <div className="flex items-center justify-center h-full">
-                        <p className="text-gray-500 italic">
-                          {isLoading ? "กำลังโหลดข้อมูลกราฟ..." : "ไม่มีข้อมูลสำหรับแสดงกราฟ"}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div> */}
-                 <div className="kpi-card">
+    </div> 
+            <div className="kpi-card">
               <h2 className="text-xl font-bold mb-4 text-green-600">
                 รายการที่ถูกรางวัล
               </h2>
@@ -1162,7 +1126,7 @@ const {
                 </div>
               )}
             </div>
-            </div>
+      </div>
             
          
             
@@ -1288,6 +1252,8 @@ const {
                 </table>
               </div>
             </div>
+
+            
           </motion.div>
         )}
       </AnimatePresence>
