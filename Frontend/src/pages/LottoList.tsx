@@ -75,6 +75,7 @@ const getCountryFromLottoName = (name: string): string => {
 const LottoList: React.FC = () => {
   const { user } = useAuth();
   const { alert, confirm, showStatus, hideStatus } = useModal();
+  const ITEMS_PER_PAGE = 100;
   // --- State Declarations ---
   const [countryList, setCountryList] = useState<string[]>([]);
   const [selectedCountry, setSelectedCountry] = useState("");
@@ -104,6 +105,10 @@ const LottoList: React.FC = () => {
 
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [billImageUrl, setBillImageUrl] = useState<string | null>(null);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(0);
+  const [totalBills, setTotalBills] = useState(0);
  
   const generateBillImage = useCallback(async () => {
     if (!printableBillRef.current)
@@ -136,41 +141,53 @@ const LottoList: React.FC = () => {
     }
   }, [billToPrint, isModalVisible, generateBillImage]);
 
- const handleSearch = useCallback(async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!user) return;
+const handleSearch = useCallback(async (page: number) => {
+  if (!user) return;
+  setIsLoading(true);
+  setExpandedRowId(null); // ปิดแถวที่เปิดอยู่เมื่อเปลี่ยนหน้าหรือค้นหาใหม่
 
-    setIsLoading(true);
+  const params = new URLSearchParams();
+  // เพิ่ม page และ limit เข้าไปใน parameter
+  params.append("page", page.toString());
+  params.append("limit", ITEMS_PER_PAGE.toString());
+
+  // ส่วนของการกรองข้อมูลเหมือนเดิม
+  if (startDate) params.append("startDate", startDate);
+  if (endDate) params.append("endDate", endDate);
+  if (status) params.append("status", status);
+  if (orderId) params.append("billRef", orderId);
+  if (orderNote) params.append("noteRef", orderNote);
+  if ((user.role === "admin" || user.role === "owner") && filterUsername) {
+    params.append("username", filterUsername);
+  } else if (user.role === 'user') {
+    params.append("username", user.username);
+  }
+  if (lottoCategory) params.append("lottoCategory", lottoCategory);
+  if (selectedLottoName) params.append("lottoName", selectedLottoName);
+
+  try {
+    // รับข้อมูลในรูปแบบใหม่จาก API
+    const response = await api.get(`/api/bills?${params.toString()}`);
+    setOrders(response.data.bills); // อัปเดต state ด้วยข้อมูลบิล
     
-    const params = new URLSearchParams();
-    if (startDate) params.append("startDate", startDate);
-    if (endDate) params.append("endDate", endDate);
-    if (status) params.append("status", status);
-    if (orderId) params.append("billRef", orderId);
-    if (orderNote) params.append("noteRef", orderNote);
-    
-    if ((user.role === "admin" || user.role === "owner") && filterUsername) {
-        params.append("username", filterUsername);
-    } else if (user.role === 'user') {
-        // สำหรับ user ทั่วไป ให้ใช้ username ของตัวเองเสมอ
-        params.append("username", user.username);
-    }
+    // อัปเดต state ของ pagination
+    setTotalPages(response.data.pagination.totalPages);
+    setTotalBills(response.data.pagination.totalBills);
+    setCurrentPage(response.data.pagination.currentPage);
 
-    if (lottoCategory) params.append("lottoCategory", lottoCategory);
-    if (selectedLottoName) params.append("lottoName", selectedLottoName);
-
-    try { 
-        const response = await api.get<Order[]>(`/api/bills?${params.toString()}`);
-        setOrders(response.data);
-    } catch (err) {
-        // Interceptor จะจัดการกับ Error 401/403
-        // ส่วนนี้จะดักจับ Error อื่นๆ
-        console.error("Failed to search bills:", err);
-        alert("เกิดข้อผิดพลาด", "ไม่สามารถค้นหาข้อมูลได้", "light");
-    } finally {
-        setIsLoading(false);
-    }
+  } catch (err) {
+    console.error("Failed to fetch bills:", err);
+    alert("เกิดข้อผิดพลาด", "ไม่สามารถค้นหาข้อมูลได้", "light");
+  } finally {
+    setIsLoading(false);
+  }
 }, [user, startDate, endDate, status, orderId, orderNote, filterUsername, lottoCategory, selectedLottoName]);
+
+const handlePageChange = (newPage: number) => {
+    if (newPage > 0 && newPage <= totalPages) {
+      handleSearch(newPage);
+    }
+  };
 
   const fetchLottoTypes = useCallback(async () => {
     try { 
@@ -410,55 +427,40 @@ const LottoList: React.FC = () => {
     setBillToPrint({ order, details });
   };
  
-useEffect(() => {
-    const loadInitialData = async () => {
-        if (!user) return;
-        setIsLoading(true);
+ useEffect(() => {
+    const loadInitialData = async () => {
+      if (!user) return;
+      setIsLoading(true);
+      try {
+        const [lottoTypesResponse, billUsersResponse] = await Promise.all([
+          api.get<LottoType[]>('/api/lotto-types'),
+          (user.role === "admin" || user.role === "owner")
+            ? api.get<{ id: number; username: string }[]>('/api/users-with-bills')
+            : Promise.resolve(null)
+        ]);
 
-        const params = new URLSearchParams(); 
-        params.append("startDate", startDate);
-        params.append("endDate", endDate);
-        
-        // กำหนด username ตามสิทธิ์ของผู้ใช้
-        if (user.role === 'admin' || user.role === 'owner') { 
-            if (filterUsername) {
-                params.append('username', filterUsername);
-            }
-        } else { 
-            params.append('username', user.username);
-        }
+        // อัปเดต State จากข้อมูลที่ได้รับ
+        const lottoTypesData = lottoTypesResponse.data;
+        setLottoTypes(lottoTypesData);
+        const countries = [...new Set(lottoTypesData.map((lt) => getCountryFromLottoName(lt.name)))];
+        setCountryList(countries.sort());
 
-        try {
-            // ใช้ Promise.all เพื่อให้โหลดข้อมูลทั้งหมดพร้อมกัน
-            const [ordersResponse, lottoTypesResponse, billUsersResponse] = await Promise.all([
-                api.get<Order[]>(`/api/bills?${params.toString()}`),
-                api.get<LottoType[]>('/api/lotto-types'),
-                (user.role === "admin" || user.role === "owner") 
-                    ? api.get<{ id: number; username: string }[]>('/api/users-with-bills') 
-                    : Promise.resolve(null) 
-            ]);
+        if (billUsersResponse) {
+          setBillUsers(billUsersResponse.data);
+        }
 
-            // อัปเดต State จากข้อมูลที่ได้รับ
-            setOrders(ordersResponse.data);
-            
-            const lottoTypesData = lottoTypesResponse.data;
-            setLottoTypes(lottoTypesData);
-            const countries = [...new Set(lottoTypesData.map((lt) => getCountryFromLottoName(lt.name)))];
-            setCountryList(countries.sort());
+        // เรียก fetchBills(1) เพื่อโหลดข้อมูลหน้าแรก
+        await handleSearch(1);
 
-            if (billUsersResponse) {
-                setBillUsers(billUsersResponse.data);
-            }
+      } catch (err) {
+        console.error("Failed to fetch initial data", err);
+      } finally {
+        // ไม่ต้อง setIsLoading(false) ที่นี่ เพราะ fetchBills จัดการแล้ว
+      }
+    };
 
-        } catch (err) {
-            console.error("Failed to fetch initial data", err);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    loadInitialData();
-}, [user, startDate, endDate, filterUsername]); // Dependency array ที่ถูกต้อง
+    loadInitialData();
+  }, [user]);
 
   const filteredLottoNames = useMemo(() => {
     if (!selectedCountry) return lottoTypes;
@@ -479,7 +481,10 @@ useEffect(() => {
         </div>
 
         <form
-          onSubmit={handleSearch}
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSearch(1);
+          }}
           className="space-y-6 bg-gray-50 p-4 rounded-lg shadow-sm"
         >
           {/* ====== แถวที่ 1: วันที่ และ สถานะ ====== */}
@@ -1026,6 +1031,33 @@ useEffect(() => {
             </tbody>
           </table>
         </div>
+
+         {!isLoading && totalBills > 0 && (
+          <div className="flex items-center justify-between mt-4 px-2 py-3 bg-gray-50 rounded-lg border-t">
+            <span className="text-sm text-gray-700">
+              พบทั้งหมด <span className="font-semibold">{totalBills.toLocaleString()}</span> รายการ
+            </span>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 1}
+                className="px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-md hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                ก่อนหน้า
+              </button>
+              <span className="text-sm text-gray-700">
+                หน้า {currentPage} จาก {totalPages}
+              </span>
+              <button
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage === totalPages}
+                className="px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-md hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                ถัดไป
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div style={{ position: "absolute", top: "-9999px", left: "-9999px" }}>
