@@ -2076,72 +2076,54 @@ app.get("/api/prize-check/all-items", isAuthenticated, (req, res) => __awaiter(v
 }));
 app.get("/api/winning-report", isAuthenticated, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const loggedInUser = req.user;
-    // --- รับค่า Pagination และ Filters ---
-    const page = parseInt(req.query.page, 10) || 1;
-    const limit = parseInt(req.query.limit, 10) || 50; // กำหนดค่าเริ่มต้น
-    const offset = (page - 1) * limit;
     const { startDate, endDate, username } = req.query;
     if (!startDate || !endDate) {
         return res.status(400).json({ error: 'กรุณาระบุ startDate และ endDate' });
     }
-    // --- สร้างเงื่อนไข WHERE และ Parameters ---
-    const queryParams = [startDate, `${endDate} 23:59:59`];
-    let userFilterClause = '';
-    let paramIndex = 3;
-    if (loggedInUser.role === 'owner' || loggedInUser.role === 'admin') {
-        if (username && username !== 'all' && username !== '') {
-            userFilterClause = `AND u.username = $${paramIndex++}`;
-            queryParams.push(username);
-        }
-    }
-    else {
-        userFilterClause = `AND u.id = $${paramIndex++}`;
-        queryParams.push(loggedInUser.id);
-    }
-    const winningConditions = `
-        (
-            (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ตรง' AND lr.winning_numbers->>'3top' = bi.bet_number) OR
-            (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'โต๊ด' AND lr.winning_numbers->'3tote' @> to_jsonb(bi.bet_number::text)) OR
-            (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'บน' AND lr.winning_numbers->>'2top' = bi.bet_number) OR
-            (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' = bi.bet_number)
-        )
-    `;
-    const baseFromWhere = `
-        FROM bet_items bi
-        JOIN bill_entries be ON bi.bill_entry_id = be.id
-        JOIN bills b ON be.bill_id = b.id
-        JOIN users u ON b.user_id = u.id
-        JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
-        WHERE b.created_at BETWEEN $1 AND $2 AND bi.status = 'ยืนยัน'
-          AND lr.status IN ('closed', 'manual_closed') ${userFilterClause}
-          AND ${winningConditions}
-    `;
+    const client = yield db.connect();
     try {
-        const countQuery = `SELECT COUNT(bi.id) as "total" ${baseFromWhere}`;
-        const dataQuery = `
+        const queryParams = [startDate, `${endDate} 23:59:59`];
+        let userFilterClause = '';
+        if (loggedInUser.role === 'owner' || loggedInUser.role === 'admin') {
+            if (username && username !== 'all') {
+                userFilterClause = `AND u.username = $${queryParams.length + 1}`;
+                queryParams.push(username);
+            }
+        }
+        else {
+            userFilterClause = `AND u.id = $${queryParams.length + 1}`;
+            queryParams.push(loggedInUser.id);
+        }
+        const winningItemsQuery = `
             SELECT
                 bi.id, b.bill_ref AS "billRef", u.username, lr.name AS "lottoName",
                 lr.cutoff_datetime AS "lottoDrawDate", be.bet_type AS "betType",
                 bi.bet_style AS "betStyle", bi.bet_number AS "betNumber",
                 bi.payout_amount AS "payoutAmount"
-            ${baseFromWhere}
-            ORDER BY lr.cutoff_datetime DESC, b.id DESC
-            LIMIT $${paramIndex++} OFFSET $${paramIndex++};
+            FROM bet_items bi
+            JOIN bill_entries be ON bi.bill_entry_id = be.id
+            JOIN bills b ON be.bill_id = b.id
+            JOIN users u ON b.user_id = u.id
+            JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
+            WHERE b.created_at BETWEEN $1 AND $2 AND bi.status = 'ยืนยัน'
+              AND lr.status IN ('closed', 'manual_closed') ${userFilterClause}
+              AND (
+                    (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ตรง' AND lr.winning_numbers->>'3top' = bi.bet_number) OR
+                    (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'โต๊ด' AND lr.winning_numbers->'3tote' @> to_jsonb(bi.bet_number::text)) OR
+                    (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'บน' AND lr.winning_numbers->>'2top' = bi.bet_number) OR
+                    (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' = bi.bet_number)
+              )
+            ORDER BY lr.cutoff_datetime DESC, b.id DESC;
         `;
-        const [countResult, dataResult] = yield Promise.all([
-            db.query(countQuery, queryParams),
-            db.query(dataQuery, [...queryParams, limit, offset])
-        ]);
-        const totalItems = parseInt(countResult.rows[0].total, 10);
-        const totalPages = Math.ceil(totalItems / limit);
-        res.json({
-            items: dataResult.rows,
-            pagination: { currentPage: page, totalPages, totalItems, limit }
-        });
+        const result = yield client.query(winningItemsQuery, queryParams);
+        res.json({ items: result.rows });
     }
     catch (err) {
         console.error("Error fetching winning report:", err);
         res.status(500).json({ error: 'เกิดข้อผิดพลาดในการดึงข้อมูล', details: err.message });
+    }
+    finally {
+        client.release();
     }
 }));
 // เพิ่มใน server.ts
