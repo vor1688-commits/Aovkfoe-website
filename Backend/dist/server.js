@@ -2282,7 +2282,6 @@ app.get('/api/filters/lotto-options', isAuthenticated, (req, res) => __awaiter(v
         res.status(500).json({ error: 'Failed to fetch lotto options' });
     }
 }));
-// --- Server Listener ---
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
