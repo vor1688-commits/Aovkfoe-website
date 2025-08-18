@@ -195,6 +195,14 @@ const PrizeCheckPage: React.FC = () => {
   const [overrideWinningNumbers, setOverrideWinningNumbers] =
     useState<WinningNumbers | null>(null);
 
+
+    const [prizeItems, setPrizeItems] = useState<PrizeCheckItem[]>([]);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [totalPages, setTotalPages] = useState(0);
+    const [totalItems, setTotalItems] = useState(0);
+    const ITEMS_PER_PAGE = 100;
+ 
+
 const fetchItems = useCallback(async () => {
     setIsLoading(true);
     const params = new URLSearchParams({ startDate, endDate });
@@ -983,6 +991,16 @@ useEffect(() => {
     </tbody>
   </table>
 </div>
+{!isLoading && totalItems > 0 && (
+                    <div className="flex items-center justify-between mt-4">
+                        <span>พบ {totalItems.toLocaleString()} รายการ</span>
+                        <div>
+                            <button onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage === 1}>ก่อนหน้า</button>
+                            <span> หน้า {currentPage} / {totalPages} </span>
+                            <button onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage === totalPages}>ถัดไป</button>
+                        </div>
+                    </div>
+                )}
       </div>
     </div>
   );

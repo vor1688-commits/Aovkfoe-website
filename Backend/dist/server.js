@@ -2016,20 +2016,20 @@ app.get("/api/financial-summary", isAuthenticated, (req, res) => __awaiter(void 
 }));
 app.get("/api/prize-check/all-items", isAuthenticated, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const loggedInUser = req.user;
-    // --- 1. รับค่า Pagination และ Filters ทั้งหมด ---
     const page = parseInt(req.query.page, 10) || 1;
-    const limit = parseInt(req.query.limit, 10) || 100; // หน้าตรวจรางวัลอาจแสดงผลเยอะกว่า
+    const limit = parseInt(req.query.limit, 10) || 100;
     const offset = (page - 1) * limit;
-    const { startDate, endDate, status, username, lottoName, lottoDate, billRef } = req.query;
+    // ✨ [ADD] รับ derivedStatus เข้ามา
+    const { startDate, endDate, status, username, lottoName, lottoDate, billRef, derivedStatus } = req.query;
     if (!startDate || !endDate) {
         return res.status(400).json({ error: 'Please provide both startDate and endDate.' });
     }
-    // --- 2. สร้างเงื่อนไข WHERE และ Parameters แบบไดนามิก ---
     const queryParams = [];
     const whereConditions = [];
     let paramIndex = 1;
     whereConditions.push(`b.created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`);
     queryParams.push(startDate, `${endDate} 23:59:59`);
+    // ... (ส่วนการสร้างเงื่อนไขอื่นๆ เหมือนเดิม) ...
     if (loggedInUser.role === 'owner' || loggedInUser.role === 'admin') {
         if (username && username !== 'all') {
             whereConditions.push(`u.username = $${paramIndex++}`);
@@ -2056,30 +2056,31 @@ app.get("/api/prize-check/all-items", isAuthenticated, (req, res) => __awaiter(v
         whereConditions.push(`lr.cutoff_datetime::date = $${paramIndex++}`);
         queryParams.push(lottoDate);
     }
-    const whereClause = whereConditions.join(' AND ');
-    // --- 3. สร้าง Query สำหรับนับและดึงข้อมูล ---
-    const baseQuery = `
-        FROM bet_items bi
-        JOIN bill_entries be ON bi.bill_entry_id = be.id
-        JOIN bills b ON be.bill_id = b.id
-        JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
-        JOIN users u ON b.user_id = u.id
-        WHERE ${whereClause}
+    const winningConditions = `
+        (
+            (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ตรง' AND lr.winning_numbers->>'3top' = bi.bet_number) OR
+            (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'โต๊ด' AND lr.winning_numbers->'3tote' @> to_jsonb(bi.bet_number::text)) OR
+            (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'บน' AND lr.winning_numbers->>'2top' = bi.bet_number) OR
+            (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' = bi.bet_number)
+        )
     `;
+    // ✨ [ADD] เพิ่ม Logic การกรองตาม derivedStatus
+    if (derivedStatus === 'ถูกรางวัล') {
+        whereConditions.push(winningConditions);
+        whereConditions.push(`lr.status IN ('closed', 'manual_closed')`);
+    }
+    else if (derivedStatus === 'ไม่ถูกรางวัล') {
+        whereConditions.push(`NOT ${winningConditions}`);
+        whereConditions.push(`lr.status IN ('closed', 'manual_closed')`);
+    }
+    else if (derivedStatus === 'รอประกาศผล' || derivedStatus === 'รอใส่ผลรางวัล') {
+        whereConditions.push(`lr.status NOT IN ('closed', 'manual_closed')`);
+    }
+    const whereClause = whereConditions.join(' AND ');
+    const baseQuery = `FROM bet_items bi JOIN bill_entries be ON bi.bill_entry_id = be.id JOIN bills b ON be.bill_id = b.id JOIN lotto_rounds lr ON b.lotto_round_id = lr.id JOIN users u ON b.user_id = u.id WHERE ${whereClause}`;
     try {
         const countQuery = `SELECT COUNT(bi.id) as "total" ${baseQuery}`;
-        const dataQuery = `
-            SELECT
-                bi.id, bi.bet_number, bi.price, bi.bet_style, bi.baht_per,
-                bi.rate, bi.payout_amount AS "payoutAmount", be.bet_type, bi.status,
-                b.bill_ref AS "billRef", b.note, b.created_at AS "createdAt",
-                lr.name AS "lottoName", lr.cutoff_datetime AS "lottoDrawDate",
-                lr.winning_numbers AS "winningNumbers", lr.status AS "lottoRoundStatus",
-                lr.id AS "lottoRoundId", u.username
-            ${baseQuery}
-            ORDER BY b.created_at DESC, bi.id ASC
-            LIMIT $${paramIndex++} OFFSET $${paramIndex++};
-        `;
+        const dataQuery = `SELECT bi.id, bi.bet_number, bi.price, bi.bet_style, bi.baht_per, bi.rate, bi.payout_amount AS "payoutAmount", be.bet_type, bi.status, b.bill_ref AS "billRef", b.note, b.created_at AS "createdAt", lr.name AS "lottoName", lr.cutoff_datetime AS "lottoDrawDate", lr.winning_numbers AS "winningNumbers", lr.status AS "lottoRoundStatus", lr.id AS "lottoRoundId", u.username ${baseQuery} ORDER BY b.created_at DESC, bi.id ASC LIMIT $${paramIndex++} OFFSET $${paramIndex++};`;
         const [countResult, dataResult] = yield Promise.all([
             db.query(countQuery, queryParams),
             db.query(dataQuery, [...queryParams, limit, offset])
@@ -2088,17 +2089,11 @@ app.get("/api/prize-check/all-items", isAuthenticated, (req, res) => __awaiter(v
         const totalPages = Math.ceil(totalItems / limit);
         res.json({
             items: dataResult.rows,
-            pagination: {
-                currentPage: page,
-                totalPages,
-                totalItems,
-                limit
-            }
+            pagination: { currentPage: page, totalPages, totalItems, limit }
         });
     }
     catch (err) {
-        console.error(`Error fetching prize check items:`, err);
-        res.status(500).json({ error: "Server error while fetching prize check items", details: err.message });
+        res.status(500).json({ error: "Server error", details: err.message });
     }
 }));
 app.get("/api/winning-report", isAuthenticated, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
