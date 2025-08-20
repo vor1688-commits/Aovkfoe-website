@@ -2063,7 +2063,7 @@ app.get("/api/financial-summary", isAuthenticated, (req, res) => __awaiter(void 
                         AND lr.status IN ('closed', 'manual_closed')
                         AND (
                             (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ตรง' AND lr.winning_numbers->>'3top' = bi.bet_number) OR
-                            (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'โต๊ด' AND lr.winning_numbers->'3tote' @> to_jsonb(bi.bet_number::text)) OR
+                            (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'โต๊ด' AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(lr.winning_numbers->'3tote') AS w(num) WHERE BTRIM(w.num, '[]"') = bi.bet_number)) OR
                             (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'บน' AND lr.winning_numbers->>'2top' = bi.bet_number) OR
                             (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' = bi.bet_number)
                         )
@@ -2100,7 +2100,7 @@ app.get("/api/financial-summary", isAuthenticated, (req, res) => __awaiter(void 
             WHERE ${baseWhereClauses} AND (bi.status IS NULL OR bi.status = 'ยืนยัน')
             GROUP BY bi.bet_number, bi.bet_style ORDER BY "totalAmount" DESC;
         `;
-        const usersQuery = `SELECT id, username FROM users WHERE role != 'owner' ORDER BY username`;
+        const usersQuery = `SELECT id, username FROM users WHERE role != 'owner' ORDER BY username ASC`;
         const [summaryResult, byLottoTypeResult, allBetItemsSummaryResult, usersResult] = yield Promise.all([
             client.query(mainQuery, queryParams),
             client.query(byLottoTypeQuery, queryParams),
@@ -2108,7 +2108,7 @@ app.get("/api/financial-summary", isAuthenticated, (req, res) => __awaiter(void 
             client.query(usersQuery)
         ]);
         const summary = summaryResult.rows[0] || {};
-        summary.netProfit = (summary.totalWinnings || 0) - (summary.totalBetAmount || 0);
+        summary.netProfit = summary.totalWinnings - summary.totalBetAmount;
         res.json({
             summary,
             breakdown: { byLottoType: byLottoTypeResult.rows },
