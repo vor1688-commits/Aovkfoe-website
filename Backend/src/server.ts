@@ -2507,7 +2507,6 @@ app.get("/api/financial-summary", isAuthenticated, async (req: Request, res: Res
                         )
                     ) AS winning_amount
                 FROM bill_entries be
-                -- ✨ [FIX] แก้ไขเงื่อนไข JOIN ตรงนี้
                 JOIN bet_items bi ON bi.bill_entry_id = be.id
                 JOIN filtered_bills fb ON be.bill_id = fb.id
                 JOIN lotto_rounds lr ON fb.lotto_round_id = lr.id
@@ -2542,11 +2541,13 @@ app.get("/api/financial-summary", isAuthenticated, async (req: Request, res: Res
             GROUP BY bi.bet_number, bi.bet_style ORDER BY "totalAmount" DESC;
         `;
 
+        const usersQuery = `SELECT id, username FROM users WHERE role != 'owner' ORDER BY username`;
+
         const [summaryResult, byLottoTypeResult, allBetItemsSummaryResult, usersResult] = await Promise.all([
             client.query(mainQuery, queryParams),
             client.query(byLottoTypeQuery, queryParams),
             client.query(allBetItemsSummaryQuery, queryParams),
-            client.query('SELECT id, username FROM users WHERE role != \'owner\' ORDER BY username')
+            client.query(usersQuery)
         ]);
 
         const summary: SummaryData = summaryResult.rows[0] || {};
