@@ -2065,7 +2065,6 @@ app.get("/api/financial-summary", isAuthenticated, (req, res) => __awaiter(void 
                         JOIN bill_entries be ON bi.bill_entry_id = be.id
                         JOIN lotto_rounds lr ON fb.lotto_round_id = lr.id
                         WHERE be.bill_id = fb.id AND bi.status = 'ยืนยัน' AND lr.status IN ('closed', 'manual_closed')
-                        -- ✨ [FIX] แก้ไข Logic การตรวจรางวัลให้ถูกต้องแม่นยำ
                         AND (
                             (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ตรง' AND lr.winning_numbers->>'3top' = bi.bet_number) OR
                             (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'โต๊ด' AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(lr.winning_numbers->'3tote') AS w(num) WHERE w.num = bi.bet_number)) OR
@@ -2082,8 +2081,9 @@ app.get("/api/financial-summary", isAuthenticated, (req, res) => __awaiter(void 
                 COALESCE(SUM(fb.total_amount - COALESCE(bc.returned_amount, 0)), 0)::float AS "totalBetAmount",
                 COALESCE(SUM(bc.returned_amount), 0)::float AS "totalReturnedAmount",
                 COALESCE(SUM(bc.winning_amount), 0)::float AS "totalWinnings",
-                (SELECT COUNT(*) FROM filtered_bills) AS "totalBills"
-            FROM filtered_bills fb LEFT JOIN bill_calculations bc ON fb.id = bc.id
+                (SELECT COUNT(id) FROM filtered_bills) AS "totalBills"
+            FROM filtered_bills fb
+            LEFT JOIN bill_calculations bc ON fb.id = bc.id
         `;
         const byLottoTypeQuery = `
             ${baseQueryWithCTE}
@@ -2094,15 +2094,33 @@ app.get("/api/financial-summary", isAuthenticated, (req, res) => __awaiter(void 
         `;
         const allBetItemsSummaryQuery = `
             SELECT bi.bet_number as "number", bi.bet_style as "style", SUM(bi.price)::float as "totalAmount", COUNT(bi.id) as "count"
-            FROM bet_items bi JOIN bill_entries be ON bi.bill_entry_id = be.id JOIN bills b ON be.bill_id = b.id JOIN users u ON b.user_id = u.id JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
+            FROM bet_items bi
+            JOIN bill_entries be ON bi.bill_entry_id = be.id
+            JOIN bills b ON be.bill_id = b.id
+            JOIN users u ON b.user_id = u.id
+            JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
             WHERE ${baseWhereClauses} AND (bi.status IS NULL OR bi.status = 'ยืนยัน')
             GROUP BY bi.bet_number, bi.bet_style ORDER BY "totalAmount" DESC;
         `;
+        const recentBillsQuery = `
+            ${baseQueryWithCTE}
+            SELECT 
+                fb.id, fb.bill_ref AS "billRef", u.username, fb.created_at AS "createdAt", 
+                (fb.total_amount - COALESCE(bc.returned_amount, 0))::float AS "totalAmount", 
+                COALESCE(bc.returned_amount, 0)::float as "returnedAmount",
+                fb.status, fb.bet_name AS "lottoName", fb.bill_lotto_draw AS "billLottoDraw", 
+                fb.note, fb.lotto_round_id as "lottoRoundId"
+            FROM filtered_bills fb
+            JOIN users u ON fb.user_id = u.id
+            LEFT JOIN bill_calculations bc ON fb.id = bc.id
+            ORDER BY fb.created_at DESC;
+        `;
         const usersQuery = `SELECT id, username FROM users ORDER BY username ASC`;
-        const [summaryResult, byLottoTypeResult, allBetItemsSummaryResult, usersResult] = yield Promise.all([
+        const [summaryResult, byLottoTypeResult, allBetItemsSummaryResult, recentBillsResult, usersResult] = yield Promise.all([
             client.query(summaryQuery, queryParams),
             client.query(byLottoTypeQuery, queryParams),
             client.query(allBetItemsSummaryQuery, queryParams),
+            client.query(recentBillsQuery, queryParams),
             client.query(usersQuery)
         ]);
         const summary = summaryResult.rows[0] || {};
@@ -2111,6 +2129,7 @@ app.get("/api/financial-summary", isAuthenticated, (req, res) => __awaiter(void 
             summary,
             breakdown: { byLottoType: byLottoTypeResult.rows },
             allBetItemsSummary: allBetItemsSummaryResult.rows,
+            recentBills: recentBillsResult.rows,
             users: usersResult.rows,
         });
     }
