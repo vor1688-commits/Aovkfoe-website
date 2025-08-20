@@ -2446,6 +2446,15 @@ app.get("/api/bills/grouped", async (req: Request, res: Response) => {
 
 // /api/financial-summary
 
+
+
+
+
+
+
+// [ชี้แจง] ต้องสร้างฟังก์ชัน sort_string() ใน PostgreSQL ก่อนใช้งานโค้ดนี้
+
+
 app.get("/api/financial-summary", isAuthenticated, async (req: Request, res: Response) => {
     const loggedInUser = req.user!;
     const { startDate, endDate, username, status, lottoName, lottoDate } = req.query;
@@ -2459,7 +2468,7 @@ app.get("/api/financial-summary", isAuthenticated, async (req: Request, res: Res
         const queryParams: any[] = [];
         const whereConditions: string[] = [];
         
-        // --- ส่วนการสร้างเงื่อนไข (เหมือนเดิม) ---
+        // --- ส่วนการสร้างเงื่อนไขสำหรับ WHERE clause ---
         if (lottoDate && lottoDate !== 'all' && lottoDate !== '') {
             whereConditions.push(`lr.cutoff_datetime::date = $${queryParams.length + 1}`);
             queryParams.push(lottoDate as string);
@@ -2486,7 +2495,7 @@ app.get("/api/financial-summary", isAuthenticated, async (req: Request, res: Res
         }
         const baseWhereClauses = whereConditions.join(' AND ');
 
-        // --- 🔽 [จุดที่แก้ไข] แก้ไข mainQuery ให้ใช้ฟังก์ชัน sort_string 🔽 ---
+        // --- Query หลักที่รวมการแก้ไขทั้งหมดแล้ว ---
         const mainQuery = `
             WITH filtered_bills AS (
                 SELECT b.id, b.total_amount, b.lotto_round_id
@@ -2501,16 +2510,19 @@ app.get("/api/financial-summary", isAuthenticated, async (req: Request, res: Res
                     SUM(bi.price) FILTER (WHERE bi.status = 'คืนเลข') AS returned_amount,
                     SUM(bi.payout_amount) FILTER (
                         WHERE bi.status = 'ยืนยัน' 
-                        AND lr.status IN ('closed', 'manual_closed')
+                        AND lr.status IN ('closed', 'manual_closed') -- ✅ คงการตรวจสอบสถานะรอบหวยไว้
                         AND (
+                            -- ตรวจ 3 ตัวตรง
                             (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ตรง' AND lr.winning_numbers->>'3top' = bi.bet_number) OR
-                            -- ✅ แก้ไขเงื่อนไข 'โต๊ด' ตรงนี้
+                            -- ตรวจ 3 ตัวโต๊ด (ใช้ฟังก์ชัน sort_string)
                             (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'โต๊ด' AND EXISTS (
                                 SELECT 1
                                 FROM jsonb_array_elements_text(lr.winning_numbers->'3tote') AS w(num)
                                 WHERE sort_string(bi.bet_number) = sort_string(w.num)
                             )) OR
+                            -- ตรวจ 2 ตัวบน
                             (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'บน' AND lr.winning_numbers->>'2top' = bi.bet_number) OR
+                            -- ตรวจ 2 ตัวล่าง
                             (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' = bi.bet_number)
                         )
                     ) AS winning_amount
@@ -2528,7 +2540,6 @@ app.get("/api/financial-summary", isAuthenticated, async (req: Request, res: Res
             FROM filtered_bills fb
             LEFT JOIN bill_item_aggregates bia ON fb.id = bia.bill_id
         `;
-        // --- 🔼 [สิ้นสุดการแก้ไข] 🔼 ---
 
         const byLottoTypeQuery = `
             SELECT b.bet_name as name, SUM(b.total_amount)::float AS "totalAmount", COUNT(b.id) AS "billCount"
