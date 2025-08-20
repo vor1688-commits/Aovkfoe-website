@@ -2507,7 +2507,8 @@ app.get("/api/financial-summary", isAuthenticated, async (req: Request, res: Res
                         )
                     ) AS winning_amount
                 FROM bill_entries be
-                JOIN bet_items bi ON be.bill_entry_id = be.id
+                -- ✨ [FIX] แก้ไขเงื่อนไข JOIN ตรงนี้
+                JOIN bet_items bi ON bi.bill_entry_id = be.id
                 JOIN filtered_bills fb ON be.bill_id = fb.id
                 JOIN lotto_rounds lr ON fb.lotto_round_id = lr.id
                 GROUP BY be.bill_id
