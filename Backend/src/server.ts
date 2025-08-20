@@ -889,23 +889,19 @@ app.get("/api/users", isAuthenticated, isAdminOrOwner, async (req, res) => {
  
 app.get('/api/bills', isAuthenticated, async (req: Request, res: Response) => {
     const loggedInUser = req.user!;
-
-    // --- [MODIFY] ตรวจสอบว่ามีการส่ง limit มาจาก Frontend หรือไม่ ---
     const usePagination = req.query.limit && !isNaN(parseInt(req.query.limit as string, 10));
-
-    // --- ส่วนของการกรองข้อมูล (Filters) เหมือนเดิม ---
     const { startDate, endDate, status, billRef, noteRef, username, lottoCategory, lottoName } = req.query;
+
     const queryParams: any[] = [];
     const whereConditions: string[] = ['1=1'];
 
     if (loggedInUser.role === 'user') {
         queryParams.push(loggedInUser.id);
         whereConditions.push(`b.user_id = $${queryParams.length}`);
-    } else if ((loggedInUser.role === 'admin' || loggedInUser.role === 'owner') && username) {
+    } else if ((loggedInUser.role === 'admin' || loggedInUser.role === 'owner') && username && username !== 'all' && username !== '') {
         queryParams.push(username);
         whereConditions.push(`u.username = $${queryParams.length}`);
     }
-    // ... (ส่วนการสร้าง queryParams และ whereConditions อื่นๆ เหมือนเดิม) ...
     if (startDate) {
         queryParams.push(startDate);
         whereConditions.push(`b.created_at::date >= $${queryParams.length}`);
@@ -916,7 +912,7 @@ app.get('/api/bills', isAuthenticated, async (req: Request, res: Response) => {
         queryParams.push(nextDay.toISOString().split('T')[0]);
         whereConditions.push(`b.created_at < $${queryParams.length}`);
     }
-    if (status) {
+    if (status && status !== 'all') {
         queryParams.push(status);
         whereConditions.push(`b.status = $${queryParams.length}`);
     }
@@ -932,9 +928,9 @@ app.get('/api/bills', isAuthenticated, async (req: Request, res: Response) => {
         queryParams.push(`%${lottoCategory}%`);
         whereConditions.push(`b.bet_name ILIKE $${queryParams.length}`);
     }
-    if (lottoName) {
+    if (lottoName && lottoName !== 'all') {
+        whereConditions.push(`lr.name = $${queryParams.length + 1}`);
         queryParams.push(lottoName);
-        whereConditions.push(`b.bet_name = $${queryParams.length}`);
     }
 
     const whereClause = whereConditions.join(' AND ');
@@ -946,20 +942,20 @@ app.get('/api/bills', isAuthenticated, async (req: Request, res: Response) => {
             const page = parseInt(req.query.page as string, 10) || 1;
             const offset = (page - 1) * limit;
 
-            // Query สำหรับนับจำนวนทั้งหมด (ทำงานเร็ว)
-            const countQuery = `SELECT COUNT(b.id) as "total" FROM bills b JOIN users u ON b.user_id = u.id WHERE ${whereClause};`;
+            // ✨ [FIX] เพิ่ม LEFT JOIN lotto_rounds lr เข้าไปใน countQuery เพื่อป้องกัน Error
+            const countQuery = `SELECT COUNT(b.id) as "total" FROM bills b JOIN users u ON b.user_id = u.id LEFT JOIN lotto_rounds lr ON b.lotto_round_id = lr.id WHERE ${whereClause};`;
             
-            // Query ดึงข้อมูลแบบจำกัดจำนวน (Optimized - ไม่มี Subquery ใน SELECT)
             const dataQuery = `
                 SELECT 
                     b.id, b.bill_ref AS "billRef", b.created_at AS "createdAt", b.bet_name AS "lottoName",
-                    b.total_amount AS "totalAmount", b.status, b.note, b.bill_lotto_draw, u.username,
+                    b.total_amount AS "totalAmount", b.status, b.note, b.bill_lotto_draw AS "billLottoDraw", u.username,
                     COALESCE(agg.returned_amount, 0)::float AS "returnedAmount",
                     (b.total_amount - COALESCE(agg.returned_amount, 0))::float AS "netAmount",
                     COALESCE(agg.item_count, 0)::int AS "itemCount",
                     COALESCE(agg.has_half_rate_item, false) AS "hasHalfRateItem"
                 FROM bills b
                 JOIN users u ON b.user_id = u.id
+                LEFT JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
                 LEFT JOIN (
                     SELECT
                         be.bill_id,
@@ -989,7 +985,7 @@ app.get('/api/bills', isAuthenticated, async (req: Request, res: Response) => {
             });
 
         } else {
-            // --- B: โหมดดึงทั้งหมด (ช้า, แบบเดิมที่คุณให้มา) ---
+            // --- B: โหมดดึงทั้งหมด (ช้า, แบบเดิม) ---
             const originalQuery = `
                 SELECT 
                     b.id, b.bill_ref as "billRef", b.created_at as "createdAt", b.bet_name as "lottoName",
@@ -1002,13 +998,12 @@ app.get('/api/bills', isAuthenticated, async (req: Request, res: Response) => {
                 JOIN users u ON b.user_id = u.id
                 LEFT JOIN bill_entries be ON be.bill_id = b.id
                 LEFT JOIN bet_items bi ON bi.bill_entry_id = be.id
+                LEFT JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
                 WHERE ${whereClause}
                 GROUP BY b.id, u.username
                 ORDER BY b.id DESC;
             `;
-
             const result = await db.query(originalQuery, queryParams);
-            // ส่งข้อมูลกลับไปในรูปแบบที่ Frontend ตัวเก่าคาดหวัง (ไม่มี pagination object)
             res.json(result.rows);
         }
     } catch (err: any) {
@@ -2449,6 +2444,7 @@ app.get("/api/bills/grouped", async (req: Request, res: Response) => {
 
 
 // --- ⬇️ วางโค้ดนี้แทนที่ app.get('/api/financial-summary', ...) เดิมทั้งหมด ⬇️ ---
+// --- ⬇️ แทนที่ app.get('/api/financial-summary', ...) เดิมด้วยโค้ดนี้ ⬇️ ---
 app.get("/api/financial-summary", isAuthenticated, async (req: Request, res: Response) => {
     const loggedInUser = req.user!;
     const { startDate, endDate, username, status, lottoName, lottoDate } = req.query;
