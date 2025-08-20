@@ -2047,11 +2047,12 @@ app.get("/api/financial-summary", isAuthenticated, (req, res) => __awaiter(void 
             queryParams.push(lottoName);
         }
         const baseWhereClauses = whereConditions.join(' AND ');
-        // ✨ [FIX] ปรับปรุง Query ทั้งหมดให้ถูกต้องและแม่นยำ
         const baseQueryWithCTE = `
             WITH filtered_bills AS (
-                SELECT b.id, b.total_amount, b.bet_name, b.lotto_round_id FROM bills b
-                JOIN users u ON b.user_id = u.id JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
+                SELECT b.*
+                FROM bills b
+                JOIN users u ON b.user_id = u.id
+                JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
                 WHERE ${baseWhereClauses}
             ),
             bill_calculations AS (
@@ -2064,9 +2065,9 @@ app.get("/api/financial-summary", isAuthenticated, (req, res) => __awaiter(void 
                         JOIN bill_entries be ON bi.bill_entry_id = be.id
                         JOIN lotto_rounds lr ON fb.lotto_round_id = lr.id
                         WHERE be.bill_id = fb.id AND bi.status = 'ยืนยัน' AND lr.status IN ('closed', 'manual_closed')
+                        -- ✨ [FIX] แก้ไข Logic การตรวจรางวัลให้ถูกต้องแม่นยำ
                         AND (
                             (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ตรง' AND lr.winning_numbers->>'3top' = bi.bet_number) OR
-                            -- แก้ไข Logic การตรวจ 3 ตัวโต๊ดให้ถูกต้อง
                             (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'โต๊ด' AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(lr.winning_numbers->'3tote') AS w(num) WHERE w.num = bi.bet_number)) OR
                             (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'บน' AND lr.winning_numbers->>'2top' = bi.bet_number) OR
                             (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' = bi.bet_number)
@@ -2084,7 +2085,6 @@ app.get("/api/financial-summary", isAuthenticated, (req, res) => __awaiter(void 
                 (SELECT COUNT(*) FROM filtered_bills) AS "totalBills"
             FROM filtered_bills fb LEFT JOIN bill_calculations bc ON fb.id = bc.id
         `;
-        // ✨ [FIX] แก้ไข Query ให้คำนวณยอดสุทธิ (Net Amount) เพื่อความสอดคล้องกับ KPI
         const byLottoTypeQuery = `
             ${baseQueryWithCTE}
             SELECT fb.bet_name as name, SUM(fb.total_amount - COALESCE(bc.returned_amount, 0))::float AS "totalAmount", COUNT(fb.id) AS "billCount"
