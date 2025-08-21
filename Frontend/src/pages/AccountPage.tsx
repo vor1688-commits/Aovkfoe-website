@@ -444,7 +444,7 @@ const AccountPage: React.FC = () => {
             <AnimatePresence>
                 {isLoading ? ( <FullScreenLoader isLoading={true} text="กำลังโหลดข้อมูล..." /> ) 
                 : error ? ( <MessageDisplay icon={<ExclamationTriangleIcon />} title="เกิดข้อผิดพลาด" message={error} /> ) 
-                : !summaryData || summaryData.summary.totalBills === 0 ? ( <MessageDisplay icon={<InformationCircleIcon />} title="ไม่พบข้อมูล" message="ไม่พบรายการในช่วงเวลาที่คุณเลือก" /> ) 
+                : !summaryData ? ( <MessageDisplay icon={<InformationCircleIcon />} title="ไม่พบข้อมูล" message="ไม่พบรายการในช่วงเวลาที่คุณเลือก" /> ) 
                 : (
                 <motion.div className="space-y-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
