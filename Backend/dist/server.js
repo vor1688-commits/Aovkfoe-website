@@ -2062,7 +2062,10 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, (req, res) => __
                     be.bill_id,
                     SUM(bi.price) FILTER (WHERE bi.status = 'คืนเลข') AS returned_amount,
                     SUM(bi.payout_amount) FILTER (
-                        WHERE bi.status = 'ยืนยัน' AND lr.status IN ('closed', 'manual_closed')
+                        -- ✅✅✅ [จุดที่แก้ไข] ✅✅✅
+                        -- แก้ไขเงื่อนไขตรงนี้ จากเดิม bi.status = 'ยืนยัน'
+                        -- ให้เป็น (bi.status IS NULL OR bi.status = 'ยืนยัน')
+                        WHERE (bi.status IS NULL OR bi.status = 'ยืนยัน') AND lr.status IN ('closed', 'manual_closed')
                         AND (
                             (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ตรง' AND lr.winning_numbers->>'3top' = bi.bet_number) OR
                             (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'โต๊ด' AND EXISTS (
