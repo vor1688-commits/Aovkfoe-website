@@ -129,7 +129,7 @@ const AccountPage: React.FC = () => {
         
         const summaryRequest = api.get<SummaryApiResponse>(`/api/financial-summary-fast-version`, { params: commonParams });
         const recentBillsRequest = api.get(`/api/bills`, { params: { ...commonParams, page: '1', limit: '20' } });
-        const winningReportRequest = api.get(`/api/winning-report`, { params: { ...commonParams, page: '1', limit: '50' } });
+        const winningReportRequest = api.get(`/api/winning-report-fast-version`, { params: { ...commonParams, page: '1', limit: '50' } });
         const optionsRequest = api.get(`/api/filters/lotto-options`, { params: { username: usernameParam } });
   
         try {
@@ -189,7 +189,7 @@ const AccountPage: React.FC = () => {
     
     const handleWinningItemsPageChange = async (newPage: number) => {
       const params = { startDate, endDate, username: selectedUser === "all" ? "" : selectedUser, page: newPage.toString(), limit: '50' };
-      const res = await api.get(`/api/winning-report`, { params });
+      const res = await api.get(`/api/winning-report-fast-version`, { params });
       const rawWinningItems: WinningItem[] = res.data.items || [];
       const grouped = rawWinningItems.reduce((acc: Record<string, GroupedWinningItem>, item: WinningItem) => {
           const key = `${item.billRef}-${item.betNumber}`;

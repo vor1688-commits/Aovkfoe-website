@@ -2947,6 +2947,113 @@ app.get("/api/winning-report", isAuthenticated, async (req: Request, res: Respon
 });
 
 
+// ในไฟล์ server.ts หรือไฟล์ API ของคุณ
+app.get("/api/winning-report-fast-version", isAuthenticated, async (req: Request, res: Response) => {
+    const loggedInUser = req.user!;
+    
+    // รับค่า Filters ทั้งหมด รวมถึง Pagination
+    const { 
+        startDate, 
+        endDate, 
+        username, 
+        lottoName, 
+        lottoDate,
+        page = 1, 
+        limit = 50 
+    } = req.query;
+
+    const offset = (Number(page) - 1) * Number(limit);
+
+    if (!startDate || !endDate) {
+        return res.status(400).json({ error: 'กรุณาระบุ startDate และ endDate' });
+    }
+
+    try {
+        const conditions: string[] = [];
+        const params: any[] = [];
+
+        // --- ✅ [จุดที่แก้ไข] ---
+        // เปลี่ยนมาใช้ lr.cutoff_datetime (วันที่ออกผล) เป็นเงื่อนไขหลักในการกรองวันที่
+        if (lottoDate && lottoDate !== 'all' && lottoDate !== '') {
+            conditions.push(`lr.cutoff_datetime::date = $${params.length + 1}`);
+            params.push(lottoDate);
+        } else {
+            conditions.push(`lr.cutoff_datetime BETWEEN $${params.length + 1} AND $${params.length + 2}`);
+            params.push(startDate, `${endDate} 23:59:59`);
+        }
+
+        // เพิ่ม Filters อื่นๆ ให้ครบถ้วน
+        if (loggedInUser.role === 'owner' || loggedInUser.role === 'admin') {
+            if (username && username !== 'all' && username !== '') {
+                conditions.push(`u.username = $${params.length + 1}`);
+                params.push(username as string);
+            }
+        } else {
+            conditions.push(`u.id = $${params.length + 1}`);
+            params.push(loggedInUser.id);
+        }
+        if (lottoName && lottoName !== 'all' && lottoName !== '') {
+            conditions.push(`b.bet_name = $${params.length + 1}`);
+            params.push(lottoName as string);
+        }
+
+        // เงื่อนไขตายตัว
+        conditions.push(`b.status = 'ยืนยันแล้ว'`);
+        conditions.push(`lr.status IN ('closed', 'manual_closed')`);
+        
+        // เงื่อนไขการตรวจรางวัล
+        const winningChecks = `
+            ((be.bet_type = '3d' AND bi.bet_style = 'ตรง' AND lr.winning_numbers->>'3top' = bi.bet_number) OR
+            (be.bet_type = '3d' AND bi.bet_style = 'โต๊ด' AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(lr.winning_numbers->'3tote') AS w(num) WHERE sort_string(TRIM('"' FROM w.num)) = sort_string(bi.bet_number))) OR
+            (be.bet_type = '2d' AND bi.bet_style = 'บน' AND lr.winning_numbers->>'2top' = bi.bet_number) OR
+            (be.bet_type = '2d' AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' = bi.bet_number) OR
+            (be.bet_type = 'run' AND bi.bet_style = 'บน' AND lr.winning_numbers->>'3top' LIKE '%' || bi.bet_number || '%') OR
+            (be.bet_type = 'run' AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' LIKE '%' || bi.bet_number || '%'))
+        `;
+        conditions.push(winningChecks);
+
+        const whereClause = conditions.join(' AND ');
+        const baseFrom = `FROM bet_items bi JOIN bill_entries be ON bi.bill_entry_id = be.id JOIN bills b ON be.bill_id = b.id JOIN users u ON b.user_id = u.id JOIN lotto_rounds lr ON b.lotto_round_id = lr.id WHERE ${whereClause}`;
+
+        // Query สำหรับนับจำนวนทั้งหมด (เพื่อ Pagination)
+        const countQuery = `SELECT COUNT(bi.id) as "total" ${baseFrom}`;
+        
+        // Query สำหรับดึงข้อมูลมาแสดงผล
+        const dataQuery = `
+            SELECT
+                bi.id, b.bill_ref AS "billRef", u.username, lr.name AS "lottoName",
+                lr.cutoff_datetime AS "lottoDrawDate", be.bet_type AS "betType",
+                bi.bet_style AS "betStyle", bi.bet_number AS "betNumber",
+                bi.payout_amount AS "payoutAmount"
+            ${baseFrom}
+            ORDER BY lr.cutoff_datetime DESC, b.id DESC
+            LIMIT $${params.length + 1} OFFSET $${params.length + 2};
+        `;
+        
+        const [countResult, dataResult] = await Promise.all([
+            db.query(countQuery, params),
+            db.query(dataQuery, [...params, limit, offset])
+        ]);
+
+        const totalItems = parseInt(countResult.rows[0].total, 10);
+        const totalPages = Math.ceil(totalItems / Number(limit));
+
+        res.json({
+            items: dataResult.rows,
+            pagination: {
+                currentPage: Number(page),
+                totalPages,
+                totalItems,
+                limit: Number(limit)
+            }
+        });
+
+    } catch (err: any) {
+        console.error("Error fetching winning report:", err);
+        res.status(500).json({ error: 'เกิดข้อผิดพลาดในการดึงข้อมูล', details: err.message });
+    }
+});
+
 app.get('/api/filters/lotto-options', isAuthenticated, async (req, res) => {
     const loggedInUser = req.user!;
     const { username } = req.query;
