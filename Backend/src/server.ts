@@ -2538,7 +2538,29 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, async (req: Requ
             JOIN bills b ON be.bill_id = b.id
             JOIN users u ON b.user_id = u.id
             JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
-            WHERE ${winWhereClause} AND ((be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ตรง' AND lr.winning_numbers->>'3top' = bi.bet_number) OR (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'โต๊ด' AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(lr.winning_numbers->'3tote') AS w(num) WHERE sort_string(w.num) = sort_string(bi.bet_number))) OR (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'บน' AND lr.winning_numbers->>'2top' = bi.bet_number) OR (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' = bi.bet_number));
+            WHERE ${winWhereClause}
+            AND (
+                -- เงื่อนไขสำหรับ 3 ตัวตรง
+                (be.bet_type = '3d' AND bi.bet_style = 'ตรง' AND lr.winning_numbers->>'3top' = bi.bet_number) OR
+                
+                -- เงื่อนไขสำหรับ 3 ตัวโต๊ด
+                (be.bet_type = '3d' AND bi.bet_style = 'โต๊ด' AND EXISTS (
+                    SELECT 1 FROM jsonb_array_elements_text(lr.winning_numbers->'3tote') AS w(num)
+                    WHERE sort_string(w.num) = sort_string(bi.bet_number)
+                )) OR
+
+                -- เงื่อนไขสำหรับ 2 ตัวบน
+                (be.bet_type = '2d' AND bi.bet_style = 'บน' AND lr.winning_numbers->>'2top' = bi.bet_number) OR
+
+                -- เงื่อนไขสำหรับ 2 ตัวล่าง
+                (be.bet_type = '2d' AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' = bi.bet_number) OR
+
+                -- ✅ [เพิ่มใหม่] เงื่อนไขสำหรับ "เลขวิ่งบน"
+                (be.bet_type = 'run' AND bi.bet_style = 'บน' AND lr.winning_numbers->>'3top' LIKE '%' || bi.bet_number || '%') OR
+
+                -- ✅ [เพิ่มใหม่] เงื่อนไขสำหรับ "เลขวิ่งล่าง"
+                (be.bet_type = 'run' AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' LIKE '%' || bi.bet_number || '%')
+            );
         `;
 
         const byLottoTypeQuery = `
