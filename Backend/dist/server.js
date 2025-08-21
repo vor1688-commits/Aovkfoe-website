@@ -2106,7 +2106,7 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, (req, res) => __
             SELECT bi.bet_number as "number", bi.bet_style as "style", SUM(bi.price)::float as "totalAmount", COUNT(bi.id) as "count"
             FROM bet_items bi JOIN bill_entries be ON bi.bill_entry_id = be.id JOIN bills b ON be.bill_id = b.id JOIN users u ON b.user_id = u.id JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
             WHERE ${betWhereClause} AND (bi.status IS NULL OR bi.status = 'ยืนยัน') GROUP BY bi.bet_number, bi.bet_style ORDER BY "totalAmount" DESC;`;
-        const usersQuery = `SELECT id, username FROM users WHERE role != 'owner' ORDER BY username ASC`;
+        const usersQuery = `SELECT id, username FROM users ORDER BY username ASC`;
         const [betSummaryResult, winningsResult, byLottoTypeResult, allBetItemsSummaryResult, usersResult] = yield Promise.all([
             client.query(betSummaryQuery, betParams),
             client.query(winningsQuery, winParams), // ใช้ winParams ที่สร้างขึ้นใหม่
