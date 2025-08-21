@@ -2522,10 +2522,21 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, async (req: Requ
             JOIN users u ON b.user_id = u.id 
             JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
             WHERE ${winWhereClause} AND (
-                (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ตรง' AND lr.winning_numbers->>'3top' = bi.bet_number) OR
+                -- [FIXED] 3top check for array
+                (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ตรง' AND lr.winning_numbers->'3top' @> to_jsonb(bi.bet_number::text)) OR
+                
+                -- [OK] 3tote check for array
                 (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'โต๊ด' AND lr.winning_numbers->'3tote' @> to_jsonb(bi.bet_number::text)) OR
-                (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'บน' AND lr.winning_numbers->>'2top' = bi.bet_number) OR
-                (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' = bi.bet_number)
+                
+                -- [FIXED] 2top check for array
+                (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'บน' AND lr.winning_numbers->'2top' @> to_jsonb(bi.bet_number::text)) OR
+                
+                -- [FIXED] 2bottom check for array
+                (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->'2bottom' @> to_jsonb(bi.bet_number::text)) OR
+                
+                -- [OK] Run number check (adjusted for array)
+                (be.bet_type = 'run' AND bi.bet_style = 'บน' AND lr.winning_numbers->>'3top' LIKE '%"' || bi.bet_number || '"%') OR
+                (be.bet_type = 'run' AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' LIKE '%"' || bi.bet_number || '"%')
             );`;
 
         const byLottoTypeQuery = `
