@@ -2107,10 +2107,8 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, (req, res) => __
             WHERE ${winWhereClause}
             AND (
                 (be.bet_type = '3d' AND bi.bet_style = 'ตรง' AND lr.winning_numbers->>'3top' = bi.bet_number) OR
-                (be.bet_type = '3d' AND bi.bet_style = 'โต๊ด' AND EXISTS (
-                    SELECT 1 FROM jsonb_array_elements_text(lr.winning_numbers->'3tote') AS w(num)
-                    WHERE sort_string(TRIM('"' FROM w.num)) = sort_string(bi.bet_number)
-                )) OR
+                -- ✅ [จุดที่แก้ไข] ✅ เปลี่ยนกลับไปใช้วิธีตรวจเลขโต๊ดแบบเดียวกับ winning-report เดิมของคุณ
+                (be.bet_type = '3d' AND bi.bet_style = 'โต๊ด' AND lr.winning_numbers->'3tote' @> to_jsonb(bi.bet_number::text)) OR
                 (be.bet_type = '2d' AND bi.bet_style = 'บน' AND lr.winning_numbers->>'2top' = bi.bet_number) OR
                 (be.bet_type = '2d' AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' = bi.bet_number) OR
                 (be.bet_type = 'run' AND bi.bet_style = 'บน' AND lr.winning_numbers->>'3top' LIKE '%' || bi.bet_number || '%') OR
@@ -2466,7 +2464,6 @@ app.get("/api/winning-report", isAuthenticated, (req, res) => __awaiter(void 0, 
 // ในไฟล์ server.ts หรือไฟล์ API ของคุณ
 app.get("/api/winning-report-fast-version", isAuthenticated, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const loggedInUser = req.user;
-    // รับค่า Filters ทั้งหมด รวมถึง Pagination
     const { startDate, endDate, username, lottoName, lottoDate, page = 1, limit = 50 } = req.query;
     const offset = (Number(page) - 1) * Number(limit);
     if (!startDate || !endDate) {
@@ -2475,8 +2472,7 @@ app.get("/api/winning-report-fast-version", isAuthenticated, (req, res) => __awa
     try {
         const conditions = [];
         const params = [];
-        // --- ✅ [จุดที่แก้ไข] ---
-        // เปลี่ยนมาใช้ lr.cutoff_datetime (วันที่ออกผล) เป็นเงื่อนไขหลักในการกรองวันที่
+        // ✅ เปลี่ยนมาใช้ lr.cutoff_datetime (วันที่ออกผล) เป็นเงื่อนไขหลัก
         if (lottoDate && lottoDate !== 'all' && lottoDate !== '') {
             conditions.push(`lr.cutoff_datetime::date = $${params.length + 1}`);
             params.push(lottoDate);
@@ -2500,24 +2496,21 @@ app.get("/api/winning-report-fast-version", isAuthenticated, (req, res) => __awa
             conditions.push(`b.bet_name = $${params.length + 1}`);
             params.push(lottoName);
         }
-        // เงื่อนไขตายตัว
         conditions.push(`b.status = 'ยืนยันแล้ว'`);
         conditions.push(`lr.status IN ('closed', 'manual_closed')`);
-        // เงื่อนไขการตรวจรางวัล
-        const winningChecks = `
-            ((be.bet_type = '3d' AND bi.bet_style = 'ตรง' AND lr.winning_numbers->>'3top' = bi.bet_number) OR
-            (be.bet_type = '3d' AND bi.bet_style = 'โต๊ด' AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(lr.winning_numbers->'3tote') AS w(num) WHERE sort_string(TRIM('"' FROM w.num)) = sort_string(bi.bet_number))) OR
+        // ✅ เพิ่มการตรวจรางวัล 'run' และใช้ @> สำหรับ 'โต๊ด'
+        const winningChecks = `(
+            (be.bet_type = '3d' AND bi.bet_style = 'ตรง' AND lr.winning_numbers->>'3top' = bi.bet_number) OR
+            (be.bet_type = '3d' AND bi.bet_style = 'โต๊ด' AND lr.winning_numbers->'3tote' @> to_jsonb(bi.bet_number::text)) OR
             (be.bet_type = '2d' AND bi.bet_style = 'บน' AND lr.winning_numbers->>'2top' = bi.bet_number) OR
             (be.bet_type = '2d' AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' = bi.bet_number) OR
             (be.bet_type = 'run' AND bi.bet_style = 'บน' AND lr.winning_numbers->>'3top' LIKE '%' || bi.bet_number || '%') OR
-            (be.bet_type = 'run' AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' LIKE '%' || bi.bet_number || '%'))
-        `;
+            (be.bet_type = 'run' AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' LIKE '%' || bi.bet_number || '%')
+        )`;
         conditions.push(winningChecks);
         const whereClause = conditions.join(' AND ');
         const baseFrom = `FROM bet_items bi JOIN bill_entries be ON bi.bill_entry_id = be.id JOIN bills b ON be.bill_id = b.id JOIN users u ON b.user_id = u.id JOIN lotto_rounds lr ON b.lotto_round_id = lr.id WHERE ${whereClause}`;
-        // Query สำหรับนับจำนวนทั้งหมด (เพื่อ Pagination)
         const countQuery = `SELECT COUNT(bi.id) as "total" ${baseFrom}`;
-        // Query สำหรับดึงข้อมูลมาแสดงผล
         const dataQuery = `
             SELECT
                 bi.id, b.bill_ref AS "billRef", u.username, lr.name AS "lottoName",
