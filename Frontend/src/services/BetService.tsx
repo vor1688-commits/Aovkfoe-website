@@ -372,6 +372,22 @@ export interface Order {
   hasHalfRateItem?: boolean;
 }
 
+export interface OrderX {
+  id: number;
+  billRef: string;
+  createdAt: string;
+  lottoName: string;
+  itemCount: number;
+  totalAmount: number;
+  returnedAmount: number;  
+  netAmount?: number;
+  status: 'ยืนยันแล้ว' | 'ยกเลิก' | 'รอผล';
+  username: string;
+  note: string | null;
+  billLottoDraw: string | null;
+  hasHalfRateItem?: boolean;
+}
+
 export interface BetItem {
   id: number;
   bill_entry_id: number;

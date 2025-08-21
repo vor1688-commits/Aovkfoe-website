@@ -3,14 +3,14 @@
 import React, { useMemo } from 'react';
 import { 
   getBetTypeName, 
-  type Order, 
+  type OrderX, 
   type BillEntryDetail,
   type BetItem,
   formatDateBasicString
 } from '../services/BetService';
 
 interface Props {
-  order: Order | null;
+  order: OrderX | null;
   details: BillEntryDetail[] | null;
 }
 
@@ -86,7 +86,7 @@ const PrintableBill2 = React.forwardRef<HTMLDivElement, Props>(({ order, details
       {/* 👇 แก้ไขสีพื้นหลังตรงนี้ 👇 */}
       <div className="bg-black text-white p-2 rounded-t-md text-sm text-center whitespace-nowrap">
         <span>
-          เลขที่บิล #{order.billRef} | {order.lottoName} | งวด {formatDateBasicString(order.bill_lotto_draw, 'long')}
+          เลขที่บิล #{order.billRef} | {order.lottoName} | งวด {formatDateBasicString(order.billLottoDraw, 'long')}
         </span>
       </div>
       

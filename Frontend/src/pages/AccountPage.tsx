@@ -386,6 +386,8 @@ const AccountPage: React.FC = () => {
     const chartOptions = (titleText: string, legendDisplay = false): ChartOptions<'bar' | 'doughnut'> => ({
         responsive: true, maintainAspectRatio: false, plugins: { legend: { display: legendDisplay, position: "top" as const, labels: { color: "#D1D5DB", font: { size: 12 } }, }, title: { display: false }, tooltip: { backgroundColor: "rgba(0, 0, 0, 0.8)", titleFont: { size: 14 }, bodyFont: { size: 12 }, callbacks: { label: (c: any) => `${c.label}: ${c.raw.toLocaleString()} ${ titleText.includes("ยอดขาย") ? "บาท" : "บิล" }`, }, }, }, scales: { x: { ticks: { color: "#9CA3AF" }, grid: { color: "rgba(156, 163, 175, 0.1)" }, }, y: { ticks: { color: "#9CA3AF" }, grid: { color: "rgba(156, 163, 175, 0.1)" }, }, },
     });
+
+    
   
     const chartOptions2 = (titleText: string, axis: "x" | "y", legendDisplay = false): ChartOptions<"bar"> => {
         const xPosition = axis === "y" ? "top" : "bottom";

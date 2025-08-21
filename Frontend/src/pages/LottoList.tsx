@@ -12,7 +12,7 @@ import {
   getPayoutRate,
   type BetDimension,
   type BetStyle,
-  type Order,
+  type OrderX,
   type BillEntryDetail,
   type BetItem,
   getDatePart,
@@ -92,13 +92,13 @@ const LottoList: React.FC = () => {
     { id: number; username: string }[]
   >([]);
   const [lottoTypes, setLottoTypes] = useState<LottoType[]>([]);
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [orders, setOrders] = useState<OrderX[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [expandedRowId, setExpandedRowId] = useState<number | null>(null);
   const [detailEntries, setDetailEntries] = useState<BillEntryDetail[]>([]);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [billToPrint, setBillToPrint] = useState<{
-    order: Order;
+    order: OrderX;
     details: BillEntryDetail[];
   } | null>(null);
   const printableBillRef = useRef<HTMLDivElement>(null);
@@ -120,7 +120,7 @@ const LottoList: React.FC = () => {
     });
   }, []);
 
-  const handleViewBill = (order: Order, details: BillEntryDetail[]) => {
+  const handleViewBill = (order: OrderX, details: BillEntryDetail[]) => {
     setBillToPrint({ order, details }); // 1. กำหนดข้อมูลที่จะแสดง
     setIsModalVisible(true); // 2. สั่งให้ Modal แสดง
   };
@@ -296,7 +296,7 @@ const handlePageChange = (newPage: number) => {
     const response = await api.put(`/api/bet-items/${itemId}/status`, { status: newStatus });
     const data: {
       updatedItem: BetItem;
-      newBillStatus: Order["status"] | null;
+      newBillStatus: OrderX["status"] | null;
     } = response.data;
 
     const { updatedItem, newBillStatus } = data;
@@ -369,7 +369,7 @@ const handlePageChange = (newPage: number) => {
         const result: {
             message: string;
             updatedRows: BetItem[];
-            newBillStatus: Order["status"] | null;
+            newBillStatus: OrderX["status"] | null;
         } = response.data; 
 
         alert("สำเร็จ", result.message, "light", false);
@@ -389,7 +389,7 @@ const handlePageChange = (newPage: number) => {
         );
  
         if (result.newBillStatus) {
-            const finalStatus: Order["status"] = result.newBillStatus;
+            const finalStatus: OrderX["status"] = result.newBillStatus;
             setOrders((currentOrders) =>
                 currentOrders.map((order) =>
                     order.id === billId ? { ...order, status: finalStatus } : order
@@ -423,7 +423,7 @@ const handlePageChange = (newPage: number) => {
         alert("Cannot save image", "", "light");
       });
   }, [billToPrint]);
-  const triggerPrintActions = (order: Order, details: BillEntryDetail[]) => {
+  const triggerPrintActions = (order: OrderX, details: BillEntryDetail[]) => {
     setBillToPrint({ order, details });
   };
  
@@ -756,10 +756,10 @@ const handlePageChange = (newPage: number) => {
                         )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                          {order.bill_lotto_draw
-                            ? formatDateString(order.bill_lotto_draw, 'short')
-                            : "-"}
-                      </td>
+                      {order.billLottoDraw
+                          ? formatDateString(order.billLottoDraw, 'short')
+                          : "-"}
+                      </td>
                       <td className="px-6 py-4 text-center">
                         {order.itemCount}
                       </td>
