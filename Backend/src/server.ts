@@ -2569,7 +2569,7 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, async (req: Requ
             totalReturnedAmount: betSummary.totalReturnedAmount,
             totalBills: Number(betSummary.totalBills),
             totalWinnings: winningsSummary.totalWinnings,
-            netProfit: winningsSummary.totalWinnings - totalBetAmount
+            netProfit: totalBetAmount - winningsSummary.totalWinnings
         };
         
         res.json({
