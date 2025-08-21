@@ -2020,16 +2020,22 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, (req, res) => __
     }
     const client = yield db.connect();
     try {
+        // --- ส่วนที่ 1: BET SUMMARY ---
+        // ใช้ betParams และ betWhereClause สำหรับทุก Query ที่เกี่ยวข้องกับ "ยอดแทง"
         const betConditions = [];
         const betParams = [];
         if (lottoDate && lottoDate !== 'all' && lottoDate !== '') {
             betConditions.push(`lr.cutoff_datetime::date = $${betParams.length + 1}`);
             betParams.push(lottoDate);
+            // ยังคงใช้ created_at เพื่อจำกัดขอบเขตของบิล
+            betConditions.push(`b.created_at BETWEEN $${betParams.length + 1} AND $${betParams.length + 2}`);
+            betParams.push(startDate, `${endDate} 23:59:59`);
         }
         else {
             betConditions.push(`b.created_at BETWEEN $${betParams.length + 1} AND $${betParams.length + 2}`);
             betParams.push(startDate, `${endDate} 23:59:59`);
         }
+        // (...เงื่อนไข user, lottoName, status เหมือนเดิม...)
         if (loggedInUser.role === 'owner' || loggedInUser.role === 'admin') {
             if (username && username !== 'all' && username !== '') {
                 betConditions.push(`u.username = $${betParams.length + 1}`);
@@ -2049,33 +2055,19 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, (req, res) => __
             betParams.push(status);
         }
         const betWhereClause = betConditions.join(' AND ');
-        const winConditions = [];
-        const winParams = [];
-        if (lottoDate && lottoDate !== 'all' && lottoDate !== '') {
-            winConditions.push(`lr.cutoff_datetime::date = $${winParams.length + 1}`);
-            winParams.push(lottoDate);
-        }
-        else {
-            winConditions.push(`lr.cutoff_datetime BETWEEN $${winParams.length + 1} AND $${winParams.length + 2}`);
-            winParams.push(startDate, `${endDate} 23:59:59`);
-        }
-        if (loggedInUser.role === 'owner' || loggedInUser.role === 'admin') {
-            if (username && username !== 'all' && username !== '') {
-                winConditions.push(`u.username = $${winParams.length + 1}`);
-                winParams.push(username);
-            }
-        }
-        else {
-            winConditions.push(`u.id = $${winParams.length + 1}`);
-            winParams.push(loggedInUser.id);
-        }
-        if (lottoName && lottoName !== 'all' && lottoName !== '') {
-            winConditions.push(`b.bet_name = $${winParams.length + 1}`);
-            winParams.push(lottoName);
-        }
+        // ✅✅✅ [จุดแก้ไข] สร้าง winConditions และ winParams จาก betConditions และ betParams โดยตรง ✅✅✅
+        // เพื่อให้แน่ใจว่าใช้ตรรกะการกรองชุดเดียวกันทั้งหมด
+        const winConditions = [...betConditions];
+        const winParams = [...betParams];
+        // เพิ่มเงื่อนไขเฉพาะสำหรับการคำนวณรางวัล
         winConditions.push(`bi.status = 'ยืนยัน'`);
         winConditions.push(`lr.status IN ('closed', 'manual_closed')`);
+        // กรองเอาเฉพาะบิลที่ยืนยันแล้วเท่านั้นมาคำนวณ
+        if (!status || status === 'all') {
+            winConditions.push(`b.status = 'ยืนยันแล้ว'`);
+        }
         const winWhereClause = winConditions.join(' AND ');
+        // --- QUERIES ---
         const betSummaryQuery = `
             WITH filtered_bills AS (SELECT b.id, b.total_amount FROM bills b JOIN users u ON b.user_id = u.id JOIN lotto_rounds lr ON b.lotto_round_id = lr.id WHERE ${betWhereClause}),
             returned_amounts AS (SELECT be.bill_id, SUM(bi.price) as returned_amount FROM bill_entries be JOIN bet_items bi ON bi.bill_entry_id = be.id WHERE be.bill_id IN (SELECT id FROM filtered_bills) AND bi.status = 'คืนเลข' GROUP BY be.bill_id)
@@ -2083,8 +2075,17 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, (req, res) => __
             FROM filtered_bills fb LEFT JOIN returned_amounts ra ON fb.id = ra.bill_id;`;
         const winningsQuery = `
             SELECT COALESCE(SUM(bi.payout_amount), 0)::float AS "totalWinnings"
-            FROM bet_items bi JOIN bill_entries be ON bi.bill_entry_id = be.id JOIN bills b ON be.bill_id = b.id JOIN users u ON b.user_id = u.id JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
-            WHERE ${winWhereClause} AND ((be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ตรง' AND lr.winning_numbers->>'3top' = bi.bet_number) OR (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'โต๊ด' AND lr.winning_numbers->'3tote' @> to_jsonb(bi.bet_number::text)) OR (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'บน' AND lr.winning_numbers->>'2top' = bi.bet_number) OR (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' = bi.bet_number));`;
+            FROM bet_items bi 
+            JOIN bill_entries be ON bi.bill_entry_id = be.id 
+            JOIN bills b ON be.bill_id = b.id 
+            JOIN users u ON b.user_id = u.id 
+            JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
+            WHERE ${winWhereClause} AND (
+                (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ตรง' AND lr.winning_numbers->>'3top' = bi.bet_number) OR
+                (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'โต๊ด' AND lr.winning_numbers->'3tote' @> to_jsonb(bi.bet_number::text)) OR
+                (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'บน' AND lr.winning_numbers->>'2top' = bi.bet_number) OR
+                (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' = bi.bet_number)
+            );`;
         const byLottoTypeQuery = `
             SELECT b.bet_name as name, SUM(b.total_amount - COALESCE(ra.returned_amount, 0))::float AS "totalAmount", COUNT(b.id) AS "billCount"
             FROM bills b JOIN users u ON b.user_id = u.id JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
@@ -2097,11 +2098,12 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, (req, res) => __
         const usersQuery = `SELECT id, username FROM users WHERE role != 'owner' ORDER BY username ASC`;
         const [betSummaryResult, winningsResult, byLottoTypeResult, allBetItemsSummaryResult, usersResult] = yield Promise.all([
             client.query(betSummaryQuery, betParams),
-            client.query(winningsQuery, winParams),
+            client.query(winningsQuery, winParams), // ใช้ winParams ที่สร้างขึ้นใหม่
             client.query(byLottoTypeQuery, betParams),
             client.query(allBetItemsSummaryQuery, betParams),
             client.query(usersQuery)
         ]);
+        // ... (ส่วนการประกอบผลลัพธ์เหมือนเดิม) ...
         const betSummary = betSummaryResult.rows[0];
         const winningsSummary = winningsResult.rows[0];
         const totalBetAmount = betSummary.rawTotalAmount - betSummary.totalReturnedAmount;
