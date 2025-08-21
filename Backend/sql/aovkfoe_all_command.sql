@@ -294,3 +294,19 @@ CREATE INDEX IF NOT EXISTS idx_bills_bet_name ON bills(bet_name);
 -- สำหรับตาราง bet_items
 CREATE INDEX IF NOT EXISTS idx_bet_items_bill_entry_id ON bet_items(bill_entry_id);
 CREATE INDEX IF NOT EXISTS idx_bet_items_bet_number ON bet_items(bet_number);
+
+
+
+
+
+CREATE OR REPLACE FUNCTION sort_string(input_text TEXT)
+RETURNS TEXT AS $$
+BEGIN
+    -- ตรวจสอบว่า input ไม่ใช่ค่า NULL ก่อนดำเนินการ
+    IF input_text IS NULL THEN
+        RETURN NULL;
+    END IF;
+    -- แปลงสตริงเป็น array ของตัวอักษร, unnest ออกมาเป็นแถว, เรียงลำดับ, แล้วรวมกลับเป็นสตริง
+    RETURN (SELECT string_agg(c, '' ORDER BY c) FROM unnest(string_to_array(input_text, NULL)) AS c);
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
