@@ -2452,16 +2452,18 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, async (req: Requ
 
     const client = await db.connect();
     try {
-        // --- Helper Function สำหรับสร้าง Query อย่างปลอดภัย ---
+        // --- Helper Function สำหรับสร้างส่วนของ Query อย่างปลอดภัย ---
         const buildQueryParts = (dateFilterType: 'createdAt' | 'cutoff') => {
             const conditions: string[] = [];
             const params: any[] = [];
 
-            // 1. Date Filter
+            // 1. Date Filter (เงื่อนไขหลัก)
             if (lottoDate && lottoDate !== 'all' && lottoDate !== '') {
+                // ถ้ามีการเจาะจง 'งวดวันที่' ให้ใช้ lr.cutoff_datetime
                 conditions.push(`lr.cutoff_datetime::date = $${params.length + 1}`);
                 params.push(lottoDate);
             } else {
+                // ถ้าไม่ ให้ใช้ 'ตั้งแต่วันที่' - 'ถึงวันที่' ตามประเภทที่กำหนด
                 const dateColumn = dateFilterType === 'createdAt' ? 'b.created_at' : 'lr.cutoff_datetime';
                 conditions.push(`${dateColumn} BETWEEN $${params.length + 1} AND $${params.length + 2}`);
                 params.push(startDate, `${endDate} 23:59:59`);
@@ -2487,7 +2489,7 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, async (req: Requ
             return { conditions, params };
         };
 
-        // --- 1. สร้าง Query สำหรับ "ยอดแทง, ยอดคืน, จำนวนบิล" (อิงตามวันที่สร้างบิล) ---
+        // --- สร้าง Query #1: สำหรับ "ยอดแทง, ยอดคืน, จำนวนบิล" (อิงตามวันที่สร้างบิล) ---
         const betParts = buildQueryParts('createdAt');
         if (status && status !== 'all') {
             betParts.conditions.push(`b.status = $${betParts.params.length + 1}`);
@@ -2518,7 +2520,7 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, async (req: Requ
             LEFT JOIN returned_amounts ra ON fb.id = ra.bill_id;
         `;
 
-        // --- 2. สร้าง Query สำหรับ "ยอดถูกรางวัล" (อิงตามวันที่ออกผล) ---
+        // --- สร้าง Query #2: สำหรับ "ยอดถูกรางวัล" (อิงตามวันที่ออกผล) ---
         const winParts = buildQueryParts('cutoff');
         winParts.conditions.push(`b.status = 'ยืนยันแล้ว'`);
         winParts.conditions.push(`lr.status IN ('closed', 'manual_closed')`);
@@ -2543,7 +2545,7 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, async (req: Requ
             );
         `;
 
-        // --- 3. Query อื่นๆ ---
+        // --- สร้าง Query #3: สำหรับ Breakdown (อิงตามวันที่สร้างบิล) ---
         const byLottoTypeQuery = `
             SELECT b.bet_name as name, SUM(b.total_amount - COALESCE(ra.returned_amount, 0))::float AS "totalAmount", COUNT(b.id) AS "billCount"
             FROM bills b
@@ -2557,6 +2559,8 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, async (req: Requ
             WHERE ${betWhereClause}
             GROUP BY b.bet_name HAVING COUNT(b.id) > 0 ORDER BY "totalAmount" DESC;
         `;
+        
+        // --- สร้าง Query #4: สำหรับสรุปยอดแทงตามตัวเลข (อิงตามวันที่สร้างบิล) ---
         const allBetItemsSummaryQuery = `
             SELECT bi.bet_number as "number", bi.bet_style as "style", SUM(bi.price)::float as "totalAmount", COUNT(bi.id) as "count"
             FROM bet_items bi
@@ -2567,9 +2571,11 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, async (req: Requ
             WHERE ${betWhereClause} AND (bi.status IS NULL OR bi.status = 'ยืนยัน')
             GROUP BY bi.bet_number, bi.bet_style ORDER BY "totalAmount" DESC;
         `;
+        
+        // --- สร้าง Query #5: สำหรับรายชื่อผู้ใช้ ---
         const usersQuery = `SELECT id, username FROM users WHERE role != 'owner' ORDER BY username ASC`;
 
-        // --- 4. รันทุก Query พร้อมกัน ---
+        // --- รันทุก Query พร้อมกัน ---
         const [betSummaryResult, winningsResult, byLottoTypeResult, allBetItemsSummaryResult, usersResult] = await Promise.all([
             client.query(betSummaryQuery, betParts.params),
             client.query(winningsQuery, winParts.params),
@@ -2578,7 +2584,7 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, async (req: Requ
             client.query(usersQuery)
         ]);
         
-        // --- 5. ประกอบผลลัพธ์ ---
+        // --- ประกอบผลลัพธ์ ---
         const betSummary = betSummaryResult.rows[0];
         const winningsSummary = winningsResult.rows[0];
         
