@@ -73,7 +73,7 @@ const AccountPage: React.FC = () => {
     // --- States for Filters ---
     const [startDate, setStartDate] = useState(getDateString(29));
     const [endDate, setEndDate] = useState(getDateString(0));
-    const [selectedUser, setSelectedUser] = useState("all");
+    const [selectedUser, setSelectedUser] = useState("");
     const [status, setStatus] = useState("all");
     const [userList, setUserList] = useState<User[]>([]);
     const [lottoOptions, setLottoOptions] = useState<Record<string, { roundId: number; roundName: string; cutoff_datetime: string }[]>>({});
@@ -106,7 +106,15 @@ const AccountPage: React.FC = () => {
     const [betItemsSummary, setBetItemsSummary] = useState(null);
   
     useEffect(() => {
-        if (user) setSelectedUser(user.username);
+        if (user) {
+            // ถ้าเป็น admin หรือ owner ให้ค่าเริ่มต้นเป็น "all"
+            if (user.role === 'admin' || user.role === 'owner') {
+                setSelectedUser(user.username);
+            } else {
+                // ถ้าเป็น user ทั่วไป ให้ค่าเริ่มต้นเป็นชื่อของตัวเอง
+                setSelectedUser(user.username);
+            }
+        }
     }, [user]);
   
 
@@ -169,7 +177,7 @@ const AccountPage: React.FC = () => {
         
         const summaryRequest = api.get<SummaryApiResponse>(`/api/financial-summary-fast-version`, { params: commonParams });
         const recentBillsRequest = api.get(`/api/bills`, { params: { ...commonParams, page: '1', limit: '20' } });
-        const winningReportRequest = api.get(`/api/winning-report`, { params: { ...commonParams, page: '1', limit: '50' } });
+        const winningReportRequest = api.get(`/api/winning-report-fast-version`, { params: { ...commonParams, page: '1', limit: '50' } });
         const optionsRequest = api.get(`/api/filters/lotto-options`, { params: { username: usernameParam } });
   
         try {
@@ -214,11 +222,11 @@ const AccountPage: React.FC = () => {
         }
     }, [startDate, endDate, selectedUser, status, user, selectedLottoName, selectedDate]);
   
-    useEffect(() => {
-        if (user) {
+    useEffect(() => { 
+        if (user && selectedUser) {
             fetchDashboardData();
         }
-    }, [fetchDashboardData, user]);
+    }, [fetchDashboardData, user, selectedUser]);
   
     const handleRecentBillsPageChange = async (newPage: number) => {
       const params = { startDate, endDate, status, username: selectedUser === "all" ? "" : selectedUser, page: newPage.toString(), limit: '20' };
@@ -229,7 +237,7 @@ const AccountPage: React.FC = () => {
     
     const handleWinningItemsPageChange = async (newPage: number) => {
       const params = { startDate, endDate, username: selectedUser === "all" ? "" : selectedUser, page: newPage.toString(), limit: '50' };
-      const res = await api.get(`/api/winning-report`, { params });
+      const res = await api.get(`/api/winning-report-fast-version`, { params });
       const rawWinningItems: WinningItem[] = res.data.items || [];
       const grouped = rawWinningItems.reduce((acc: Record<string, GroupedWinningItem>, item: WinningItem) => {
           const key = `${item.billRef}-${item.betNumber}`;
