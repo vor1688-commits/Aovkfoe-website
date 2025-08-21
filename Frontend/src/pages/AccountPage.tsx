@@ -101,15 +101,55 @@ const AccountPage: React.FC = () => {
     // States for Charts and Legends
     const [chartKey, setChartKey] = useState(0);
     const [hiddenLegends, setHiddenLegends] = useState<string[]>([]);
+
+    const [breakdownData, setBreakdownData] = useState(null);
+    const [betItemsSummary, setBetItemsSummary] = useState(null);
   
     useEffect(() => {
-        if (user && user.role !== 'admin' && user.role !== 'owner') {
-            setSelectedUser(user.username);
-        } else if (user) {
-            setSelectedUser("all");
-        }
+        if (user) setSelectedUser(user.username);
     }, [user]);
   
+
+    
+    // เพิ่ม useEffect บล็อกนี้เข้าไปใน Component AccountPage ของคุณ
+
+    useEffect(() => {
+        // ฟังก์ชันนี้จะทำงานเมื่อ state `summaryData` มีข้อมูลแล้ว
+        // และยังไม่ได้โหลดข้อมูลเสริม (breakdownData) มาก่อน
+        if (summaryData && !breakdownData) {
+
+            // สร้าง object `params` สำหรับส่งไปกับ API request
+            // โดยใช้ logic เดียวกับในฟังก์ชัน fetchDashboardData
+            const usernameParam = selectedUser === "all" ? "" : selectedUser;
+            const params = {
+                startDate,
+                endDate,
+                status,
+                username: usernameParam,
+                lottoName: selectedLottoName === "all" ? "" : selectedLottoName,
+                lottoDate: selectedDate === "all" ? "" : selectedDate
+            };
+
+            // ยิง API ขอข้อมูลเสริมสำหรับกราฟ
+            api.get('/api/summary/breakdown', { params })
+                .then(res => {
+                    // เมื่อได้ข้อมูลแล้ว ให้ set state
+                    setBreakdownData(res.data);
+                })
+                .catch(err => console.error("Failed to fetch breakdown data:", err));
+
+            // ยิง API ขอข้อมูลเสริมสำหรับตารางสรุปเลข (ที่หนักที่สุด)
+            api.get('/api/summary/bet-items', { params })
+                .then(res => {
+                    // เมื่อได้ข้อมูลแล้ว ให้ set state
+                    setBetItemsSummary(res.data);
+                })
+                .catch(err => console.error("Failed to fetch bet items summary:", err));
+        }
+    }, [summaryData, breakdownData, selectedUser, startDate, endDate, status, selectedLottoName, selectedDate]);  
+
+
+
     const fetchDashboardData = useCallback(async () => {
         if (!user) return;
         setIsLoading(true);
