@@ -2443,9 +2443,16 @@ app.get("/api/financial-summary", isAuthenticated, async (req: Request, res: Res
  
    
  
+// ในไฟล์ server.ts หรือไฟล์ API ของคุณ
 app.get("/api/financial-summary-fast-version", isAuthenticated, async (req: Request, res: Response) => {
     const loggedInUser = req.user!;
     const { startDate, endDate, username, status, lottoName, lottoDate } = req.query;
+
+    // ======================= 🪵 LOGGING SECTION 🪵 =======================
+    console.log("\n\n\n================ 🚀 NEW /financial-summary REQUEST 🚀 ================");
+    console.log("Current Time:", new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }));
+    console.log("Filters Received:", { startDate, endDate, username, status, lottoName, lottoDate });
+    // =================================================================
 
     if (!startDate || !endDate) {
         return res.status(400).json({ error: 'Please provide both startDate and endDate.' });
@@ -2456,7 +2463,6 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, async (req: Requ
         // --- 1. สร้างเงื่อนไขและพารามิเตอร์สำหรับ "ยอดแทง" (อิงตามวันที่สร้างบิล) ---
         const betConditions: string[] = [];
         const betParams: any[] = [];
-
         if (lottoDate && lottoDate !== 'all' && lottoDate !== '') {
             betConditions.push(`lr.cutoff_datetime::date = $${betParams.length + 1}`);
             betParams.push(lottoDate);
@@ -2486,7 +2492,6 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, async (req: Requ
         // --- 2. สร้างเงื่อนไขและพารามิเตอร์สำหรับ "ยอดถูกรางวัล" (อิงตามวันที่ออกผล) ---
         const winConditions: string[] = [];
         const winParams: any[] = [];
-        
         if (lottoDate && lottoDate !== 'all' && lottoDate !== '') {
             winConditions.push(`lr.cutoff_datetime::date = $${winParams.length + 1}`);
             winParams.push(lottoDate);
@@ -2507,79 +2512,44 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, async (req: Requ
             winConditions.push(`b.bet_name = $${winParams.length + 1}`);
             winParams.push(lottoName as string);
         }
-        
-        // ใช้เงื่อนไขสถานะของ 'bet_items' ให้ตรงกับ winning-report
-        winConditions.push(`bi.status = 'ยืนยัน'`); 
+        winConditions.push(`bi.status = 'ยืนยัน'`);
         winConditions.push(`lr.status IN ('closed', 'manual_closed')`);
         const winWhereClause = winConditions.join(' AND ');
 
         // --- 3. สร้าง Query Strings ทั้งหมดให้สมบูรณ์ ---
-        
         const betSummaryQuery = `
-            WITH filtered_bills AS (
-                SELECT b.id, b.total_amount FROM bills b
-                JOIN users u ON b.user_id = u.id
-                JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
-                WHERE ${betWhereClause}
-            ), returned_amounts AS (
-                SELECT be.bill_id, SUM(bi.price) as returned_amount
-                FROM bill_entries be JOIN bet_items bi ON bi.bill_entry_id = be.id
-                WHERE be.bill_id IN (SELECT id FROM filtered_bills) AND bi.status = 'คืนเลข'
-                GROUP BY be.bill_id
-            )
-            SELECT
-                COALESCE(SUM(fb.total_amount), 0)::float AS "rawTotalAmount",
-                COALESCE(SUM(ra.returned_amount), 0)::float AS "totalReturnedAmount",
-                (SELECT COUNT(*) FROM filtered_bills) AS "totalBills"
-            FROM filtered_bills fb LEFT JOIN returned_amounts ra ON fb.id = ra.bill_id;
-        `;
+            WITH filtered_bills AS (SELECT b.id, b.total_amount FROM bills b JOIN users u ON b.user_id = u.id JOIN lotto_rounds lr ON b.lotto_round_id = lr.id WHERE ${betWhereClause}),
+            returned_amounts AS (SELECT be.bill_id, SUM(bi.price) as returned_amount FROM bill_entries be JOIN bet_items bi ON bi.bill_entry_id = be.id WHERE be.bill_id IN (SELECT id FROM filtered_bills) AND bi.status = 'คืนเลข' GROUP BY be.bill_id)
+            SELECT COALESCE(SUM(fb.total_amount), 0)::float AS "rawTotalAmount", COALESCE(SUM(ra.returned_amount), 0)::float AS "totalReturnedAmount", (SELECT COUNT(*) FROM filtered_bills) AS "totalBills"
+            FROM filtered_bills fb LEFT JOIN returned_amounts ra ON fb.id = ra.bill_id;`;
         
         const winningsQuery = `
             SELECT COALESCE(SUM(bi.payout_amount), 0)::float AS "totalWinnings"
-            FROM bet_items bi
-            JOIN bill_entries be ON bi.bill_entry_id = be.id
-            JOIN bills b ON be.bill_id = b.id
-            JOIN users u ON b.user_id = u.id
-            JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
-            WHERE ${winWhereClause}
-            AND (
-                (be.bet_type = '3d' AND bi.bet_style = 'ตรง' AND lr.winning_numbers->>'3top' = bi.bet_number) OR
-                (be.bet_type = '3d' AND bi.bet_style = 'โต๊ด' AND lr.winning_numbers->'3tote' @> to_jsonb(bi.bet_number::text)) OR
-                (be.bet_type = '2d' AND bi.bet_style = 'บน' AND lr.winning_numbers->>'2top' = bi.bet_number) OR
-                (be.bet_type = '2d' AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' = bi.bet_number) OR
-                (be.bet_type = 'run' AND bi.bet_style = 'บน' AND lr.winning_numbers->>'3top' LIKE '%' || bi.bet_number || '%') OR
-                (be.bet_type = 'run' AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' LIKE '%' || bi.bet_number || '%')
-            );
-        `;
+            FROM bet_items bi JOIN bill_entries be ON bi.bill_entry_id = be.id JOIN bills b ON be.bill_id = b.id JOIN users u ON b.user_id = u.id JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
+            WHERE ${winWhereClause} AND ((be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ตรง' AND lr.winning_numbers->>'3top' = bi.bet_number) OR (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'โต๊ด' AND lr.winning_numbers->'3tote' @> to_jsonb(bi.bet_number::text)) OR (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'บน' AND lr.winning_numbers->>'2top' = bi.bet_number) OR (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' = bi.bet_number) OR (be.bet_type = 'run' AND bi.bet_style = 'บน' AND lr.winning_numbers->>'3top' LIKE '%' || bi.bet_number || '%') OR (be.bet_type = 'run' AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' LIKE '%' || bi.bet_number || '%'));`;
 
         const byLottoTypeQuery = `
             SELECT b.bet_name as name, SUM(b.total_amount - COALESCE(ra.returned_amount, 0))::float AS "totalAmount", COUNT(b.id) AS "billCount"
-            FROM bills b
-            JOIN users u ON b.user_id = u.id
-            JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
-            LEFT JOIN (
-               SELECT be.bill_id, SUM(bi.price) as returned_amount
-               FROM bill_entries be JOIN bet_items bi ON be.id = bi.bill_entry_id
-               WHERE bi.status = 'คืนเลข' GROUP BY be.bill_id
-            ) ra ON b.id = ra.bill_id
-            WHERE ${betWhereClause}
-            GROUP BY b.bet_name HAVING COUNT(b.id) > 0 ORDER BY "totalAmount" DESC;
-        `;
+            FROM bills b JOIN users u ON b.user_id = u.id JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
+            LEFT JOIN (SELECT be.bill_id, SUM(bi.price) as returned_amount FROM bill_entries be JOIN bet_items bi ON be.id = bi.bill_entry_id WHERE bi.status = 'คืนเลข' GROUP BY be.bill_id) ra ON b.id = ra.bill_id
+            WHERE ${betWhereClause} GROUP BY b.bet_name HAVING COUNT(b.id) > 0 ORDER BY "totalAmount" DESC;`;
         
         const allBetItemsSummaryQuery = `
             SELECT bi.bet_number as "number", bi.bet_style as "style", SUM(bi.price)::float as "totalAmount", COUNT(bi.id) as "count"
-            FROM bet_items bi
-            JOIN bill_entries be ON bi.bill_entry_id = be.id
-            JOIN bills b ON be.bill_id = b.id
-            JOIN users u ON b.user_id = u.id
-            JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
-            WHERE ${betWhereClause} AND (bi.status IS NULL OR bi.status = 'ยืนยัน')
-            GROUP BY bi.bet_number, bi.bet_style ORDER BY "totalAmount" DESC;
-        `;
+            FROM bet_items bi JOIN bill_entries be ON bi.bill_entry_id = be.id JOIN bills b ON be.bill_id = b.id JOIN users u ON b.user_id = u.id JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
+            WHERE ${betWhereClause} AND (bi.status IS NULL OR bi.status = 'ยืนยัน') GROUP BY bi.bet_number, bi.bet_style ORDER BY "totalAmount" DESC;`;
         
         const usersQuery = `SELECT id, username FROM users WHERE role != 'owner' ORDER BY username ASC`;
 
-        // --- รันทุก Query พร้อมกัน ---
+        // ======================= 🪵 LOGGING SECTION 🪵 =======================
+        console.log("\n--- 📝 BET SUMMARY QUERY LOG 📝 ---");
+        console.log("  ➡️ WHERE Clause:", betWhereClause);
+        console.log("  ➡️ Parameters:", betParams);
+        console.log("\n--- 📝 WINNINGS QUERY LOG 📝 ---");
+        console.log("  ➡️ WHERE Clause:", winWhereClause);
+        console.log("  ➡️ Parameters:", winParams);
+        // =================================================================
+
         const [betSummaryResult, winningsResult, byLottoTypeResult, allBetItemsSummaryResult, usersResult] = await Promise.all([
             client.query(betSummaryQuery, betParams),
             client.query(winningsQuery, winParams),
@@ -2588,7 +2558,13 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, async (req: Requ
             client.query(usersQuery)
         ]);
         
-        // --- ประกอบผลลัพธ์ ---
+        // ======================= 🪵 LOGGING SECTION 🪵 =======================
+        console.log("\n--- ✅ DATABASE RESULTS ✅ ---");
+        console.log("  ⬅️ Bet Summary Result:", betSummaryResult.rows);
+        console.log("  ⬅️ Winnings Result:", winningsResult.rows);
+        console.log("================ ⏹️ END REQUEST ⏹️ ==================\n\n");
+        // =================================================================
+        
         const betSummary = betSummaryResult.rows[0];
         const winningsSummary = winningsResult.rows[0];
         const totalBetAmount = betSummary.rawTotalAmount - betSummary.totalReturnedAmount;
@@ -2609,6 +2585,7 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, async (req: Requ
 
     } catch (err: any) {
         console.error("Error fetching financial summary (fast version):", err);
+        console.log("================ ❌ ERROR ❌ ==================", err);
         res.status(500).json({ error: 'Error fetching financial summary', details: err.message });
     } finally {
         client.release();
