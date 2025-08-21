@@ -2507,7 +2507,9 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, async (req: Requ
             winConditions.push(`b.bet_name = $${winParams.length + 1}`);
             winParams.push(lottoName as string);
         }
-        winConditions.push(`b.status = 'ยืนยันแล้ว'`);
+        
+        // ✅ [จุดที่แก้ไข] ✅ เปลี่ยนเงื่อนไขสถานะให้ตรงกับ winning-report
+        winConditions.push(`bi.status = 'ยืนยัน'`); 
         winConditions.push(`lr.status IN ('closed', 'manual_closed')`);
         const winWhereClause = winConditions.join(' AND ');
 
@@ -2540,11 +2542,10 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, async (req: Requ
             JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
             WHERE ${winWhereClause}
             AND (
-                (be.bet_type = '3d' AND bi.bet_style = 'ตรง' AND lr.winning_numbers->>'3top' = bi.bet_number) OR
-                -- ✅ [จุดที่แก้ไข] ✅ เปลี่ยนกลับไปใช้วิธีตรวจเลขโต๊ดแบบเดียวกับ winning-report เดิมของคุณ
-                (be.bet_type = '3d' AND bi.bet_style = 'โต๊ด' AND lr.winning_numbers->'3tote' @> to_jsonb(bi.bet_number::text)) OR
-                (be.bet_type = '2d' AND bi.bet_style = 'บน' AND lr.winning_numbers->>'2top' = bi.bet_number) OR
-                (be.bet_type = '2d' AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' = bi.bet_number) OR
+                (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ตรง' AND lr.winning_numbers->>'3top' = bi.bet_number) OR
+                (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'โต๊ด' AND lr.winning_numbers->'3tote' @> to_jsonb(bi.bet_number::text)) OR
+                (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'บน' AND lr.winning_numbers->>'2top' = bi.bet_number) OR
+                (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' = bi.bet_number) OR
                 (be.bet_type = 'run' AND bi.bet_style = 'บน' AND lr.winning_numbers->>'3top' LIKE '%' || bi.bet_number || '%') OR
                 (be.bet_type = 'run' AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' LIKE '%' || bi.bet_number || '%')
             );
@@ -2577,7 +2578,6 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, async (req: Requ
         
         const usersQuery = `SELECT id, username FROM users WHERE role != 'owner' ORDER BY username ASC`;
 
-        // --- รันทุก Query พร้อมกัน ---
         const [betSummaryResult, winningsResult, byLottoTypeResult, allBetItemsSummaryResult, usersResult] = await Promise.all([
             client.query(betSummaryQuery, betParams),
             client.query(winningsQuery, winParams),
@@ -2586,7 +2586,6 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, async (req: Requ
             client.query(usersQuery)
         ]);
         
-        // --- ประกอบผลลัพธ์ ---
         const betSummary = betSummaryResult.rows[0];
         const winningsSummary = winningsResult.rows[0];
         const totalBetAmount = betSummary.rawTotalAmount - betSummary.totalReturnedAmount;
