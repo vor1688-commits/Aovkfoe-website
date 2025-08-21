@@ -2454,36 +2454,17 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, async (req: Requ
     try {
         const queryParams: any[] = [];
         const whereConditions: string[] = [];
-        
-        if (lottoDate && lottoDate !== 'all' && lottoDate !== '') {
-            whereConditions.push(`lr.cutoff_datetime::date = $${queryParams.length + 1}`);
-            queryParams.push(lottoDate as string);
-        } else {
-            whereConditions.push(`b.created_at BETWEEN $${queryParams.length + 1} AND $${queryParams.length + 2}`);
-            queryParams.push(startDate, `${endDate} 23:59:59`);
-        }
-        if (loggedInUser.role === 'owner' || loggedInUser.role === 'admin') {
-            if (username && username !== 'all' && username !== '') {
-                whereConditions.push(`u.username = $${queryParams.length + 1}`);
-                queryParams.push(username as string);
-            }
-        } else {
-            whereConditions.push(`u.id = $${queryParams.length + 1}`);
-            queryParams.push(loggedInUser.id);
-        }
-        if (status && status !== 'all') {
-            whereConditions.push(`b.status = $${queryParams.length + 1}`);
-            queryParams.push(status as string);
-        }
-        if (lottoName && lottoName !== 'all' && lottoName !== '') {
-            whereConditions.push(`b.bet_name = $${queryParams.length + 1}`);
-            queryParams.push(lottoName as string);
-        }
+        let paramIndex = 1;
+
+        if (lottoDate && lottoDate !== 'all' && lottoDate !== '') { whereConditions.push(`lr.cutoff_datetime::date = $${paramIndex++}`); queryParams.push(lottoDate as string); } else { whereConditions.push(`b.created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`); queryParams.push(startDate, `${endDate} 23:59:59`); }
+        if (loggedInUser.role === 'owner' || loggedInUser.role === 'admin') { if (username && username !== 'all' && username !== '') { whereConditions.push(`u.username = $${paramIndex++}`); queryParams.push(username as string); } } else { whereConditions.push(`u.id = $${paramIndex++}`); queryParams.push(loggedInUser.id); }
+        if (status && status !== 'all') { whereConditions.push(`b.status = $${paramIndex++}`); queryParams.push(status as string); }
+        if (lottoName && lottoName !== 'all' && lottoName !== '') { whereConditions.push(`b.bet_name = $${paramIndex++}`); queryParams.push(lottoName as string); }
         const baseWhereClauses = whereConditions.join(' AND ');
 
         const mainQuery = `
             WITH filtered_bills AS (
-                SELECT b.id, b.total_amount, b.bet_name, b.lotto_round_id, b.user_id
+                SELECT b.id, b.total_amount, b.bet_name, b.lotto_round_id
                 FROM bills b
                 JOIN users u ON b.user_id = u.id
                 JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
@@ -2494,11 +2475,13 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, async (req: Requ
                     be.bill_id,
                     SUM(bi.price) FILTER (WHERE bi.status = 'คืนเลข') AS returned_amount,
                     SUM(bi.payout_amount) FILTER (
-                        WHERE bi.status = 'ยืนยัน' 
-                        AND lr.status IN ('closed', 'manual_closed')
+                        WHERE bi.status = 'ยืนยัน' AND lr.status IN ('closed', 'manual_closed')
                         AND (
                             (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ตรง' AND lr.winning_numbers->>'3top' = bi.bet_number) OR
-                            (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'โต๊ด' AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(lr.winning_numbers->'3tote') AS w(num) WHERE BTRIM(w.num, '[]"') = bi.bet_number)) OR
+                            (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'โต๊ด' AND EXISTS (
+                                SELECT 1 FROM jsonb_array_elements_text(lr.winning_numbers->'3tote') AS w(num)
+                                WHERE sort_string(w.num) = sort_string(bi.bet_number)
+                            )) OR
                             (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'บน' AND lr.winning_numbers->>'2top' = bi.bet_number) OR
                             (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' = bi.bet_number)
                         )
@@ -2519,12 +2502,23 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, async (req: Requ
         `;
 
         const byLottoTypeQuery = `
-            SELECT b.bet_name as name, SUM(b.total_amount)::float AS "totalAmount", COUNT(b.id) AS "billCount"
-            FROM bills b
-            JOIN users u ON b.user_id = u.id
-            JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
-            WHERE ${baseWhereClauses}
-            GROUP BY b.bet_name HAVING COUNT(b.id) > 0 ORDER BY "totalAmount" DESC;
+            WITH filtered_bills AS (
+                SELECT b.id, b.total_amount, b.bet_name
+                FROM bills b
+                JOIN users u ON b.user_id = u.id
+                JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
+                WHERE ${baseWhereClauses}
+            ),
+            bill_calculations AS (
+                SELECT
+                    fb.id,
+                    COALESCE((SELECT SUM(bi.price) FROM bet_items bi JOIN bill_entries be ON bi.bill_entry_id = be.id WHERE be.bill_id = fb.id AND bi.status = 'คืนเลข'), 0) AS returned_amount
+                FROM filtered_bills fb
+            )
+            SELECT fb.bet_name as name, SUM(fb.total_amount - COALESCE(bc.returned_amount, 0))::float AS "totalAmount", COUNT(fb.id) AS "billCount"
+            FROM filtered_bills fb
+            LEFT JOIN bill_calculations bc ON fb.id = bc.id
+            GROUP BY fb.bet_name HAVING COUNT(fb.id) > 0 ORDER BY "totalAmount" DESC;
         `;
         
         const allBetItemsSummaryQuery = `
@@ -2538,7 +2532,7 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, async (req: Requ
             GROUP BY bi.bet_number, bi.bet_style ORDER BY "totalAmount" DESC;
         `;
 
-        const usersQuery = `SELECT id, username FROM users WHERE role != 'owner' ORDER BY username ASC`;
+        const usersQuery = `SELECT id, username FROM users ORDER BY username ASC`;
 
         const [summaryResult, byLottoTypeResult, allBetItemsSummaryResult, usersResult] = await Promise.all([
             client.query(mainQuery, queryParams),
@@ -2558,8 +2552,8 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, async (req: Requ
         });
 
     } catch (err: any) {
-        console.error("Error fetching financial summary:", err);
-        res.status(500).json({ error: 'Error fetching financial summary', details: err.message });
+        console.error("Error fetching financial summary (fast version):", err);
+        res.status(500).json({ error: 'Error fetching financial summary (fast version)', details: err.message });
     } finally {
         client.release();
     }
