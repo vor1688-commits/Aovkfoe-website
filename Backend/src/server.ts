@@ -2452,51 +2452,37 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, async (req: Requ
 
     const client = await db.connect();
     try {
-        // --- Helper Function สำหรับสร้างส่วนของ Query อย่างปลอดภัย ---
-        const buildQueryParts = (dateFilterType: 'createdAt' | 'cutoff') => {
-            const conditions: string[] = [];
-            const params: any[] = [];
+        // --- ส่วนที่ 1: Query สำหรับ "ยอดแทง, ยอดคืน, จำนวนบิล" และข้อมูลกราฟ ---
+        // (อิงตามวันที่สร้างบิลเป็นหลัก นอกจากจะระบุงวดวันที่มา)
+        const betConditions: string[] = [];
+        const betParams: any[] = [];
 
-            // 1. Date Filter (เงื่อนไขหลัก)
-            if (lottoDate && lottoDate !== 'all' && lottoDate !== '') {
-                // ถ้ามีการเจาะจง 'งวดวันที่' ให้ใช้ lr.cutoff_datetime
-                conditions.push(`lr.cutoff_datetime::date = $${params.length + 1}`);
-                params.push(lottoDate);
-            } else {
-                // ถ้าไม่ ให้ใช้ 'ตั้งแต่วันที่' - 'ถึงวันที่' ตามประเภทที่กำหนด
-                const dateColumn = dateFilterType === 'createdAt' ? 'b.created_at' : 'lr.cutoff_datetime';
-                conditions.push(`${dateColumn} BETWEEN $${params.length + 1} AND $${params.length + 2}`);
-                params.push(startDate, `${endDate} 23:59:59`);
-            }
-
-            // 2. User Filter
-            if (loggedInUser.role === 'owner' || loggedInUser.role === 'admin') {
-                if (username && username !== 'all' && username !== '') {
-                    conditions.push(`u.username = $${params.length + 1}`);
-                    params.push(username as string);
-                }
-            } else {
-                conditions.push(`u.id = $${params.length + 1}`);
-                params.push(loggedInUser.id);
-            }
-
-            // 3. Lotto Name Filter
-            if (lottoName && lottoName !== 'all' && lottoName !== '') {
-                conditions.push(`b.bet_name = $${params.length + 1}`);
-                params.push(lottoName as string);
-            }
-            
-            return { conditions, params };
-        };
-
-        // --- สร้าง Query #1: สำหรับ "ยอดแทง, ยอดคืน, จำนวนบิล" (อิงตามวันที่สร้างบิล) ---
-        const betParts = buildQueryParts('createdAt');
-        if (status && status !== 'all') {
-            betParts.conditions.push(`b.status = $${betParts.params.length + 1}`);
-            betParts.params.push(status);
+        if (lottoDate && lottoDate !== 'all') {
+            betConditions.push(`lr.cutoff_datetime::date = $${betParams.length + 1}`);
+            betParams.push(lottoDate);
+        } else {
+            betConditions.push(`b.created_at BETWEEN $${betParams.length + 1} AND $${betParams.length + 2}`);
+            betParams.push(startDate, `${endDate} 23:59:59`);
         }
-        const betWhereClause = betParts.conditions.join(' AND ');
-        
+        if (loggedInUser.role === 'owner' || loggedInUser.role === 'admin') {
+            if (username && username !== 'all') {
+                betConditions.push(`u.username = $${betParams.length + 1}`);
+                betParams.push(username as string);
+            }
+        } else {
+            betConditions.push(`u.id = $${betParams.length + 1}`);
+            betParams.push(loggedInUser.id);
+        }
+        if (lottoName && lottoName !== 'all') {
+            betConditions.push(`b.bet_name = $${betParams.length + 1}`);
+            betParams.push(lottoName as string);
+        }
+        if (status && status !== 'all') {
+            betConditions.push(`b.status = $${betParams.length + 1}`);
+            betParams.push(status);
+        }
+        const betWhereClause = betConditions.join(' AND ');
+
         const betSummaryQuery = `
             WITH filtered_bills AS (
                 SELECT b.id, b.total_amount
@@ -2519,12 +2505,59 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, async (req: Requ
             FROM filtered_bills fb
             LEFT JOIN returned_amounts ra ON fb.id = ra.bill_id;
         `;
-
-        // --- สร้าง Query #2: สำหรับ "ยอดถูกรางวัล" (อิงตามวันที่ออกผล) ---
-        const winParts = buildQueryParts('cutoff');
-        winParts.conditions.push(`b.status = 'ยืนยันแล้ว'`);
-        winParts.conditions.push(`lr.status IN ('closed', 'manual_closed')`);
-        const winWhereClause = winParts.conditions.join(' AND ');
+        
+        const byLottoTypeQuery = `
+            SELECT b.bet_name as name, SUM(b.total_amount - COALESCE(ra.returned_amount, 0))::float AS "totalAmount", COUNT(b.id) AS "billCount"
+            FROM bills b
+            JOIN users u ON b.user_id = u.id
+            JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
+            LEFT JOIN (
+               SELECT be.bill_id, SUM(bi.price) as returned_amount
+               FROM bill_entries be JOIN bet_items bi ON be.id = bi.bill_entry_id
+               WHERE bi.status = 'คืนเลข' GROUP BY be.bill_id
+            ) ra ON b.id = ra.bill_id
+            WHERE ${betWhereClause}
+            GROUP BY b.bet_name HAVING COUNT(b.id) > 0 ORDER BY "totalAmount" DESC;
+        `;
+        
+        const allBetItemsSummaryQuery = `
+            SELECT bi.bet_number as "number", bi.bet_style as "style", SUM(bi.price)::float as "totalAmount", COUNT(bi.id) as "count"
+            FROM bet_items bi
+            JOIN bill_entries be ON bi.bill_entry_id = be.id
+            JOIN bills b ON be.bill_id = b.id
+            JOIN users u ON b.user_id = u.id
+            JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
+            WHERE ${betWhereClause} AND (bi.status IS NULL OR bi.status = 'ยืนยัน')
+            GROUP BY bi.bet_number, bi.bet_style ORDER BY "totalAmount" DESC;
+        `;
+        
+        // --- ส่วนที่ 2: Query สำหรับ "ยอดถูกรางวัล" (อิงตามวันที่ออกผล) ---
+        const winConditions: string[] = [];
+        const winParams: any[] = [];
+        
+        if (lottoDate && lottoDate !== 'all') {
+            winConditions.push(`lr.cutoff_datetime::date = $${winParams.length + 1}`);
+            winParams.push(lottoDate);
+        } else {
+            winConditions.push(`lr.cutoff_datetime BETWEEN $${winParams.length + 1} AND $${winParams.length + 2}`);
+            winParams.push(startDate, `${endDate} 23:59:59`);
+        }
+         if (loggedInUser.role === 'owner' || loggedInUser.role === 'admin') {
+            if (username && username !== 'all') {
+                winConditions.push(`u.username = $${winParams.length + 1}`);
+                winParams.push(username as string);
+            }
+        } else {
+            winConditions.push(`u.id = $${winParams.length + 1}`);
+            winParams.push(loggedInUser.id);
+        }
+        if (lottoName && lottoName !== 'all') {
+            winConditions.push(`b.bet_name = $${winParams.length + 1}`);
+            winParams.push(lottoName as string);
+        }
+        winConditions.push(`b.status = 'ยืนยันแล้ว'`);
+        winConditions.push(`lr.status IN ('closed', 'manual_closed')`);
+        const winWhereClause = winConditions.join(' AND ');
 
         const winningsQuery = `
             SELECT COALESCE(SUM(bi.payout_amount), 0)::float AS "totalWinnings"
@@ -2544,43 +2577,16 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, async (req: Requ
                 (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' = bi.bet_number)
             );
         `;
-
-        // --- สร้าง Query #3: สำหรับ Breakdown (อิงตามวันที่สร้างบิล) ---
-        const byLottoTypeQuery = `
-            SELECT b.bet_name as name, SUM(b.total_amount - COALESCE(ra.returned_amount, 0))::float AS "totalAmount", COUNT(b.id) AS "billCount"
-            FROM bills b
-            JOIN users u ON b.user_id = u.id
-            JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
-            LEFT JOIN (
-               SELECT be.bill_id, SUM(bi.price) as returned_amount
-               FROM bill_entries be JOIN bet_items bi ON be.id = bi.bill_entry_id
-               WHERE bi.status = 'คืนเลข' GROUP BY be.bill_id
-            ) ra ON b.id = ra.bill_id
-            WHERE ${betWhereClause}
-            GROUP BY b.bet_name HAVING COUNT(b.id) > 0 ORDER BY "totalAmount" DESC;
-        `;
         
-        // --- สร้าง Query #4: สำหรับสรุปยอดแทงตามตัวเลข (อิงตามวันที่สร้างบิล) ---
-        const allBetItemsSummaryQuery = `
-            SELECT bi.bet_number as "number", bi.bet_style as "style", SUM(bi.price)::float as "totalAmount", COUNT(bi.id) as "count"
-            FROM bet_items bi
-            JOIN bill_entries be ON bi.bill_entry_id = be.id
-            JOIN bills b ON be.bill_id = b.id
-            JOIN users u ON b.user_id = u.id
-            JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
-            WHERE ${betWhereClause} AND (bi.status IS NULL OR bi.status = 'ยืนยัน')
-            GROUP BY bi.bet_number, bi.bet_style ORDER BY "totalAmount" DESC;
-        `;
-        
-        // --- สร้าง Query #5: สำหรับรายชื่อผู้ใช้ ---
+        // --- Query สุดท้าย: สำหรับรายชื่อผู้ใช้ ---
         const usersQuery = `SELECT id, username FROM users WHERE role != 'owner' ORDER BY username ASC`;
 
         // --- รันทุก Query พร้อมกัน ---
         const [betSummaryResult, winningsResult, byLottoTypeResult, allBetItemsSummaryResult, usersResult] = await Promise.all([
-            client.query(betSummaryQuery, betParts.params),
-            client.query(winningsQuery, winParts.params),
-            client.query(byLottoTypeQuery, betParts.params),
-            client.query(allBetItemsSummaryQuery, betParts.params),
+            client.query(betSummaryQuery, betParams),
+            client.query(winningsQuery, winParams),
+            client.query(byLottoTypeQuery, betParams),
+            client.query(allBetItemsSummaryQuery, betParams),
             client.query(usersQuery)
         ]);
         
