@@ -2011,117 +2011,121 @@ app.get("/api/financial-summary", isAuthenticated, (req, res) => __awaiter(void 
         client.release();
     }
 }));
-// app.get("/api/financial-summary", isAuthenticated, async (req: Request, res: Response) => {
-//     const loggedInUser = req.user!;
-//     const { startDate, endDate, username, status, lottoName, lottoDate } = req.query;
-//     if (!startDate || !endDate) {
-//         return res.status(400).json({ error: 'Please provide both startDate and endDate.' });
-//     }
-//     const client = await db.connect();
-//     try {
-//         const queryParams: any[] = [];
-//         const whereConditions: string[] = [];
-//         if (lottoDate && lottoDate !== 'all' && lottoDate !== '') {
-//             whereConditions.push(`lr.cutoff_datetime::date = $${queryParams.length + 1}`);
-//             queryParams.push(lottoDate as string);
-//         } else {
-//             whereConditions.push(`b.created_at BETWEEN $${queryParams.length + 1} AND $${queryParams.length + 2}`);
-//             queryParams.push(startDate, `${endDate} 23:59:59`);
-//         }
-//         if (loggedInUser.role === 'owner' || loggedInUser.role === 'admin') {
-//             if (username && username !== 'all' && username !== '') {
-//                 whereConditions.push(`u.username = $${queryParams.length + 1}`);
-//                 queryParams.push(username as string);
-//             }
-//         } else {
-//             whereConditions.push(`u.id = $${queryParams.length + 1}`);
-//             queryParams.push(loggedInUser.id);
-//         }
-//         if (status && status !== 'all') {
-//             whereConditions.push(`b.status = $${queryParams.length + 1}`);
-//             queryParams.push(status as string);
-//         }
-//         if (lottoName && lottoName !== 'all' && lottoName !== '') {
-//             whereConditions.push(`b.bet_name = $${queryParams.length + 1}`);
-//             queryParams.push(lottoName as string);
-//         }
-//         const baseWhereClauses = whereConditions.join(' AND ');
-//         const mainQuery = `
-//             WITH filtered_bills AS (
-//                 SELECT b.id, b.total_amount, b.bet_name, b.lotto_round_id, b.user_id
-//                 FROM bills b
-//                 JOIN users u ON b.user_id = u.id
-//                 JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
-//                 WHERE ${baseWhereClauses}
-//             ),
-//             bill_item_aggregates AS (
-//                 SELECT 
-//                     be.bill_id,
-//                     SUM(bi.price) FILTER (WHERE bi.status = 'คืนเลข') AS returned_amount,
-//                     SUM(bi.payout_amount) FILTER (
-//                         WHERE bi.status = 'ยืนยัน' 
-//                         AND lr.status IN ('closed', 'manual_closed')
-//                         AND (
-//                             (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ตรง' AND lr.winning_numbers->>'3top' = bi.bet_number) OR
-//                             (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'โต๊ด' AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(lr.winning_numbers->'3tote') AS w(num) WHERE BTRIM(w.num, '[]"') = bi.bet_number)) OR
-//                             (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'บน' AND lr.winning_numbers->>'2top' = bi.bet_number) OR
-//                             (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' = bi.bet_number)
-//                         )
-//                     ) AS winning_amount
-//                 FROM bill_entries be
-//                 JOIN bet_items bi ON bi.bill_entry_id = be.id
-//                 JOIN filtered_bills fb ON be.bill_id = fb.id
-//                 JOIN lotto_rounds lr ON fb.lotto_round_id = lr.id
-//                 GROUP BY be.bill_id
-//             )
-//             SELECT
-//                 COALESCE(SUM(fb.total_amount - COALESCE(bia.returned_amount, 0)), 0)::float AS "totalBetAmount",
-//                 COALESCE(SUM(bia.returned_amount), 0)::float AS "totalReturnedAmount",
-//                 COALESCE(SUM(bia.winning_amount), 0)::float AS "totalWinnings",
-//                 (SELECT COUNT(*) FROM filtered_bills) AS "totalBills"
-//             FROM filtered_bills fb
-//             LEFT JOIN bill_item_aggregates bia ON fb.id = bia.bill_id
-//         `;
-//         const byLottoTypeQuery = `
-//             SELECT b.bet_name as name, SUM(b.total_amount)::float AS "totalAmount", COUNT(b.id) AS "billCount"
-//             FROM bills b
-//             JOIN users u ON b.user_id = u.id
-//             JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
-//             WHERE ${baseWhereClauses}
-//             GROUP BY b.bet_name HAVING COUNT(b.id) > 0 ORDER BY "totalAmount" DESC;
-//         `;
-//         const allBetItemsSummaryQuery = `
-//             SELECT bi.bet_number as "number", bi.bet_style as "style", SUM(bi.price)::float as "totalAmount", COUNT(bi.id) as "count"
-//             FROM bet_items bi
-//             JOIN bill_entries be ON bi.bill_entry_id = be.id
-//             JOIN bills b ON be.bill_id = b.id
-//             JOIN users u ON b.user_id = u.id
-//             JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
-//             WHERE ${baseWhereClauses} AND (bi.status IS NULL OR bi.status = 'ยืนยัน')
-//             GROUP BY bi.bet_number, bi.bet_style ORDER BY "totalAmount" DESC;
-//         `;
-//         const usersQuery = `SELECT id, username FROM users WHERE role != 'owner' ORDER BY username ASC`;
-//         const [summaryResult, byLottoTypeResult, allBetItemsSummaryResult, usersResult] = await Promise.all([
-//             client.query(mainQuery, queryParams),
-//             client.query(byLottoTypeQuery, queryParams),
-//             client.query(allBetItemsSummaryQuery, queryParams),
-//             client.query(usersQuery)
-//         ]);
-//         const summary: SummaryData = summaryResult.rows[0] || {};
-//         summary.netProfit = summary.totalWinnings - summary.totalBetAmount;
-//         res.json({
-//             summary,
-//             breakdown: { byLottoType: byLottoTypeResult.rows },
-//             allBetItemsSummary: allBetItemsSummaryResult.rows,
-//             users: usersResult.rows,
-//         });
-//     } catch (err: any) {
-//         console.error("Error fetching financial summary:", err);
-//         res.status(500).json({ error: 'Error fetching financial summary', details: err.message });
-//     } finally {
-//         client.release();
-//     }
-// });
+app.get("/api/financial-summary-fast-version", isAuthenticated, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const loggedInUser = req.user;
+    const { startDate, endDate, username, status, lottoName, lottoDate } = req.query;
+    if (!startDate || !endDate) {
+        return res.status(400).json({ error: 'Please provide both startDate and endDate.' });
+    }
+    const client = yield db.connect();
+    try {
+        const queryParams = [];
+        const whereConditions = [];
+        if (lottoDate && lottoDate !== 'all' && lottoDate !== '') {
+            whereConditions.push(`lr.cutoff_datetime::date = $${queryParams.length + 1}`);
+            queryParams.push(lottoDate);
+        }
+        else {
+            whereConditions.push(`b.created_at BETWEEN $${queryParams.length + 1} AND $${queryParams.length + 2}`);
+            queryParams.push(startDate, `${endDate} 23:59:59`);
+        }
+        if (loggedInUser.role === 'owner' || loggedInUser.role === 'admin') {
+            if (username && username !== 'all' && username !== '') {
+                whereConditions.push(`u.username = $${queryParams.length + 1}`);
+                queryParams.push(username);
+            }
+        }
+        else {
+            whereConditions.push(`u.id = $${queryParams.length + 1}`);
+            queryParams.push(loggedInUser.id);
+        }
+        if (status && status !== 'all') {
+            whereConditions.push(`b.status = $${queryParams.length + 1}`);
+            queryParams.push(status);
+        }
+        if (lottoName && lottoName !== 'all' && lottoName !== '') {
+            whereConditions.push(`b.bet_name = $${queryParams.length + 1}`);
+            queryParams.push(lottoName);
+        }
+        const baseWhereClauses = whereConditions.join(' AND ');
+        const mainQuery = `
+            WITH filtered_bills AS (
+                SELECT b.id, b.total_amount, b.bet_name, b.lotto_round_id, b.user_id
+                FROM bills b
+                JOIN users u ON b.user_id = u.id
+                JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
+                WHERE ${baseWhereClauses}
+            ),
+            bill_item_aggregates AS (
+                SELECT 
+                    be.bill_id,
+                    SUM(bi.price) FILTER (WHERE bi.status = 'คืนเลข') AS returned_amount,
+                    SUM(bi.payout_amount) FILTER (
+                        WHERE bi.status = 'ยืนยัน' 
+                        AND lr.status IN ('closed', 'manual_closed')
+                        AND (
+                            (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ตรง' AND lr.winning_numbers->>'3top' = bi.bet_number) OR
+                            (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'โต๊ด' AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(lr.winning_numbers->'3tote') AS w(num) WHERE BTRIM(w.num, '[]"') = bi.bet_number)) OR
+                            (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'บน' AND lr.winning_numbers->>'2top' = bi.bet_number) OR
+                            (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' = bi.bet_number)
+                        )
+                    ) AS winning_amount
+                FROM bill_entries be
+                JOIN bet_items bi ON bi.bill_entry_id = be.id
+                JOIN filtered_bills fb ON be.bill_id = fb.id
+                JOIN lotto_rounds lr ON fb.lotto_round_id = lr.id
+                GROUP BY be.bill_id
+            )
+            SELECT
+                COALESCE(SUM(fb.total_amount - COALESCE(bia.returned_amount, 0)), 0)::float AS "totalBetAmount",
+                COALESCE(SUM(bia.returned_amount), 0)::float AS "totalReturnedAmount",
+                COALESCE(SUM(bia.winning_amount), 0)::float AS "totalWinnings",
+                (SELECT COUNT(*) FROM filtered_bills) AS "totalBills"
+            FROM filtered_bills fb
+            LEFT JOIN bill_item_aggregates bia ON fb.id = bia.bill_id
+        `;
+        const byLottoTypeQuery = `
+            SELECT b.bet_name as name, SUM(b.total_amount)::float AS "totalAmount", COUNT(b.id) AS "billCount"
+            FROM bills b
+            JOIN users u ON b.user_id = u.id
+            JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
+            WHERE ${baseWhereClauses}
+            GROUP BY b.bet_name HAVING COUNT(b.id) > 0 ORDER BY "totalAmount" DESC;
+        `;
+        const allBetItemsSummaryQuery = `
+            SELECT bi.bet_number as "number", bi.bet_style as "style", SUM(bi.price)::float as "totalAmount", COUNT(bi.id) as "count"
+            FROM bet_items bi
+            JOIN bill_entries be ON bi.bill_entry_id = be.id
+            JOIN bills b ON be.bill_id = b.id
+            JOIN users u ON b.user_id = u.id
+            JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
+            WHERE ${baseWhereClauses} AND (bi.status IS NULL OR bi.status = 'ยืนยัน')
+            GROUP BY bi.bet_number, bi.bet_style ORDER BY "totalAmount" DESC;
+        `;
+        const usersQuery = `SELECT id, username FROM users WHERE role != 'owner' ORDER BY username ASC`;
+        const [summaryResult, byLottoTypeResult, allBetItemsSummaryResult, usersResult] = yield Promise.all([
+            client.query(mainQuery, queryParams),
+            client.query(byLottoTypeQuery, queryParams),
+            client.query(allBetItemsSummaryQuery, queryParams),
+            client.query(usersQuery)
+        ]);
+        const summary = summaryResult.rows[0] || {};
+        summary.netProfit = summary.totalWinnings - summary.totalBetAmount;
+        res.json({
+            summary,
+            breakdown: { byLottoType: byLottoTypeResult.rows },
+            allBetItemsSummary: allBetItemsSummaryResult.rows,
+            users: usersResult.rows,
+        });
+    }
+    catch (err) {
+        console.error("Error fetching financial summary:", err);
+        res.status(500).json({ error: 'Error fetching financial summary', details: err.message });
+    }
+    finally {
+        client.release();
+    }
+}));
 app.get("/api/prize-check/all-items", isAuthenticated, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     // รับ Filter ใหม่เข้ามา
     const { startDate, endDate, status, username, lottoName, lottoDate } = req.query;

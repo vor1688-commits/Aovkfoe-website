@@ -127,7 +127,7 @@ const AccountPage: React.FC = () => {
             lottoDate: selectedDate === "all" ? "" : selectedDate 
         };
         
-        const summaryRequest = api.get<SummaryApiResponse>(`/api/financial-summary`, { params: commonParams });
+        const summaryRequest = api.get<SummaryApiResponse>(`/api/financial-summary-fast-version`, { params: commonParams });
         const recentBillsRequest = api.get(`/api/bills`, { params: { ...commonParams, page: '1', limit: '20' } });
         const winningReportRequest = api.get(`/api/winning-report`, { params: { ...commonParams, page: '1', limit: '50' } });
         const optionsRequest = api.get(`/api/filters/lotto-options`, { params: { username: usernameParam } });
