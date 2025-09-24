@@ -2901,15 +2901,19 @@ app.get("/api/winning-report", isAuthenticated, async (req: Request, res: Respon
         conditions.push(`lr.status IN ('closed', 'manual_closed')`);
         
         // ✅ [จุดแก้ไขสำคัญ] ใช้ Logic การตรวจรางวัลที่ถูกต้องกับ JSON Array
-        const winningLogic = `(
-            (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ตรง' AND lr.winning_numbers->'3top' @> to_jsonb(bi.bet_number::text)) OR
-            (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'โต๊ด' AND lr.winning_numbers->'3tote' @> to_jsonb(bi.bet_number::text)) OR
-            (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'บน' AND lr.winning_numbers->'2top' @> to_jsonb(bi.bet_number::text)) OR
-            (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->'2bottom' @> to_jsonb(bi.bet_number::text)) OR
-            (be.bet_type = 'run' AND bi.bet_style = 'บน' AND lr.winning_numbers->>'3top' LIKE '%"' || bi.bet_number || '"%') OR
-            (be.bet_type = 'run' AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' LIKE '%"' || bi.bet_number || '"%')
-        )`;
-        conditions.push(winningLogic);
+         const winningLogic = `(
+          (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ตรง' AND lr.winning_numbers->'3top' @> to_jsonb(bi.bet_number::text)) OR
+          (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'โต๊ด' AND lr.winning_numbers->'3tote' @> to_jsonb(bi.bet_number::text)) OR
+          (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'บน' AND lr.winning_numbers->'2top' @> to_jsonb(bi.bet_number::text)) OR
+          (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->'2bottom' @> to_jsonb(bi.bet_number::text)) OR
+          
+          -- vvvvvvvvvv [ส่วนที่แก้ไข] vvvvvvvvvv
+          -- เปลี่ยนจาก LIKE ที่ผิดพลาด มาใช้ STRPOS ที่ถูกต้อง
+          (be.bet_type = 'run' AND bi.bet_style = 'บน' AND strpos(lr.winning_numbers->>'3top', bi.bet_number) > 0) OR
+          (be.bet_type = 'run' AND bi.bet_style = 'ล่าง' AND strpos(lr.winning_numbers->>'2bottom', bi.bet_number) > 0)
+          -- ^^^^^^^^^^^^ [สิ้นสุดส่วนที่แก้ไข] ^^^^^^^^^^^^
+      )`;
+      conditions.push(winningLogic);
         
         const whereClause = conditions.join(' AND ');
 
