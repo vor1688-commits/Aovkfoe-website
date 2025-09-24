@@ -151,23 +151,33 @@ const ManagementLottoRoundsPage: React.FC = () => {
         setExemptions([]);
     };
 
-    const handleFormChange = (fieldName: keyof typeof formData, value: string) => {
-        let processedValue = value;
-        if (fieldName === 'closed_numbers' || fieldName === 'half_pay_numbers') {
-            const cleaned = value.replace(/[^0-9\s,]/g, '');
-            const normalized = cleaned.replace(/[\s,]+/g, ' ');
-            const parts = normalized.split(' ');
-            const lastPart = parts[parts.length - 1];
-            if (lastPart.length > 3) {
-                const allButLast = parts.slice(0, -1);
-                const truncatedLastPart = lastPart.substring(0, 3);
-                processedValue = [...allButLast, truncatedLastPart].join(' ');
-            } else {
-                processedValue = normalized;
-            }
-        }
-        setFormData(prev => ({ ...prev, [fieldName]: processedValue }));
-    };
+   const handleFormChange = (fieldName: keyof typeof formData, value: string) => {
+    let processedValue = value;
+
+    // ตรวจสอบว่าเป็น field ที่ต้องการจัดการตัวเลขหรือไม่
+    if (fieldName === 'closed_numbers' || fieldName === 'half_pay_numbers') {
+        
+        // --- ส่วนที่นำ Concept ของคุณมาใช้ ---
+        // 1. แปลงตัวคั่นทุกชนิด (คอมม่า, เว้นวรรค, ขึ้นบรรทัดใหม่) ให้เป็นเว้นวรรคเดียว
+        const normalized = value.replace(/[, \t\n\r]+/g, ' ');
+
+        // 2. อนุญาตให้มีแค่ตัวเลขและเว้นวรรคเท่านั้น
+        const filtered = normalized.replace(/[^0-9 ]/g, '');
+        
+        // 3. ตรวจสอบความยาวของแต่ละตัวเลข
+        const parts = filtered.split(' ');
+        const validatedParts = parts.map(part => 
+            part.length > 3 ? part.substring(0, 3) : part
+        );
+
+        // 4. รวมกลับเป็นข้อความเดียว และกรองช่องว่างที่อาจเกิดขึ้นตอนท้ายออก
+        processedValue = validatedParts.join(' ');
+        // --- สิ้นสุดส่วนที่แก้ไข ---
+
+    }
+
+    setFormData(prev => ({ ...prev, [fieldName]: processedValue }));
+};
 
     const handleAddRangeLimit = () => setRangeLimits([...rangeLimits, { range_start: '', range_end: '', max_amount: '' }]);
     const handleRemoveRangeLimit = (index: number) => setRangeLimits(rangeLimits.filter((_, i) => i !== index));

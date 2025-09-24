@@ -18,15 +18,20 @@ interface SpecialNumbersCardProps {
 
 // --- Helper Function ---
 const handleNumericArrayInputChange = (value: string, maxLength: number): string => {
-    const filteredValue = value.replace(/[^0-9, ]/g, '');
-    const parts = filteredValue.split(/([, ])/);
-    const validatedParts = parts.map(part => {
-        if (!/[, ]/.test(part) && part.length > maxLength) {
-            return part.substring(0, maxLength);
-        }
-        return part;
-    });
-    return validatedParts.join('').replace(/, +/g, ', ').replace(/,+/g, ',').replace(/ +/g, ' ');
+    // 1. แปลงตัวคั่นทุกชนิด (คอมม่า, เว้นวรรค, ขึ้นบรรทัดใหม่) ให้เป็นเว้นวรรคเดียว
+    const normalized = value.replace(/[, \t\n\r]+/g, ' ');
+
+    // 2. อนุญาตให้มีแค่ตัวเลขและเว้นวรรคเท่านั้น
+    const filtered = normalized.replace(/[^0-9 ]/g, '');
+    
+    // 3. ตรวจสอบความยาวของแต่ละตัวเลข
+    const parts = filtered.split(' ');
+    const validatedParts = parts.map(part => 
+        part.length > maxLength ? part.substring(0, maxLength) : part
+    );
+
+    // 4. รวมกลับเป็นข้อความเดียว
+    return validatedParts.join(' ');
 };
 
 // --- Main Component ---
@@ -59,8 +64,8 @@ const SpecialNumbersCard: React.FC<SpecialNumbersCardProps> = ({ lottoId, specia
     const handleSave = async () => {
         showStatus("loading", "กำลังอัปเดต", '');
         if (!lottoId) return;
-        const closed_numbers = closedInput.split(/[, ]+/).map(n => n.trim()).filter(Boolean);
-        const half_pay_numbers = halfPayInput.split(/[, ]+/).map(n => n.trim()).filter(Boolean);
+        const closed_numbers = closedInput.split(/[\s,]+/).map(n => n.trim()).filter(Boolean);
+        const half_pay_numbers = halfPayInput.split(/[\s,]+/).map(n => n.trim()).filter(Boolean);
         try { 
             await api.put(`/api/lotto-rounds/update-number-special/${lottoId}`, { 
                 closed_numbers, 

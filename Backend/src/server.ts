@@ -595,6 +595,21 @@ app.post("/api/savebills", async (req: Request, res: Response) => {
       const newBillEntryId = entryResult.rows[0].id;
 
       const isThreeDigitMode = entry.betTypes === '3d' || entry.betTypes === '6d';
+      const isRunMode = entry.betTypes === 'run';
+
+      let topRate: number;
+      let bottomRate: number;
+
+      if (isRunMode) {
+        topRate = Number(lottoTypeDetails.rate_run_top);
+        bottomRate = Number(lottoTypeDetails.rate_run_bottom);
+      } else if (isThreeDigitMode) {
+        topRate = Number(lottoTypeDetails.rate_3_top);
+        bottomRate = Number(lottoTypeDetails.rate_3_bottom);
+      } else { // กรณี 2 ตัว และอื่นๆ
+        topRate = Number(lottoTypeDetails.rate_2_top);
+        bottomRate = Number(lottoTypeDetails.rate_2_bottom);
+      }
 
       const processBetItems = async (originalPrice: number, style: string, standardRate: number) => {
         if (originalPrice <= 0) return;
@@ -623,11 +638,16 @@ app.post("/api/savebills", async (req: Request, res: Response) => {
         }
       };
 
-      await processBetItems(Number(entry.priceTop), isThreeDigitMode ? 'ตรง' : 'บน', isThreeDigitMode ? Number(lottoTypeDetails.rate_3_top) : Number(lottoTypeDetails.rate_2_top));
+    //   await processBetItems(Number(entry.priceTop), isThreeDigitMode ? 'ตรง' : 'บน', isThreeDigitMode ? Number(lottoTypeDetails.rate_3_top) : Number(lottoTypeDetails.rate_2_top));
+    //   if(isThreeDigitMode) {
+    //     await processBetItems(Number(entry.priceTote), 'โต๊ด', Number(lottoTypeDetails.rate_3_tote));
+    //   }
+    //   await processBetItems(Number(entry.priceBottom), 'ล่าง', isThreeDigitMode ? Number(lottoTypeDetails.rate_3_bottom) : Number(lottoTypeDetails.rate_2_bottom));
+    await processBetItems(Number(entry.priceTop), isThreeDigitMode ? 'ตรง' : 'บน', topRate);
       if(isThreeDigitMode) {
         await processBetItems(Number(entry.priceTote), 'โต๊ด', Number(lottoTypeDetails.rate_3_tote));
       }
-      await processBetItems(Number(entry.priceBottom), 'ล่าง', isThreeDigitMode ? Number(lottoTypeDetails.rate_3_bottom) : Number(lottoTypeDetails.rate_2_bottom));
+      await processBetItems(Number(entry.priceBottom), 'ล่าง', bottomRate);
     }
 
     await client.query("COMMIT");

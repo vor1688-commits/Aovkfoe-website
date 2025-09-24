@@ -471,6 +471,21 @@ app.post("/api/savebills", (req, res) => __awaiter(void 0, void 0, void 0, funct
             );
             const newBillEntryId = entryResult.rows[0].id;
             const isThreeDigitMode = entry.betTypes === '3d' || entry.betTypes === '6d';
+            const isRunMode = entry.betTypes === 'run';
+            let topRate;
+            let bottomRate;
+            if (isRunMode) {
+                topRate = Number(lottoTypeDetails.rate_run_top);
+                bottomRate = Number(lottoTypeDetails.rate_run_bottom);
+            }
+            else if (isThreeDigitMode) {
+                topRate = Number(lottoTypeDetails.rate_3_top);
+                bottomRate = Number(lottoTypeDetails.rate_3_bottom);
+            }
+            else { // กรณี 2 ตัว และอื่นๆ
+                topRate = Number(lottoTypeDetails.rate_2_top);
+                bottomRate = Number(lottoTypeDetails.rate_2_bottom);
+            }
             const processBetItems = (originalPrice, style, standardRate) => __awaiter(void 0, void 0, void 0, function* () {
                 if (originalPrice <= 0)
                     return;
@@ -493,11 +508,16 @@ app.post("/api/savebills", (req, res) => __awaiter(void 0, void 0, void 0, funct
                     ]);
                 }
             });
-            yield processBetItems(Number(entry.priceTop), isThreeDigitMode ? 'ตรง' : 'บน', isThreeDigitMode ? Number(lottoTypeDetails.rate_3_top) : Number(lottoTypeDetails.rate_2_top));
+            //   await processBetItems(Number(entry.priceTop), isThreeDigitMode ? 'ตรง' : 'บน', isThreeDigitMode ? Number(lottoTypeDetails.rate_3_top) : Number(lottoTypeDetails.rate_2_top));
+            //   if(isThreeDigitMode) {
+            //     await processBetItems(Number(entry.priceTote), 'โต๊ด', Number(lottoTypeDetails.rate_3_tote));
+            //   }
+            //   await processBetItems(Number(entry.priceBottom), 'ล่าง', isThreeDigitMode ? Number(lottoTypeDetails.rate_3_bottom) : Number(lottoTypeDetails.rate_2_bottom));
+            yield processBetItems(Number(entry.priceTop), isThreeDigitMode ? 'ตรง' : 'บน', topRate);
             if (isThreeDigitMode) {
                 yield processBetItems(Number(entry.priceTote), 'โต๊ด', Number(lottoTypeDetails.rate_3_tote));
             }
-            yield processBetItems(Number(entry.priceBottom), 'ล่าง', isThreeDigitMode ? Number(lottoTypeDetails.rate_3_bottom) : Number(lottoTypeDetails.rate_2_bottom));
+            yield processBetItems(Number(entry.priceBottom), 'ล่าง', bottomRate);
         }
         yield client.query("COMMIT");
         res.status(201).json({ message: "บันทึกสำเร็จ", billId: newBillId });
