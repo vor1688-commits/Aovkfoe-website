@@ -414,8 +414,25 @@ const AccountPage: React.FC = () => {
     };
   
     const filteredAndSortedSummary = Object.entries(groupedBetSummary)
-        .filter(([number]) => number.includes(betSummarySearch))
-        .sort(([, dataA]: [string, any], [, dataB]: [string, any]) => dataB.totalAmount - dataA.totalAmount);
+    .filter(([number]) => number.includes(betSummarySearch))
+    .sort(([numberA, dataA]: [string, any], [numberB, dataB]: [string, any]) => {
+        // --- [จุดแก้ไข] ---
+        // เพิ่มเงื่อนไขพิเศษสำหรับการเรียงลำดับ
+        const isAExactMatch = numberA === betSummarySearch;
+        const isBExactMatch = numberB === betSummarySearch;
+
+        // ถ้า A ตรงกับที่ค้นหาพอดี แต่ B ไม่ตรง -> ให้ A ขึ้นก่อน
+        if (isAExactMatch && !isBExactMatch) {
+            return -1;
+        }
+        // ถ้า B ตรงกับที่ค้นหาพอดี แต่ A ไม่ตรง -> ให้ B ขึ้นก่อน
+        if (!isAExactMatch && isBExactMatch) {
+            return 1;
+        }
+
+        // กรณีอื่นๆ (ตรงทั้งคู่ หรือ ไม่ตรงทั้งคู่) ให้เรียงตามยอดซื้อเหมือนเดิม
+        return dataB.totalAmount - dataA.totalAmount;
+    });
   
     const isMediumScreenOrLarger = useMediaQuery("(min-width: 768px)");
     const chartAxis = isMediumScreenOrLarger ? "x" : "y";
@@ -568,33 +585,48 @@ const AccountPage: React.FC = () => {
                             </div>
                             <div className="space-y-3 max-h-96 overflow-y-auto custom-scrollbar pr-2">
                                 {filteredAndSortedSummary.length > 0 ? (
-                                    filteredAndSortedSummary.map(([number, data]) => (
-                                        <div key={number} className="bg-gray-800/50 p-3 rounded-lg">
-                                            <div className="flex justify-between items-center mb-2 pb-2 border-b border-gray-700">
-                                                <div className="flex items-center gap-3">
-                                                    <span className="font-mono text-xl text-cyan-400">{number}</span>
-                                                    <span className="text-sm font-semibold text-white">{data.totalCount.toLocaleString()} ชุด</span>
-                                                </div>
-                                                <div className="font-bold text-base text-white text-right">
-                                                    {formatCurrency(data.totalAmount)}
-                                                    <span className="text-xs text-gray-500 ml-1">บาท</span>
-                                                </div>
-                                            </div> 
-                                            <div className="space-y-1">
-                                                {data.styles.map((styleItem: any, styleIndex: number) => (
-                                                    <div key={styleIndex} className="flex justify-between items-center text-sm pl-2"> 
-                                                        <span className="text-gray-300 capitalize"> 
-                                                            <span className={`font-semibold ${(styleItem.style ==='บน' || styleItem.style ==='ตรง') ? "text-green-500" : (styleItem.style ==='ล่าง') ? "text-red-500" : "text-orange-400"}`}>
-                                                                {styleItem.style}
-                                                            </span> 
-                                                            <span className="text-gray-500 ml-2"> ({styleItem.count} ชุด)</span>
-                                                        </span>
-                                                        <span className="font-semibold font-mono text-gray-300">{formatCurrency(styleItem.totalAmount)}</span>
+                                    filteredAndSortedSummary.map(([number, data]) => {
+                                        {/* --- [จุดแก้ไขที่ 1] --- */}
+                                        {/* สร้างลำดับที่ต้องการสำหรับเรียงรายการย่อย */}
+                                        const styleOrder: { [key: string]: number } = {
+                                            'บน': 1,
+                                            'ตรง': 2,
+                                            'โต๊ด': 3,
+                                            'ล่าง': 4,
+                                        };
+
+                                        return (
+                                            <div key={number} className="bg-gray-800/50 p-3 rounded-lg">
+                                                <div className="flex justify-between items-center mb-2 pb-2 border-b border-gray-700">
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="font-mono text-xl text-cyan-400">{number}</span>
+                                                        <span className="text-sm font-semibold text-white">{data.totalCount.toLocaleString()} ชุด</span>
                                                     </div>
-                                                ))}
+                                                    <div className="font-bold text-base text-white text-right">
+                                                        {formatCurrency(data.totalAmount)}
+                                                        <span className="text-xs text-gray-500 ml-1">บาท</span>
+                                                    </div>
+                                                </div> 
+                                                <div className="space-y-1">
+                                                    {/* --- [จุดแก้ไขที่ 2] --- */}
+                                                    {/* เพิ่ม .sort() เข้าไปก่อน .map() เพื่อเรียงลำดับ */}
+                                                    {data.styles
+                                                        .sort((a: any, b: any) => (styleOrder[a.style] || 99) - (styleOrder[b.style] || 99))
+                                                        .map((styleItem: any, styleIndex: number) => (
+                                                        <div key={styleIndex} className="flex justify-between items-center text-sm pl-2"> 
+                                                            <span className="text-gray-300 capitalize"> 
+                                                                <span className={`font-semibold ${(styleItem.style ==='บน' || styleItem.style ==='ตรง') ? "text-green-500" : (styleItem.style ==='ล่าง') ? "text-red-500" : "text-orange-400"}`}>
+                                                                    {styleItem.style}
+                                                                </span> 
+                                                                <span className="text-gray-500 ml-2"> ({styleItem.count} ชุด)</span>
+                                                            </span>
+                                                            <span className="font-semibold font-mono text-gray-300">{formatCurrency(styleItem.totalAmount)}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
                                             </div>
-                                        </div>
-                                    ))
+                                        );
+                                    })
                                 ) : ( <p className="text-gray-500 italic text-center py-4">{betSummarySearch ? `ไม่พบข้อมูลเลข "${betSummarySearch}"` : "ไม่พบข้อมูล"}</p> )}
                             </div>
                         </div>
