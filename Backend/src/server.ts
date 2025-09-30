@@ -1367,13 +1367,22 @@ app.put('/api/lotto-rounds/update-all/:id', isAuthenticated, async (req: Request
         closed_numbers, 
         half_pay_numbers,
         limit_2d_amount, 
-        limit_3d_amount   
+        limit_3d_amount 
     } = req.body;
 
     // ตรวจสอบข้อมูลเบื้องต้น
     if (!open_datetime || !cutoff_datetime) {
         return res.status(400).json({ error: 'กรุณาระบุเวลาเปิดและปิดรับ' });
     }
+
+    // --- ✨ [เพิ่ม] Logic การคัดกรองเลขซ้ำ ---
+    // สร้าง Set จาก "เลขปิด" เพื่อให้ค้นหาได้รวดเร็ว
+    const closedNumbersSet = new Set(closed_numbers || []);
+    // กรอง "เลขจ่ายครึ่ง" โดยเอาเฉพาะตัวเลขที่ "ไม่มี" อยู่ใน Set ของเลขปิด
+    const cleanedHalfPayNumbers = (half_pay_numbers || []).filter(
+        (num: string) => !closedNumbersSet.has(num)
+    );
+    // --- สิ้นสุดการเพิ่ม Logic ---
 
     const client = await db.connect();
 
@@ -1411,10 +1420,10 @@ app.put('/api/lotto-rounds/update-all/:id', isAuthenticated, async (req: Request
         await client.query(updateRoundQuery, [
             open_datetime,
             cutoff_datetime,
-            JSON.stringify(closed_numbers || []),
-            JSON.stringify(half_pay_numbers || []),
-            limit_2d_amount,  
-            limit_3d_amount,  
+            JSON.stringify(closed_numbers || []),      // <-- เลขปิดใช้ข้อมูลที่ส่งมาตามปกติ
+            JSON.stringify(cleanedHalfPayNumbers),     // <-- เลขจ่ายครึ่งใช้ข้อมูลที่ผ่านการกรองแล้ว
+            limit_2d_amount, 
+            limit_3d_amount, 
             id
         ]);
 
@@ -1431,7 +1440,7 @@ app.put('/api/lotto-rounds/update-all/:id', isAuthenticated, async (req: Request
                 WHERE lotto_round_id = $3;
             `;
             const updateResult = await client.query(updateBillsQuery, [
-                roundName,      // ใช้ชื่อเดิมของงวด
+                roundName,       // ใช้ชื่อเดิมของงวด
                 cutoff_datetime, // ใช้วันที่ปิดรับใหม่
                 id
             ]);
@@ -1453,6 +1462,7 @@ app.put('/api/lotto-rounds/update-all/:id', isAuthenticated, async (req: Request
         client.release();
     }
 });
+
 
 
 app.post('/api/add-lotto-types', async (req: Request, res: Response) => {

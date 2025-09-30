@@ -1114,6 +1114,12 @@ app.put('/api/lotto-rounds/update-all/:id', isAuthenticated, (req, res) => __awa
     if (!open_datetime || !cutoff_datetime) {
         return res.status(400).json({ error: 'กรุณาระบุเวลาเปิดและปิดรับ' });
     }
+    // --- ✨ [เพิ่ม] Logic การคัดกรองเลขซ้ำ ---
+    // สร้าง Set จาก "เลขปิด" เพื่อให้ค้นหาได้รวดเร็ว
+    const closedNumbersSet = new Set(closed_numbers || []);
+    // กรอง "เลขจ่ายครึ่ง" โดยเอาเฉพาะตัวเลขที่ "ไม่มี" อยู่ใน Set ของเลขปิด
+    const cleanedHalfPayNumbers = (half_pay_numbers || []).filter((num) => !closedNumbersSet.has(num));
+    // --- สิ้นสุดการเพิ่ม Logic ---
     const client = yield db.connect();
     try {
         // --- 1. เริ่ม Transaction ---
@@ -1142,8 +1148,8 @@ app.put('/api/lotto-rounds/update-all/:id', isAuthenticated, (req, res) => __awa
         yield client.query(updateRoundQuery, [
             open_datetime,
             cutoff_datetime,
-            JSON.stringify(closed_numbers || []),
-            JSON.stringify(half_pay_numbers || []),
+            JSON.stringify(closed_numbers || []), // <-- เลขปิดใช้ข้อมูลที่ส่งมาตามปกติ
+            JSON.stringify(cleanedHalfPayNumbers), // <-- เลขจ่ายครึ่งใช้ข้อมูลที่ผ่านการกรองแล้ว
             limit_2d_amount,
             limit_3d_amount,
             id
