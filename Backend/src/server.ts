@@ -1771,16 +1771,31 @@ app.get("/api/lotto-rounds/:id/number-special", async (req: Request, res: Respon
     res.status(500).json({ error: "เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์", details: err.message });
   }
 });
- 
-// PUT /api/lotto-rounds/update-number-special/:lottoId - อัปเดตเลขปิด/จ่ายครึ่งของงวดที่ระบุ
+  
+// server.ts
+
 app.put("/api/lotto-rounds/update-number-special/:lottoId", async (req: Request, res: Response) => {
   const { lottoId } = req.params;
-  const { closed_numbers, half_pay_numbers } = req.body;
+  // 1. รับข้อมูลจาก frontend และเตรียมค่าว่างไว้กรณีไม่มีข้อมูลส่งมา
+  const newClosedNumbers = req.body.closed_numbers || [];
+  const newHalfPayNumbers = req.body.half_pay_numbers || [];
 
-  // ตรวจสอบว่าข้อมูลที่ส่งมาเป็น Array หรือไม่
-  if (!Array.isArray(closed_numbers) || !Array.isArray(half_pay_numbers)) {
+  // ตรวจสอบว่าเป็น Array หรือไม่ (เหมือนเดิม)
+  if (!Array.isArray(newClosedNumbers) || !Array.isArray(newHalfPayNumbers)) {
     return res.status(400).json({ error: "ข้อมูลที่ส่งมาต้องเป็นรูปแบบ Array" });
   }
+
+  // --- ✨ [จุดที่แก้ไข] เริ่ม Logic การคัดกรอง ---
+  
+  // 2. สร้าง Set จาก "เลขปิด" เพื่อให้ค้นหาได้รวดเร็ว
+  const closedNumbersSet = new Set(newClosedNumbers);
+
+  // 3. กรอง "เลขจ่ายครึ่ง" โดยเอาเฉพาะตัวเลขที่ "ไม่มี" อยู่ใน Set ของเลขปิด
+  const cleanedHalfPayNumbers = newHalfPayNumbers.filter(
+    (num: string) => !closedNumbersSet.has(num)
+  );
+
+  // --- สิ้นสุด Logic การคัดกรอง ---
 
   try {
     const query = `
@@ -1792,10 +1807,10 @@ app.put("/api/lotto-rounds/update-number-special/:lottoId", async (req: Request,
       RETURNING id, closed_numbers, half_pay_numbers;
     `;
     
-    // แปลง Array เป็น JSON string ก่อนบันทึกลง DB
+    // 4. ใช้ข้อมูลที่ผ่านการคัดกรองแล้วในการบันทึก
     const result = await db.query(query, [
-      JSON.stringify(closed_numbers), 
-      JSON.stringify(half_pay_numbers), 
+      JSON.stringify(newClosedNumbers),       // <-- ใช้ newClosedNumbers
+      JSON.stringify(cleanedHalfPayNumbers),  // <-- ใช้ cleanedHalfPayNumbers
       lottoId
     ]);
 
