@@ -1374,13 +1374,12 @@ app.put('/api/lotto-rounds/update-all/:id', isAuthenticated, async (req: Request
         return res.status(400).json({ error: 'กรุณาระบุเวลาเปิดและปิดรับ' });
     }
 
-    // --- ✨ [ปรับปรุง] Logic การทำความสะอาดและเรียงลำดับข้อมูล ---
-    const uniqueSortedClosed = ([...new Set(closed_numbers || [])] as string[]).sort((a, b) => Number(a) - Number(b));
+    // --- ✨ [ปรับปรุง] ใช้ฟังก์ชันเรียงลำดับแบบใหม่ ---
+    const uniqueSortedClosed = ([...new Set(closed_numbers || [])] as string[]).sort(customNumberSort);
     const closedNumbersSet = new Set(uniqueSortedClosed);
     const finalHalfPayNumbers = ([...new Set(half_pay_numbers || [])] as string[])
         .filter((num) => !closedNumbersSet.has(num))
-        .sort((a, b) => Number(a) - Number(b));
-    // --- สิ้นสุดการปรับปรุง ---
+        .sort(customNumberSort);
 
     const client = await db.connect();
 
@@ -1415,8 +1414,8 @@ app.put('/api/lotto-rounds/update-all/:id', isAuthenticated, async (req: Request
         await client.query(updateRoundQuery, [
             open_datetime,
             cutoff_datetime,
-            JSON.stringify(uniqueSortedClosed),   // <-- ใช้ข้อมูลที่ทำความสะอาดแล้ว
-            JSON.stringify(finalHalfPayNumbers),  // <-- ใช้ข้อมูลที่ทำความสะอาดแล้ว
+            JSON.stringify(uniqueSortedClosed),
+            JSON.stringify(finalHalfPayNumbers),
             limit_2d_amount, 
             limit_3d_amount, 
             id
@@ -1737,38 +1736,100 @@ app.delete('/api/admin/lotto-types/:id', async (req: Request, res: Response) => 
 });
 
 
-// GET /api/lotto-rounds/:id/limits - ดึงเลขปิด/อั้นของงวดที่ระบุ (เฉพาะงวดที่ active)
-app.get("/api/lotto-rounds/:id/number-special", isAuthenticated, async (req: Request, res: Response) => {
-    const { id } = req.params;
-    try {
-        const query = `
-            SELECT 
-                closed_numbers, 
-                half_pay_numbers 
-            FROM lotto_rounds 
-            WHERE id = $1 AND status IN ('active', 'manual_active')`;
-        
-        const result = await db.query(query, [id]);
+const customNumberSort = (a: string, b: string): number => {
+    const lengthDifference = a.length - b.length;
+    if (lengthDifference !== 0) {
+        return lengthDifference; // ถ้าจำนวนหลักไม่เท่ากัน ให้เรียงตามจำนวนหลัก
+    }
+    return Number(a) - Number(b); // ถ้าจำนวนหลักเท่ากัน ให้เรียงตามค่าตัวเลข
+};
 
-        if (result.rowCount === 0) {
-            // ส่งค่าว่างกลับไปแทน 404 เพื่อให้ Frontend ทำงานต่อได้ง่ายขึ้น
-            return res.json({ closed_numbers: [], half_pay_numbers: [] });
+// @ts-ignore
+app.put('/api/lotto-rounds/update-all/:id', isAuthenticated, async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { 
+        open_datetime, 
+        cutoff_datetime, 
+        closed_numbers, 
+        half_pay_numbers,
+        limit_2d_amount, 
+        limit_3d_amount 
+    } = req.body;
+
+    if (!open_datetime || !cutoff_datetime) {
+        return res.status(400).json({ error: 'กรุณาระบุเวลาเปิดและปิดรับ' });
+    }
+
+    // --- ✨ [ปรับปรุง] ใช้ฟังก์ชันเรียงลำดับแบบใหม่ ---
+    const uniqueSortedClosed = ([...new Set(closed_numbers || [])] as string[]).sort(customNumberSort);
+    const closedNumbersSet = new Set(uniqueSortedClosed);
+    const finalHalfPayNumbers = ([...new Set(half_pay_numbers || [])] as string[])
+        .filter((num) => !closedNumbersSet.has(num))
+        .sort(customNumberSort);
+
+    const client = await db.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        const oldRoundResult = await client.query(
+            'SELECT name, cutoff_datetime FROM lotto_rounds WHERE id = $1',
+            [id]
+        );
+
+        if (oldRoundResult.rows.length === 0) {
+            throw new Error('ไม่พบข้อมูลงวดหวยที่ต้องการแก้ไข');
         }
 
-        const data = result.rows[0];
+        const oldRound = oldRoundResult.rows[0];
+        const oldCutoffTime = new Date(oldRound.cutoff_datetime).getTime();
+        const newCutoffTime = new Date(cutoff_datetime).getTime();
+        const roundName = oldRound.name;
 
-        // --- ✨ [ปรับปรุง] เรียงลำดับตัวเลขก่อนส่งกลับ ---
-        const sortedClosed = (data.closed_numbers || []).sort((a: string, b: string) => Number(a) - Number(b));
-        const sortedHalfPay = (data.half_pay_numbers || []).sort((a: string, b: string) => Number(a) - Number(b));
+        const updateRoundQuery = `
+            UPDATE lotto_rounds
+            SET 
+                open_datetime = $1,
+                cutoff_datetime = $2,
+                closed_numbers = $3,
+                half_pay_numbers = $4,
+                limit_2d_amount = $5, 
+                limit_3d_amount = $6 
+            WHERE id = $7;
+        `;
+        await client.query(updateRoundQuery, [
+            open_datetime,
+            cutoff_datetime,
+            JSON.stringify(uniqueSortedClosed),
+            JSON.stringify(finalHalfPayNumbers),
+            limit_2d_amount, 
+            limit_3d_amount, 
+            id
+        ]);
 
-        res.json({
-            closed_numbers: sortedClosed,
-            half_pay_numbers: sortedHalfPay
-        });
+        if (oldCutoffTime !== newCutoffTime) {
+            console.log(`ตรวจพบการเปลี่ยนแปลงเวลาของงวด ID: ${id}, กำลังอัปเดตโพยที่เกี่ยวข้อง...`);
+            const updateBillsQuery = `
+                UPDATE bills
+                SET 
+                    bet_name = $1,
+                    bill_lotto_draw = $2
+                WHERE lotto_round_id = $3;
+            `;
+            const updateResult = await client.query(updateBillsQuery, [roundName, cutoff_datetime, id]);
+            console.log(`อัปเดตโพยจำนวน ${updateResult.rowCount} รายการสำเร็จ`);
+        }
 
-    } catch (err: any) {
-        console.error(`Error fetching limits for lotto round ${id}:`, err);
-        res.status(500).json({ error: "เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์", details: err.message });
+        await client.query('COMMIT');
+        
+        res.status(200).json({ message: 'บันทึกข้อมูลงวดสำเร็จ' });
+
+    } catch (error: any) {
+        await client.query('ROLLBACK');
+        console.error('เกิดข้อผิดพลาดในการบันทึกข้อมูล:', error);
+        res.status(500).json({ error: 'ไม่สามารถบันทึกข้อมูลได้', details: error.message });
+    } finally {
+        client.release();
     }
 });
   
@@ -1782,16 +1843,12 @@ app.put("/api/lotto-rounds/update-number-special/:lottoId", isAuthenticated, asy
         return res.status(400).json({ error: "ข้อมูลที่ส่งมาต้องเป็นรูปแบบ Array" });
     }
 
-    // --- ✨ [ปรับปรุง] Logic การทำความสะอาดและเรียงลำดับข้อมูล ---
-    // 1. ลบเลขซ้ำ และเรียงลำดับ "เลขปิด"
-    const uniqueSortedClosed = ([...new Set(closed_numbers || [])] as string[]).sort((a, b) => Number(a) - Number(b));
+    // --- ✨ [ปรับปรุง] ใช้ฟังก์ชันเรียงลำดับแบบใหม่ ---
+    const uniqueSortedClosed = ([...new Set(closed_numbers || [])] as string[]).sort(customNumberSort);
     const closedNumbersSet = new Set(uniqueSortedClosed);
-
-    // 2. ลบเลขซ้ำ, กรองเลขที่ชนกับเลขปิด, และเรียงลำดับ "เลขจ่ายครึ่ง"
     const finalHalfPayNumbers = ([...new Set(half_pay_numbers || [])] as string[])
         .filter((num) => !closedNumbersSet.has(num))
-        .sort((a, b) => Number(a) - Number(b));
-    // --- สิ้นสุดการปรับปรุง ---
+        .sort(customNumberSort);
 
     try {
         const query = `
@@ -1804,8 +1861,8 @@ app.put("/api/lotto-rounds/update-number-special/:lottoId", isAuthenticated, asy
         `;
         
         const result = await db.query(query, [
-            JSON.stringify(uniqueSortedClosed),   // <-- ใช้ข้อมูลที่ทำความสะอาดแล้ว
-            JSON.stringify(finalHalfPayNumbers),  // <-- ใช้ข้อมูลที่ทำความสะอาดแล้ว
+            JSON.stringify(uniqueSortedClosed),
+            JSON.stringify(finalHalfPayNumbers),
             lottoId
         ]);
 
@@ -1813,7 +1870,6 @@ app.put("/api/lotto-rounds/update-number-special/:lottoId", isAuthenticated, asy
             return res.status(404).json({ error: "ไม่พบข้อมูลงวดหวยที่ต้องการอัปเดต" });
         }
         
-        // ส่งข้อมูลที่เรียงลำดับแล้วกลับไปให้ Frontend ทันที
         res.status(200).json({
             message: "อัปเดตข้อมูลเลขพิเศษสำเร็จ",
             updatedData: {
