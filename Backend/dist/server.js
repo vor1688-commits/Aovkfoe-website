@@ -1110,15 +1110,30 @@ app.post('/api/lotto-rounds/generate-next-rounds', (req, res) => __awaiter(void 
 app.put('/api/lotto-rounds/update-all/:id', isAuthenticated, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { id } = req.params;
     const { open_datetime, cutoff_datetime, closed_numbers, half_pay_numbers, limit_2d_amount, limit_3d_amount } = req.body;
-    // ตรวจสอบข้อมูลเบื้องต้น
+    /**
+     * ฟังก์ชันสำหรับเรียงลำดับตัวเลข:
+     * 1. เรียงตามจำนวนหลักก่อน (น้อยไปมาก)
+     * 2. ถ้าจำนวนหลักเท่ากัน ให้เรียงตามค่าของตัวเลข (น้อยไปมาก)
+     */
+    const customNumberSort = (a, b) => {
+        const lengthDifference = a.length - b.length;
+        if (lengthDifference !== 0) {
+            return lengthDifference;
+        }
+        return Number(a) - Number(b);
+    };
     if (!open_datetime || !cutoff_datetime) {
         return res.status(400).json({ error: 'กรุณาระบุเวลาเปิดและปิดรับ' });
     }
+    // --- Logic การทำความสะอาดและเรียงข้อมูล ---
+    const uniqueSortedClosed = [...new Set(closed_numbers || [])].sort(customNumberSort);
+    const closedNumbersSet = new Set(uniqueSortedClosed);
+    const finalHalfPayNumbers = [...new Set(half_pay_numbers || [])]
+        .filter((num) => !closedNumbersSet.has(num))
+        .sort(customNumberSort);
     const client = yield db.connect();
     try {
-        // --- 1. เริ่ม Transaction ---
         yield client.query('BEGIN');
-        // --- 2. ดึงข้อมูลเก่าของงวดนี้มาเพื่อเปรียบเทียบ ---
         const oldRoundResult = yield client.query('SELECT name, cutoff_datetime FROM lotto_rounds WHERE id = $1', [id]);
         if (oldRoundResult.rows.length === 0) {
             throw new Error('ไม่พบข้อมูลงวดหวยที่ต้องการแก้ไข');
@@ -1126,8 +1141,7 @@ app.put('/api/lotto-rounds/update-all/:id', isAuthenticated, (req, res) => __awa
         const oldRound = oldRoundResult.rows[0];
         const oldCutoffTime = new Date(oldRound.cutoff_datetime).getTime();
         const newCutoffTime = new Date(cutoff_datetime).getTime();
-        const roundName = oldRound.name; // เก็บชื่อของงวดไว้
-        // --- 3. อัปเดตตาราง lotto_rounds ก่อนเสมอ ---
+        const roundName = oldRound.name;
         const updateRoundQuery = `
             UPDATE lotto_rounds
             SET 
@@ -1142,16 +1156,14 @@ app.put('/api/lotto-rounds/update-all/:id', isAuthenticated, (req, res) => __awa
         yield client.query(updateRoundQuery, [
             open_datetime,
             cutoff_datetime,
-            JSON.stringify(closed_numbers || []),
-            JSON.stringify(half_pay_numbers || []),
+            JSON.stringify(uniqueSortedClosed),
+            JSON.stringify(finalHalfPayNumbers),
             limit_2d_amount,
             limit_3d_amount,
             id
         ]);
-        // --- 4. ตรวจสอบเงื่อนไข ถ้า cutoff_datetime เปลี่ยนแปลงจริง ---
         if (oldCutoffTime !== newCutoffTime) {
             console.log(`ตรวจพบการเปลี่ยนแปลงเวลาของงวด ID: ${id}, กำลังอัปเดตโพยที่เกี่ยวข้อง...`);
-            // --- 5. ทำการอัปเดตโพยทั้งหมดที่ผูกกับ lotto_round_id นี้ ---
             const updateBillsQuery = `
                 UPDATE bills
                 SET 
@@ -1159,19 +1171,13 @@ app.put('/api/lotto-rounds/update-all/:id', isAuthenticated, (req, res) => __awa
                     bill_lotto_draw = $2
                 WHERE lotto_round_id = $3;
             `;
-            const updateResult = yield client.query(updateBillsQuery, [
-                roundName, // ใช้ชื่อเดิมของงวด
-                cutoff_datetime, // ใช้วันที่ปิดรับใหม่
-                id
-            ]);
+            const updateResult = yield client.query(updateBillsQuery, [roundName, cutoff_datetime, id]);
             console.log(`อัปเดตโพยจำนวน ${updateResult.rowCount} รายการสำเร็จ`);
         }
-        // --- 6. ถ้าทุกอย่างสำเร็จ ให้ Commit Transaction ---
         yield client.query('COMMIT');
         res.status(200).json({ message: 'บันทึกข้อมูลงวดสำเร็จ' });
     }
     catch (error) {
-        // หากเกิดข้อผิดพลาด ให้ Rollback Transaction
         yield client.query('ROLLBACK');
         console.error('เกิดข้อผิดพลาดในการบันทึกข้อมูล:', error);
         res.status(500).json({ error: 'ไม่สามารถบันทึกข้อมูลได้', details: error.message });
@@ -1412,23 +1418,38 @@ app.delete('/api/admin/lotto-types/:id', (req, res) => __awaiter(void 0, void 0,
 // GET /api/lotto-rounds/:id/limits - ดึงเลขปิด/อั้นของงวดที่ระบุ (เฉพาะงวดที่ active)
 app.get("/api/lotto-rounds/:id/number-special", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { id } = req.params;
+    /**
+     * ฟังก์ชันสำหรับเรียงลำดับตัวเลข:
+     * 1. เรียงตามจำนวนหลักก่อน (น้อยไปมาก)
+     * 2. ถ้าจำนวนหลักเท่ากัน ให้เรียงตามค่าของตัวเลข (น้อยไปมาก)
+     */
+    const customNumberSort = (a, b) => {
+        const lengthDifference = a.length - b.length;
+        if (lengthDifference !== 0) {
+            return lengthDifference;
+        }
+        return Number(a) - Number(b);
+    };
     try {
         const query = `
-      SELECT 
-        closed_numbers, 
-        half_pay_numbers 
-      FROM lotto_rounds 
-      WHERE id = $1 AND status IN ('active', 'manual_active')`;
+            SELECT 
+                closed_numbers, 
+                half_pay_numbers 
+            FROM lotto_rounds 
+            WHERE id = $1 AND status IN ('active', 'manual_active')`;
         const result = yield db.query(query, [id]);
-        // ตรวจสอบว่าเจองวดที่ active หรือไม่
         if (result.rowCount === 0) {
-            return res.status(404).json({
-                error: "ไม่พบข้อมูลงวดหวย",
-                details: "อาจเป็นเพราะ ID ไม่ถูกต้อง หรือ งวดนี้ไม่ได้อยู่ในสถานะ 'active'"
-            });
+            // ถ้าไม่เจอ ให้ส่งค่าว่างกลับไปแทน 404 เพื่อให้ Frontend ทำงานต่อได้
+            return res.json({ closed_numbers: [], half_pay_numbers: [] });
         }
-        // ส่งข้อมูลกลับไปเป็น object ที่มี closed_numbers และ half_pay_numbers
-        res.json(result.rows[0]);
+        const data = result.rows[0];
+        // จัดเรียงข้อมูลก่อนส่งกลับ
+        const sortedClosed = (data.closed_numbers || []).sort(customNumberSort);
+        const sortedHalfPay = (data.half_pay_numbers || []).sort(customNumberSort);
+        res.json({
+            closed_numbers: sortedClosed,
+            half_pay_numbers: sortedHalfPay,
+        });
     }
     catch (err) {
         console.error(`Error fetching limits for lotto round ${id}:`, err);
@@ -1438,40 +1459,53 @@ app.get("/api/lotto-rounds/:id/number-special", (req, res) => __awaiter(void 0, 
 // server.ts
 app.put("/api/lotto-rounds/update-number-special/:lottoId", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { lottoId } = req.params;
-    // 1. รับข้อมูลจาก frontend และเตรียมค่าว่างไว้กรณีไม่มีข้อมูลส่งมา
     const newClosedNumbers = req.body.closed_numbers || [];
     const newHalfPayNumbers = req.body.half_pay_numbers || [];
-    // ตรวจสอบว่าเป็น Array หรือไม่ (เหมือนเดิม)
+    /**
+     * ฟังก์ชันสำหรับเรียงลำดับตัวเลข:
+     * 1. เรียงตามจำนวนหลักก่อน (น้อยไปมาก)
+     * 2. ถ้าจำนวนหลักเท่ากัน ให้เรียงตามค่าของตัวเลข (น้อยไปมาก)
+     */
+    const customNumberSort = (a, b) => {
+        const lengthDifference = a.length - b.length;
+        if (lengthDifference !== 0) {
+            return lengthDifference;
+        }
+        return Number(a) - Number(b);
+    };
     if (!Array.isArray(newClosedNumbers) || !Array.isArray(newHalfPayNumbers)) {
         return res.status(400).json({ error: "ข้อมูลที่ส่งมาต้องเป็นรูปแบบ Array" });
     }
-    // --- ✨ [จุดที่แก้ไข] เริ่ม Logic การคัดกรอง ---
-    // 2. สร้าง Set จาก "เลขปิด" เพื่อให้ค้นหาได้รวดเร็ว
-    const closedNumbersSet = new Set(newClosedNumbers);
-    // 3. กรอง "เลขจ่ายครึ่ง" โดยเอาเฉพาะตัวเลขที่ "ไม่มี" อยู่ใน Set ของเลขปิด
-    const cleanedHalfPayNumbers = newHalfPayNumbers.filter((num) => !closedNumbersSet.has(num));
-    // --- สิ้นสุด Logic การคัดกรอง ---
+    // --- Logic การทำความสะอาดและเรียงข้อมูล ---
+    const uniqueSortedClosed = [...new Set(newClosedNumbers)].sort(customNumberSort);
+    const closedNumbersSet = new Set(uniqueSortedClosed);
+    const finalHalfPayNumbers = [...new Set(newHalfPayNumbers)]
+        .filter((num) => !closedNumbersSet.has(num))
+        .sort(customNumberSort);
     try {
         const query = `
-      UPDATE lotto_rounds 
-      SET 
-        closed_numbers = $1, 
-        half_pay_numbers = $2 
-      WHERE id = $3
-      RETURNING id, closed_numbers, half_pay_numbers;
-    `;
-        // 4. ใช้ข้อมูลที่ผ่านการคัดกรองแล้วในการบันทึก
+            UPDATE lotto_rounds 
+            SET 
+                closed_numbers = $1, 
+                half_pay_numbers = $2 
+            WHERE id = $3
+            RETURNING id, closed_numbers, half_pay_numbers;
+        `;
         const result = yield db.query(query, [
-            JSON.stringify(newClosedNumbers), // <-- ใช้ newClosedNumbers
-            JSON.stringify(cleanedHalfPayNumbers), // <-- ใช้ cleanedHalfPayNumbers
+            JSON.stringify(uniqueSortedClosed),
+            JSON.stringify(finalHalfPayNumbers),
             lottoId
         ]);
         if (result.rowCount === 0) {
             return res.status(404).json({ error: "ไม่พบข้อมูลงวดหวยที่ต้องการอัปเดต" });
         }
+        // ส่งข้อมูลที่ถูกจัดเรียงแล้วกลับไป
+        const responseData = result.rows[0];
+        responseData.closed_numbers = (responseData.closed_numbers || []).sort(customNumberSort);
+        responseData.half_pay_numbers = (responseData.half_pay_numbers || []).sort(customNumberSort);
         res.status(200).json({
             message: "อัปเดตข้อมูลเลขพิเศษสำเร็จ",
-            updatedData: result.rows[0]
+            updatedData: responseData
         });
     }
     catch (err) {
