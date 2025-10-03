@@ -250,28 +250,31 @@ app.get("/api/lotto-rounds", (req, res) => __awaiter(void 0, void 0, void 0, fun
     }
 }));
 app.get('/api/round-limit-summary/:lottoRoundId/user/:userId', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    const { lottoRoundId, userId } = req.params;
+    const { lottoRoundId, userId } = req.params; // userId ไม่ได้ถูกใช้ในการคำนวณแล้ว
     const client = yield db.connect();
     try {
         const roundLimitsResult = yield client.query('SELECT limit_2d_amount, limit_3d_amount FROM lotto_rounds WHERE id = $1', [lottoRoundId]);
         const specificLimitsResult = yield client.query('SELECT bet_number, max_amount FROM lotto_round_number_limits WHERE lotto_round_id = $1', [lottoRoundId]);
         const rangeLimitsResult = yield client.query('SELECT range_start, range_end, max_amount FROM lotto_round_range_limits WHERE lotto_round_id = $1', [lottoRoundId]);
+        // --- ✨ [จุดที่แก้ไข] ---
+        // คำนวณยอดซื้อรวมของ "ทุกคน" โดยการลบ user_id ออก
         const totalSpentResult = yield client.query(`SELECT 
-               bi.bet_number, 
-               SUM(
-                 CASE
-                   WHEN b.status = 'รอผล' THEN bi.price
-                   WHEN b.status IN ('ยืนยันแล้ว', 'ยกเลิก') AND (bi.status IS NULL OR bi.status = 'ยืนยัน') THEN bi.price
-                   ELSE 0
-                 END
-               ) as total_spent
-             FROM bet_items bi
-             JOIN bill_entries be ON bi.bill_entry_id = be.id
-             JOIN bills b ON be.bill_id = b.id
-             WHERE b.user_id = $1 
-               AND b.lotto_round_id = $2
-               AND b.status IN ('รอผล', 'ยืนยันแล้ว', 'ยกเลิก')
-             GROUP BY bi.bet_number`, [userId, lottoRoundId]);
+             bi.bet_number, 
+             SUM(
+               CASE
+                 WHEN b.status = 'รอผล' THEN bi.price
+                 WHEN b.status IN ('ยืนยันแล้ว', 'ยกเลิก') AND (bi.status IS NULL OR bi.status = 'ยืนยัน') THEN bi.price
+                 ELSE 0
+               END
+             ) as total_spent
+           FROM bet_items bi
+           JOIN bill_entries be ON bi.bill_entry_id = be.id
+           JOIN bills b ON be.bill_id = b.id
+           WHERE b.lotto_round_id = $1
+             AND b.status IN ('รอผล', 'ยืนยันแล้ว', 'ยกเลิก')
+           GROUP BY bi.bet_number`, [lottoRoundId] // <-- เอา userId ออกจาก parameters
+        );
+        // --- สิ้นสุดการแก้ไข ---
         res.json({
             defaultLimits: roundLimitsResult.rows[0] || {},
             specificLimits: specificLimitsResult.rows,
@@ -565,7 +568,7 @@ app.post('/api/batch-check-bet-limits', (req, res) => __awaiter(void 0, void 0, 
     const { userId, lottoRoundId, bets } = req.body;
     const client = yield db.connect();
     try {
-        // --- ส่วน exemption ---
+        // --- ส่วน exemption (ยังทำงานเหมือนเดิม) ---
         const userResult = yield client.query('SELECT role FROM users WHERE id = $1', [userId]);
         if (userResult.rowCount === 0)
             throw new Error('User not found');
@@ -574,7 +577,6 @@ app.post('/api/batch-check-bet-limits', (req, res) => __awaiter(void 0, void 0, 
         const isExempt = exemptionResult.rows.some(ex => (ex.exemption_type === 'user' && ex.user_id === userId) ||
             (ex.exemption_type === 'role' && ex.user_role === userRole));
         if (isExempt) {
-            // client.release();
             return res.status(200).json({ message: 'สามารถซื้อได้ทั้งหมด (User ได้รับการยกเว้น)' });
         }
         // --- สิ้นสุดส่วน exemption ---
@@ -590,23 +592,23 @@ app.post('/api/batch-check-bet-limits', (req, res) => __awaiter(void 0, void 0, 
         const rangeLimits = rangeLimitsResult.rows;
         for (const bet of bets) {
             const { betNumber, price } = bet;
+            // --- ✨ [จุดที่แก้ไข] ---
+            // คำนวณยอดซื้อรวมของ "ทุกคน" โดยการลบ user_id ออก
             const totalSpentResult = yield client.query(`SELECT COALESCE(SUM(
-                 CASE
-                   -- 1. ถ้าบิลยัง 'รอผล' ให้นับยอดทุกรายการ ไม่ว่าสถานะของ item จะเป็นอะไร
-                   WHEN b.status = 'รอผล' THEN bi.price
-                   -- 2. ถ้าบิล 'ยืนยันแล้ว' หรือ 'ยกเลิก' ให้นับเฉพาะ item ที่ไม่ถูก 'คืนเลข'
-                   WHEN b.status IN ('ยืนยันแล้ว', 'ยกเลิก') AND (bi.status IS NULL OR bi.status = 'ยืนยัน') THEN bi.price
-                   -- 3. กรณีอื่นๆ ไม่นับยอด
-                   ELSE 0
-                 END
-               ), 0) as total
+                  CASE
+                    WHEN b.status = 'รอผล' THEN bi.price
+                    WHEN b.status IN ('ยืนยันแล้ว', 'ยกเลิก') AND (bi.status IS NULL OR bi.status = 'ยืนยัน') THEN bi.price
+                    ELSE 0
+                  END
+                ), 0) as total
                FROM bet_items bi
                JOIN bill_entries be ON bi.bill_entry_id = be.id
                JOIN bills b ON be.bill_id = b.id
-               WHERE b.user_id = $1
-                 AND b.lotto_round_id = $2
-                 AND bi.bet_number = $3
-                 AND b.status IN ('รอผล', 'ยืนยันแล้ว', 'ยกเลิก')`, [userId, lottoRoundId, betNumber]);
+               WHERE b.lotto_round_id = $1
+                 AND bi.bet_number = $2
+                 AND b.status IN ('รอผล', 'ยืนยันแล้ว', 'ยกเลิก')`, [lottoRoundId, betNumber] // <-- เอา userId ออกจาก parameters
+            );
+            // --- สิ้นสุดการแก้ไข ---
             const totalSpent = parseFloat(totalSpentResult.rows[0].total);
             let limitAmount = null;
             if (specificLimits[betNumber]) {
