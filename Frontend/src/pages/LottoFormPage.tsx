@@ -570,117 +570,128 @@ const LottoFormPage = () => {
   const overLimitNumbersSet = useMemo(() => {
     const overLimitSet = new Set<string>();
     if (!rawLimitData) {
-        return overLimitSet;
+      return overLimitSet;
     }
 
     const { defaultLimits, rangeLimits, spentSummary } = rawLimitData;
 
+    // Step 1: รวมยอดทั้งหมด (จาก DB + จากบิลปัจจุบัน) - ส่วนนี้ยังเหมือนเดิม
     const combinedTotals = new Map<string, { top: number; bottom: number; tote: number }>();
-
     const addToCombined = (
-        map: Map<string, { top: number; bottom: number; tote: number }>,
-        betNumber: string,
-        top: number,
-        bottom: number,
-        tote: number
+      map: Map<string, { top: number; bottom: number; tote: number }>,
+      betNumber: string,
+      top: number,
+      bottom: number,
+      tote: number
     ) => {
-        if (!map.has(betNumber)) {
-            map.set(betNumber, { top: 0, bottom: 0, tote: 0 });
-        }
-        const current = map.get(betNumber)!;
-        current.top += top;
-        current.bottom += bottom;
-        current.tote += tote;
+      if (!map.has(betNumber)) {
+        map.set(betNumber, { top: 0, bottom: 0, tote: 0 });
+      }
+      const current = map.get(betNumber)!;
+      current.top += top;
+      current.bottom += bottom;
+      current.tote += tote;
     };
 
     spentSummary.forEach(item => {
-        if (!item || !item.bet_number) return;
-        const amount = parseFloat(item.total_spent || '0');
-        const style = (item.bet_style || '').trim();
-        let top = 0, bottom = 0, tote = 0;
-        
-        if (style === 'บน' || style === 'ตรง') {
-            top = amount;
-        } else if (style === 'ล่าง') {
-            bottom = amount;
-        } else if (style === 'โต๊ด') {
-            tote = amount;
-        }
-        addToCombined(combinedTotals, item.bet_number, top, bottom, tote);
+      if (!item || !item.bet_number) return;
+      const amount = parseFloat(item.total_spent || '0');
+      const style = (item.bet_style || '').trim();
+      let top = 0, bottom = 0, tote = 0;
+      
+      if (style === 'บน' || style === 'ตรง') top = amount;
+      else if (style === 'ล่าง') bottom = amount;
+      else if (style === 'โต๊ด') tote = amount;
+
+      addToCombined(combinedTotals, item.bet_number, top, bottom, tote);
     });
 
     bill.forEach(entry => {
-        entry.bets.forEach(betNumber => {
-            addToCombined(
-                combinedTotals,
-                betNumber,
-                entry.priceTop || 0,
-                entry.priceBottom || 0,
-                entry.priceTote || 0
-            );
-        });
+      entry.bets.forEach(betNumber => {
+        addToCombined(
+          combinedTotals,
+          betNumber,
+          entry.priceTop || 0,
+          entry.priceBottom || 0,
+          entry.priceTote || 0
+        );
+      });
     });
 
+    // Step 2: วนลูปเช็คแต่ละเลข (Logic ที่ปรับปรุงให้ฉลาดขึ้น)
     for (const [betNumber, combined] of combinedTotals.entries()) {
-        let isOverLimit = false;
+      let isOverLimit = false;
 
-        const applicableRules = rangeLimits.filter(
-            r =>
-                r &&
-                r.range_start &&
-                r.range_end &&
-                betNumber.length === r.range_start.length &&
-                parseInt(betNumber, 10) >= parseInt(r.range_start, 10) &&
-                parseInt(betNumber, 10) <= parseInt(r.range_end, 10)
-        );
+      const applicableRules = rangeLimits.filter(
+        r =>
+          r && r.range_start && r.range_end &&
+          betNumber.length === r.range_start.length &&
+          parseInt(betNumber, 10) >= parseInt(r.range_start, 10) &&
+          parseInt(betNumber, 10) <= parseInt(r.range_end, 10)
+      );
 
-        const topRule = applicableRules.find(r => r.number_limit_types === 'บน' || r.number_limit_types === 'ตรง');
+      // ✅✅✅ START: ส่วนที่แก้ไขใหม่ทั้งหมด ✅✅✅
+      const getMostSpecificRule = (rules: typeof rangeLimits, type: 'บน' | 'ล่าง' | 'โต๊ด' | 'ทั้งหมด') => {
+        const typeAliases = type === 'บน' ? ['บน', 'ตรง'] : [type];
+        
+        const filteredRules = rules.filter(r => typeAliases.includes(r.number_limit_types));
+
+        if (filteredRules.length === 0) return null;
+        if (filteredRules.length === 1) return filteredRules[0];
+
+        // ถ้ามีกฎซ้อนกัน ให้จัดเรียงเพื่อหากฎที่ "เจาะจงที่สุด" (ช่วงแคบที่สุด)
+        return filteredRules.sort((a, b) => {
+            const rangeA = parseInt(a.range_end) - parseInt(a.range_start);
+            const rangeB = parseInt(b.range_end) - parseInt(b.range_start);
+            return rangeA - rangeB; // เรียงจากน้อยไปมาก
+        })[0];
+      };
+
+      if (applicableRules.length > 0) {
+        const topRule = getMostSpecificRule(applicableRules, 'บน');
         if (topRule && combined.top > parseFloat(topRule.max_amount)) {
+          isOverLimit = true;
+        }
+
+        const bottomRule = getMostSpecificRule(applicableRules, 'ล่าง');
+        if (bottomRule && combined.bottom > parseFloat(bottomRule.max_amount)) {
+          isOverLimit = true;
+        }
+        
+        const toteRule = getMostSpecificRule(applicableRules, 'โต๊ด');
+        if (toteRule && combined.tote > parseFloat(toteRule.max_amount)) {
+          isOverLimit = true;
+        }
+
+        const totalRule = getMostSpecificRule(applicableRules, 'ทั้งหมด');
+        if (totalRule) {
+          const totalAmountForNumber = combined.top + combined.bottom + combined.tote;
+          if (totalAmountForNumber > parseFloat(totalRule.max_amount)) {
             isOverLimit = true;
+          }
         }
+      } 
+      // ✅✅✅ END: สิ้นสุดส่วนที่แก้ไขใหม่ ✅✅✅
+      
+      // ส่วนนี้เหมือนเดิม: ถ้าไม่เจอกฎพิเศษเลย ให้ใช้กฎ Default
+      if (!isOverLimit && applicableRules.length === 0) {
+        const defaultLimitRaw = betNumber.length <= 2 ? defaultLimits?.limit_2d_amount : defaultLimits?.limit_3d_amount;
+        if (defaultLimitRaw) {
+          const limit = parseFloat(defaultLimitRaw);
+          const totalAmountForNumber = combined.top + combined.bottom + combined.tote;
+          if (totalAmountForNumber > limit) {
+            isOverLimit = true;
+          }
+        }
+      }
 
-        if (!isOverLimit) {
-            const bottomRule = applicableRules.find(r => r.number_limit_types === 'ล่าง');
-            if (bottomRule && combined.bottom > parseFloat(bottomRule.max_amount)) {
-                isOverLimit = true;
-            }
-        }
-
-        if (!isOverLimit) {
-            const toteRule = applicableRules.find(r => r.number_limit_types === 'โต๊ด');
-            if (toteRule && combined.tote > parseFloat(toteRule.max_amount)) {
-                isOverLimit = true;
-            }
-        }
-        
-        if (!isOverLimit) {
-            const totalRule = applicableRules.find(r => r.number_limit_types === 'ทั้งหมด');
-            if (totalRule) {
-                const totalAmountForNumber = combined.top + combined.bottom + combined.tote;
-                if (totalAmountForNumber > parseFloat(totalRule.max_amount)) {
-                    isOverLimit = true;
-                }
-            }
-        }
-        
-        if (!isOverLimit && applicableRules.length === 0) {
-            const defaultLimitRaw = betNumber.length <= 2 ? defaultLimits?.limit_2d_amount : defaultLimits?.limit_3d_amount;
-            if (defaultLimitRaw) {
-                const limit = parseFloat(defaultLimitRaw);
-                const totalAmountForNumber = combined.top + combined.bottom + combined.tote;
-                if (totalAmountForNumber > limit) {
-                    isOverLimit = true;
-                }
-            }
-        }
-
-        if (isOverLimit) {
-            overLimitSet.add(betNumber);
-        }
+      if (isOverLimit) {
+        overLimitSet.add(betNumber);
+      }
     }
 
     return overLimitSet;
-   }, [bill, rawLimitData]);
+  }, [bill, rawLimitData]);
 
   const isBillOverLimit = useMemo(() => {
     if (overLimitNumbersSet.size === 0) return false;
