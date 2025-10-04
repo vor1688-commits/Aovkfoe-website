@@ -68,7 +68,6 @@ interface SpecialNumbers {
   closed_numbers: string[];
   half_pay_numbers: string[];
 }
-// Interface for the raw API response data for limits
 interface RawLimitSummary {
   defaultLimits: { limit_2d_amount?: string | null; limit_3d_amount?: string | null; };
   specificLimits: { bet_number: string; max_amount: string; }[];
@@ -76,16 +75,12 @@ interface RawLimitSummary {
   spentSummary: { bet_number: string; bet_style: string; total_spent: string; }[];
 }
 
-
 const LottoFormPage = () => {
   const { user } = useAuth();
   const { lottoId } = useParams();
   const navigate = useNavigate();
-  
   const { alert, confirm, showStatus, hideStatus } = useModal();
-  
-  const [refreshKey, setRefreshKey] = useState(0);
-  
+
   // State
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
   const [specialNumbers, setSpecialNumbers] = useState<SpecialNumbers | null>(null);
@@ -94,7 +89,6 @@ const LottoFormPage = () => {
   const [note, setNote] = useState("");
   const [roundDetails, setRoundDetails] = useState<LottoRoundDetails | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
   const [number, setNumber] = useState("");
   const [priceTop, setPriceTop] = useState("0");
   const [priceBottom, setPriceBottom] = useState("0");
@@ -114,7 +108,6 @@ const LottoFormPage = () => {
   const [loadingAddBills, setLoadingAddBills] = useState(false);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [isBillInvalid, setIsBillInvalid] = useState(false);
-  
   const [rawLimitData, setRawLimitData] = useState<RawLimitSummary | null>(null);
 
   const isThreeDigitMode = subTab === "3d" || subTab === "6d";
@@ -196,11 +189,9 @@ const LottoFormPage = () => {
   const loadInitialData = useCallback(async () => {
     if (!lottoId) {
         setIsLoading(false);
-        setError("ไม่พบ ID ของงวดหวยใน URL");
         return;
     }
     setIsLoading(true);
-    setError(null);
     
     try {
         const results = await Promise.allSettled([
@@ -212,18 +203,15 @@ const LottoFormPage = () => {
         if (roundResult.status === 'fulfilled') {
             const roundData = roundResult.value.data;
             const cutoffDate = new Date(roundData.round.cutoff_datetime);
-            const sevenHoursInMillis = 7 * 60 * 60 * 1000;
-            const correctedTimestamp = cutoffDate.getTime() - sevenHoursInMillis;
 
             setRoundDetails({
                 name: roundData.round.name,
-                lottoDate: formatDateString(new Date(correctedTimestamp).toISOString(), 'long'),
-                lottoTime: new Date(correctedTimestamp).toLocaleTimeString("th-TH", {
+                lottoDate: formatDateString(cutoffDate.toISOString(), 'long'),
+                lottoTime: cutoffDate.toLocaleTimeString("th-TH", {
                     hour: "2-digit",
                     minute: "2-digit",
-                    timeZone: 'UTC',
                 }),
-                fullCutoffTimestamp: correctedTimestamp,
+                fullCutoffTimestamp: cutoffDate.getTime(),
                 lotto_type_id: roundData.round.lotto_type_id,
             });
             setCurrentTime(new Date(roundData.serverTime));
@@ -238,7 +226,7 @@ const LottoFormPage = () => {
             console.error("Failed to fetch special numbers:", results[1].reason);
         }
     } catch (err: any) {
-        setError(err.response?.data?.error || err.message || "เกิดข้อผิดพลาดในการโหลดข้อมูล");
+        console.error("Error loading initial data:", err);
     } finally {
         setIsLoading(false);
     }
@@ -247,13 +235,13 @@ const LottoFormPage = () => {
   useEffect(() => { loadInitialData(); }, [loadInitialData]);
   
   useEffect(() => {
-    const intervalId = setInterval(() => { fetchSpecialNumbersOnly(); }, 5000); 
+    const intervalId = setInterval(fetchSpecialNumbersOnly, 1000); 
     return () => clearInterval(intervalId);
   }, [fetchSpecialNumbersOnly]);
 
   useEffect(() => {
     if (!currentTime) return;
-    const interval = setInterval(() => setCurrentTime((prev) => new Date(prev!.getTime() + 1000)), 1000);
+    const interval = setInterval(() => setCurrentTime((prev) => prev ? new Date(prev.getTime() + 1000) : null), 1000);
     return () => clearInterval(interval);
   }, [currentTime]);
 
@@ -268,7 +256,6 @@ const LottoFormPage = () => {
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        console.log("Tab is visible again, re-syncing time...");
         loadInitialData();
       }
     };
@@ -282,17 +269,14 @@ const LottoFormPage = () => {
     const newTotal = bill.reduce((sum, entry) => {
         const pricePerBet = (entry.priceTop || 0) + (entry.priceTote || 0) + (entry.priceBottom || 0);
         const validBetsInEntry = entry.bets.filter(bet => !closedNumbers.includes(bet));
-        const entryTotal = validBetsInEntry.length * pricePerBet;
-        return sum + entryTotal;
+        return sum + (validBetsInEntry.length * pricePerBet);
     }, 0);
     
     setTotal(newTotal);
 
     if (bill.length > 0) {
         const allNumbersAreClosed = bill.every(entry => 
-            entry.bets.every(betNumber => 
-                closedNumbers.includes(betNumber)
-            )
+            entry.bets.every(betNumber => closedNumbers.includes(betNumber))
         );
         setIsBillInvalid(allNumbersAreClosed);
     } else {
@@ -351,8 +335,6 @@ const LottoFormPage = () => {
       setBillToPrint(payload);
       setIsModalVisible(true);
       handleClearBill(false);
-      setRefreshKey(prevKey => prevKey + 1);
-      
     } catch (err: any) { 
       hideStatus();
       showStatus('error', "ไม่สามารถบันทึกได้", err.message);
@@ -379,7 +361,6 @@ const LottoFormPage = () => {
     }
   };
   
-  // +++ [จุดที่แก้ไข] ปรับปรุงฟังก์ชันนี้ให้ส่ง Payload ที่ถูกต้อง +++
   const handleAddBillEntry = async () => {
     if (!user) {
         alert("ไม่พบข้อมูลผู้ใช้", "กรุณาล็อกอินใหม่อีกครั้ง", 'light');
@@ -400,7 +381,6 @@ const LottoFormPage = () => {
     }
     setLoadingAddBills(true);
 
-    // สร้าง Payload รูปแบบใหม่สำหรับรายการที่กำลังจะเพิ่ม
     const betsForApi = selectedValidBets.map(betNumber => ({
         betNumber,
         priceTop: numPriceTop,
@@ -409,12 +389,11 @@ const LottoFormPage = () => {
     }));
 
     try {
-        // ส่ง Payload ใหม่ไปให้ API รวมถึง `bill` ปัจจุบันเป็น `pendingBets`
         await api.post('/api/batch-check-bet-limits', {
             userId: user.id,
             lottoRoundId: Number(lottoId),
             bets: betsForApi,
-            pendingBets: bill, // <-- ส่งรายการที่ค้างในบิล (ตะกร้า) ไปด้วย
+            pendingBets: bill,
         });
 
         const pricePerNumberFromForm = numPriceTop + numPriceTote + numPriceBottom;
@@ -578,87 +557,118 @@ const LottoFormPage = () => {
   }, [lottoId, user]);
 
   useEffect(() => {
-      fetchLimitAndSpentSummary(); 
-      const limitInterval = setInterval(() => { fetchLimitAndSpentSummary(); }, 3000);
-      return () => clearInterval(limitInterval);
-  }, [fetchLimitAndSpentSummary]);
+      if (!lottoId || !user) {
+          return;
+      }
+      fetchLimitAndSpentSummary();
+      const limitInterval = setInterval(fetchLimitAndSpentSummary, 1000);
+      return () => {
+          clearInterval(limitInterval);
+      };
+  }, [lottoId, user, fetchLimitAndSpentSummary]);
   
-  // +++ [จุดที่แก้ไข] ปรับปรุง Logic การคำนวณให้แม่นยำยิ่งขึ้น +++
   const overLimitNumbersSet = useMemo(() => {
     const overLimitSet = new Set<string>();
-    if (!rawLimitData || bill.length === 0) {
-      return overLimitSet;
+    if (!rawLimitData) {
+        return overLimitSet;
     }
 
     const { defaultLimits, rangeLimits, spentSummary } = rawLimitData;
 
-    // 1. สร้าง Map ยอดซื้อที่บันทึกแล้ว (จาก DB) แยกตามประเภท
-    const spentMapByType = new Map<string, { top: number, bottom: number, tote: number }>();
-    spentSummary.forEach(item => {
-        if (!spentMapByType.has(item.bet_number)) {
-            spentMapByType.set(item.bet_number, { top: 0, bottom: 0, tote: 0 });
+    const combinedTotals = new Map<string, { top: number; bottom: number; tote: number }>();
+
+    const addToCombined = (
+        map: Map<string, { top: number; bottom: number; tote: number }>,
+        betNumber: string,
+        top: number,
+        bottom: number,
+        tote: number
+    ) => {
+        if (!map.has(betNumber)) {
+            map.set(betNumber, { top: 0, bottom: 0, tote: 0 });
         }
-        const current = spentMapByType.get(item.bet_number)!;
-        if (item.bet_style === 'บน' || item.bet_style === 'ตรง') current.top += parseFloat(item.total_spent);
-        if (item.bet_style === 'ล่าง') current.bottom += parseFloat(item.total_spent);
-        if (item.bet_style === 'โต๊ด') current.tote += parseFloat(item.total_spent);
+        const current = map.get(betNumber)!;
+        current.top += top;
+        current.bottom += bottom;
+        current.tote += tote;
+    };
+
+    spentSummary.forEach(item => {
+        if (!item || !item.bet_number) return;
+        const amount = parseFloat(item.total_spent || '0');
+        const style = (item.bet_style || '').trim();
+        let top = 0, bottom = 0, tote = 0;
+        
+        if (style === 'บน' || style === 'ตรง') {
+            top = amount;
+        } else if (style === 'ล่าง') {
+            bottom = amount;
+        } else if (style === 'โต๊ด') {
+            tote = amount;
+        }
+        addToCombined(combinedTotals, item.bet_number, top, bottom, tote);
     });
 
-    // 2. สร้าง Map ยอดซื้อที่กำลังจะซื้อ (ในตะกร้า) แยกตามประเภท
-    const pendingAmountsByType = new Map<string, { top: number, bottom: number, tote: number }>();
     bill.forEach(entry => {
         entry.bets.forEach(betNumber => {
-            if (!pendingAmountsByType.has(betNumber)) {
-                pendingAmountsByType.set(betNumber, { top: 0, bottom: 0, tote: 0 });
-            }
-            const current = pendingAmountsByType.get(betNumber)!;
-            current.top += entry.priceTop;
-            current.bottom += entry.priceBottom;
-            current.tote += entry.priceTote;
+            addToCombined(
+                combinedTotals,
+                betNumber,
+                entry.priceTop || 0,
+                entry.priceBottom || 0,
+                entry.priceTote || 0
+            );
         });
     });
 
-    // 3. วนลูปตรวจสอบแต่ละเลขในตะกร้า
-    for (const [betNumber, pendingAmount] of pendingAmountsByType.entries()) {
-        const spent = spentMapByType.get(betNumber) || { top: 0, bottom: 0, tote: 0 };
-        
-        const rules = rangeLimits.filter(r => 
-            betNumber.length === r.range_start.length &&
-            parseInt(betNumber, 10) >= parseInt(r.range_start, 10) &&
-            parseInt(betNumber, 10) <= parseInt(r.range_end, 10)
-        );
-
+    for (const [betNumber, combined] of combinedTotals.entries()) {
         let isOverLimit = false;
 
-        const checkSpecificRule = (type: 'บน' | 'ล่าง' | 'โต๊ด' | 'ตรง', pending: number, spent: number) => {
-            const rule = rules.find(r => r.number_limit_types === type);
-            if (rule && spent + pending > parseFloat(rule.max_amount)) {
-                return true;
+        const applicableRules = rangeLimits.filter(
+            r =>
+                r &&
+                r.range_start &&
+                r.range_end &&
+                betNumber.length === r.range_start.length &&
+                parseInt(betNumber, 10) >= parseInt(r.range_start, 10) &&
+                parseInt(betNumber, 10) <= parseInt(r.range_end, 10)
+        );
+
+        const topRule = applicableRules.find(r => r.number_limit_types === 'บน' || r.number_limit_types === 'ตรง');
+        if (topRule && combined.top > parseFloat(topRule.max_amount)) {
+            isOverLimit = true;
+        }
+
+        if (!isOverLimit) {
+            const bottomRule = applicableRules.find(r => r.number_limit_types === 'ล่าง');
+            if (bottomRule && combined.bottom > parseFloat(bottomRule.max_amount)) {
+                isOverLimit = true;
             }
-            return false;
-        };
+        }
 
-        if (checkSpecificRule('บน', pendingAmount.top, spent.top)) isOverLimit = true;
-        if (!isOverLimit && checkSpecificRule('ตรง', pendingAmount.top, spent.top)) isOverLimit = true;
-        if (!isOverLimit && checkSpecificRule('ล่าง', pendingAmount.bottom, spent.bottom)) isOverLimit = true;
-        if (!isOverLimit && checkSpecificRule('โต๊ด', pendingAmount.tote, spent.tote)) isOverLimit = true;
-
-        const totalRule = rules.find(r => r.number_limit_types === 'ทั้งหมด');
-        if (!isOverLimit && totalRule) {
-            const totalSpent = spent.top + spent.bottom + spent.tote;
-            const totalPending = pendingAmount.top + pendingAmount.bottom + pendingAmount.tote;
-            if (totalSpent + totalPending > parseFloat(totalRule.max_amount)) {
+        if (!isOverLimit) {
+            const toteRule = applicableRules.find(r => r.number_limit_types === 'โต๊ด');
+            if (toteRule && combined.tote > parseFloat(toteRule.max_amount)) {
                 isOverLimit = true;
             }
         }
         
-        if (!isOverLimit && rules.length === 0) {
-            const defaultLimitRaw = betNumber.length <= 2 ? defaultLimits.limit_2d_amount : defaultLimits.limit_3d_amount;
+        if (!isOverLimit) {
+            const totalRule = applicableRules.find(r => r.number_limit_types === 'ทั้งหมด');
+            if (totalRule) {
+                const totalAmountForNumber = combined.top + combined.bottom + combined.tote;
+                if (totalAmountForNumber > parseFloat(totalRule.max_amount)) {
+                    isOverLimit = true;
+                }
+            }
+        }
+        
+        if (!isOverLimit && applicableRules.length === 0) {
+            const defaultLimitRaw = betNumber.length <= 2 ? defaultLimits?.limit_2d_amount : defaultLimits?.limit_3d_amount;
             if (defaultLimitRaw) {
                 const limit = parseFloat(defaultLimitRaw);
-                const totalSpent = spent.top + spent.bottom + spent.tote;
-                const totalPending = pendingAmount.top + pendingAmount.bottom + pendingAmount.tote;
-                if (totalSpent + totalPending > limit) {
+                const totalAmountForNumber = combined.top + combined.bottom + combined.tote;
+                if (totalAmountForNumber > limit) {
                     isOverLimit = true;
                 }
             }
@@ -670,391 +680,134 @@ const LottoFormPage = () => {
     }
 
     return overLimitSet;
-  }, [bill, rawLimitData]);
+   }, [bill, rawLimitData]);
 
-  const isBillOverLimit = useMemo(() => overLimitNumbersSet.size > 0, [overLimitNumbersSet]);
+  const isBillOverLimit = useMemo(() => {
+    if (overLimitNumbersSet.size === 0) return false;
+    for (const entry of bill) {
+        for (const bet of entry.bets) {
+            if (overLimitNumbersSet.has(bet)) {
+                return true;
+            }
+        }
+    }
+    return false;
+  }, [bill, overLimitNumbersSet]);
 
   if (isLoading) return <FullScreenLoader isLoading={isLoading} />;
-  if (error)
-    return (
-      <div className="text-center p-10 text-red-500">
-        เกิดข้อผิดพลาด: {error}
-      </div>
-    );
-  if (!roundDetails)
-    return (
-      <div className="text-center p-10 text-red-500">ไม่พบข้อมูลงวดหวยนี้</div>
-    );
+  if (!roundDetails) return <div className="text-center p-10 text-gray-500">กรุณารอสักครู่ กำลังโหลดข้อมูล...</div>;
 
   return (
     <div className="space-y-6">
-      <div className="bg-white rounded-lg flex justify-between px-4 py-5 shadow-md items-center">
-        <div>
-          <h2 className="text-xl font-bold text-gray-800">
-            {roundDetails.name}
-          </h2>
-        </div>
-        <div className="text-red-400 font-bold text-xl text-center md:text-right">
-          {(() => {
-            if (!currentTime || !roundDetails?.fullCutoffTimestamp)
-              return "กำลังซิงค์เวลา...";
-            const difference =
-              roundDetails.fullCutoffTimestamp - currentTime.getTime();
-            if (difference <= 0) return "หมดเวลาแล้ว";
-            const d = Math.floor(difference / 86400000);
-            const h = Math.floor((difference % 86400000) / 3600000);
-            const m = Math.floor((difference % 3600000) / 60000);
-            const s = Math.floor((difference % 60000) / 1000);
-            return `เหลือเวลา: ${d} วัน ${h} ชั่วโมง ${m} นาที ${s} วินาที`;
-          })()}
-        </div>
-      </div>
-
-      <div className="bg-white p-4 md:p-4 rounded-lg shadow">
-         <div className="border-t border-b border-gray-200 py-4 mb-4">
-          <div className="grid grid-cols-4 md:grid-cols-5 gap-2">
-            <button
-              className={`px-4 py-2 rounded-md font-semibold hover:cursor-pointer ${
-                subTab === "2d"
-                  ? "bg-yellow-300 text-black"
-                  : "bg-gray-200 text-gray-700"
-              }`}
-              onClick={() => handleChangeSubTap("2d")}
-            >
-              2 ตัว
-            </button>
-            <button
-              className={`px-4 py-2 rounded-md font-semibold hover:cursor-pointer ${
-                subTab === "3d"
-                  ? "bg-yellow-300 text-black"
-                  : "bg-gray-200 text-gray-700"
-              }`}
-              onClick={() => handleChangeSubTap("3d")}
-            >
-              3 ตัว
-            </button>
-            <button
-              className={`px-4 py-2 rounded-md font-semibold hover:cursor-pointer ${
-                subTab === "6d"
-                  ? "bg-yellow-300 text-black"
-                  : "bg-gray-200 text-gray-700"
-              }`}
-              onClick={() => handleChangeSubTap("6d")}
-            >
-              6 กลับ
-            </button>
-            <button
-              className={`px-4 py-2 rounded-md font-semibold hover:cursor-pointer ${
-                subTab === "19d"
-                  ? "bg-yellow-300 text-black"
-                  : "bg-gray-200 text-gray-700"
-              }`}
-              onClick={() => handleChangeSubTap("19d")}
-            >
-              รูด-19 ประตู
-            </button>
-            <button
-              className={`px-4 py-2 rounded-md font-semibold hover:cursor-pointer ${
-                subTab === "run"
-                  ? "bg-yellow-300 text-black"
-                  : "bg-gray-200 text-gray-700"
-              }`}
-              onClick={() => handleChangeSubTap("run")}
-            >
-              วิ่ง
-            </button>
-          </div>
-        </div>
-
-        {subTab === "19d" && (
-          <div className="flex flex-wrap items-center gap-6 mb-4 p-2">
-            {doorOptions.map((option) => (
-              <label
-                key={option.value}
-                className="flex items-center space-x-2 cursor-pointer font-semibold"
-              >
-                <input
-                  type="radio"
-                  name="doorMode"
-                  value={option.value}
-                  checked={doorMode === option.value}
-                  onChange={() => setDoorMode(option.value)}
-                  className="h-5 w-5 text-blue-500 border-gray-300 focus:ring-blue-500"
-                />
-                <span>{option.label}</span>
-              </label>
-            ))}
-          </div>
-        )}
-
-        {bets.length > 0 && (
-          <div className="flex flex-wrap gap-2 mb-4 min-h-[40px]">
-            {bets.map((bet, index) => (
-              <button
-                key={index}
-                onClick={() => handleToggleBet(index)}
-                className={`
-                  font-semibold px-4 py-2 rounded-lg shadow animate-pop-in
-                  ${!bet.isValid 
-                    ? 'bg-red-500 text-white cursor-not-allowed'
-                    : bet.selected 
-                      ? 'bg-yellow-300 text-black'
-                      : 'bg-gray-300 text-gray-500 line-through'
-                  }
-                `}
-              >
-                {bet.value}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {(subTab === "2d" || subTab === "3d") && (
-          <div>
-            <button
-              className="mb-2 px-4 py-2 bg-black text-white font-bold rounded-md hover:cursor-pointer hover:bg-yellow-300 hover:text-black"
-              onClick={() => handleAddDoubleAndTripleNumber(subTab)}
-            >
-              + เพิ่มเลขเบิ้ล / เลขตอง
-            </button>
-          </div>
-        )}
-
-        <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-x-4 gap-y-2 mb-4">
-          <div className="col-span-2 sm:contents">
-            <label htmlFor="numberInput" className="sm:inline-block sm:mr-2 text-lg">ใส่เลข</label>
-            <input
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              className="border rounded-md p-2 w-full sm:w-28 mb-0"
-              value={number}
-              onChange={(e) => handleNumberChange(e, subTab)}
-              onPaste={handlePaste}
-            />
-            {(subTab === "2d" || subTab === "3d") && (
-              <button
-                className="px-4 py-2 bg-black my-2 text-white rounded-md hover:cursor-pointer hover:bg-yellow-400 hover:text-black"
-                onClick={handleClickReverseNumbers}
-              >
-                กลับเลข
-              </button>
-            )}
-          </div>
-
-          {!isThreeDigitMode && (
-            <div className="contents"> 
-              <div className="sm:contents">
-                <label className="block text-lg font-medium text-green-600">2 ตัวบน</label>
-                <input type="text" inputMode="numeric" value={priceTop} onChange={(e) => handlePriceChange(e.target.value, setPriceTop)} className="border rounded-md p-2 w-full sm:w-28"/>
-              </div>
-              <div className="sm:contents">
-                <label className="block text-lg font-medium text-red-600">2 ตัวล่าง</label>
-                <input type="text" inputMode="numeric" value={priceBottom} onChange={(e) => handlePriceChange(e.target.value, setPriceBottom)} className="border rounded-md p-2 w-full sm:w-28"/>
-              </div>
+        <div className="bg-white rounded-lg flex justify-between px-4 py-5 shadow-md items-center">
+            <div>
+                <h2 className="text-xl font-bold text-gray-800">
+                    {roundDetails.name}
+                </h2>
             </div>
-          )}
+            <div className="text-red-400 font-bold text-xl text-center md:text-right">
+                {(() => {
+                    if (!currentTime || !roundDetails.fullCutoffTimestamp)
+                        return "กำลังซิงค์เวลา...";
+                    const difference = roundDetails.fullCutoffTimestamp - currentTime.getTime();
+                    if (difference <= 0) return "หมดเวลาแล้ว";
+                    const d = Math.floor(difference / 86400000);
+                    const h = Math.floor((difference % 86400000) / 3600000);
+                    const m = Math.floor((difference % 3600000) / 60000);
+                    const s = Math.floor((difference % 60000) / 1000);
+                    return `เหลือเวลา: ${d} วัน ${h} ชั่วโมง ${m} นาที ${s} วินาที`;
+                })()}
+            </div>
+        </div>
 
-          {isThreeDigitMode && (
-            <div className="contents">
-              <div className="sm:contents">
-                <label className="block text-lg font-medium text-green-600">3 ตัวตรง</label>
-                <input type="text" inputMode="numeric" value={priceTop} onChange={(e) => handlePriceChange(e.target.value, setPriceTop)} className="border rounded-md p-2 w-full sm:w-28"/>
-              </div>
-              <div className="sm:contents">
-                <label className="block text-lg font-medium text-orange-500">3 ตัวโต๊ด</label>
-                <input type="text" inputMode="numeric" value={priceTote} onChange={(e) => handlePriceChange(e.target.value, setPriceTote)} className="border rounded-md p-2 w-full sm:w-28"/>
-              </div>
-              {showThreeBottomInput && (
-                <div className="col-span-2 sm:contents">
-                  <label className="block text-lg font-medium text-red-600">3 ตัวล่าง</label>
-                  <input type="text" inputMode="numeric" value={priceBottom} onChange={(e) => handlePriceChange(e.target.value, setPriceBottom)} className="border rounded-md p-2 w-full sm:w-28"/>
+        <div className="bg-white p-4 md:p-4 rounded-lg shadow">
+            <div className="border-t border-b border-gray-200 py-4 mb-4">
+                <div className="grid grid-cols-4 md:grid-cols-5 gap-2">
+                    <button className={`px-4 py-2 rounded-md font-semibold hover:cursor-pointer ${subTab === "2d" ? "bg-yellow-300 text-black" : "bg-gray-200 text-gray-700"}`} onClick={() => handleChangeSubTap("2d")}>2 ตัว</button>
+                    <button className={`px-4 py-2 rounded-md font-semibold hover:cursor-pointer ${subTab === "3d" ? "bg-yellow-300 text-black" : "bg-gray-200 text-gray-700"}`} onClick={() => handleChangeSubTap("3d")}>3 ตัว</button>
+                    <button className={`px-4 py-2 rounded-md font-semibold hover:cursor-pointer ${subTab === "6d" ? "bg-yellow-300 text-black" : "bg-gray-200 text-gray-700"}`} onClick={() => handleChangeSubTap("6d")}>6 กลับ</button>
+                    <button className={`px-4 py-2 rounded-md font-semibold hover:cursor-pointer ${subTab === "19d" ? "bg-yellow-300 text-black" : "bg-gray-200 text-gray-700"}`} onClick={() => handleChangeSubTap("19d")}>รูด-19 ประตู</button>
+                    <button className={`px-4 py-2 rounded-md font-semibold hover:cursor-pointer ${subTab === "run" ? "bg-yellow-300 text-black" : "bg-gray-200 text-gray-700"}`} onClick={() => handleChangeSubTap("run")}>วิ่ง</button>
                 </div>
-              )}
             </div>
-          )}
 
-          <div className="col-span-2 sm:contents">
-            <button
-              className={`w-full sm:w-auto px-4 py-2 ${loadingAddBills ? "bg-yellow-300": "bg-black"} text-white rounded-md hover:cursor-pointer hover:bg-yellow-400 hover:text-black`}
-              onClick={handleAddBillEntry}
-              disabled={loadingAddBills}
-            >
-              {loadingAddBills ? "กำลังเพิ่มบิล...":"เพิ่มบิล"}
-            </button>
-          </div>
-        </div>
+            {subTab === "19d" && ( <div className="flex flex-wrap items-center gap-6 mb-4 p-2">{doorOptions.map((option) => ( <label key={option.value} className="flex items-center space-x-2 cursor-pointer font-semibold"> <input type="radio" name="doorMode" value={option.value} checked={doorMode === option.value} onChange={() => setDoorMode(option.value)} className="h-5 w-5 text-blue-500 border-gray-300 focus:ring-blue-500"/> <span>{option.label}</span> </label> ))}</div>)}
+            {bets.length > 0 && (<div className="flex flex-wrap gap-2 mb-4 min-h-[40px]">{bets.map((bet, index) => (<button key={index} onClick={() => handleToggleBet(index)} className={`font-semibold px-4 py-2 rounded-lg shadow animate-pop-in ${!bet.isValid ? 'bg-red-500 text-white cursor-not-allowed' : bet.selected ? 'bg-yellow-300 text-black' : 'bg-gray-300 text-gray-500 line-through'}`}>{bet.value}</button>))}</div>)}
+            {(subTab === "2d" || subTab === "3d") && (<div><button className="mb-2 px-4 py-2 bg-black text-white font-bold rounded-md hover:cursor-pointer hover:bg-yellow-300 hover:text-black" onClick={() => handleAddDoubleAndTripleNumber(subTab)}>+ เพิ่มเลขเบิ้ล / เลขตอง</button></div>)}
 
-        <div className="overflow-x-auto"> 
-          <div className="space-y-2 min-w-[450px]">
-            {bill.map((entry, index) => (
-              <CardBillForBets
-                key={index}
-                bets={entry.bets}
-                betType={entry.betTypes}
-                bahtPer={entry.bahtPer}
-                priceTop={entry.priceTop}
-                priceTote={entry.priceTote}
-                priceBottom={entry.priceBottom}
-                entryIndex={index}
-                onRemove={handleRemoveEntry}
-                onEdit={handleEditEntry}
-                specialNumbers={specialNumbers}
-                overLimitNumbersSet={overLimitNumbersSet}
-              />
-            ))}
-          </div>
-        </div>
+            <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-x-4 gap-y-2 mb-4">
+                <div className="col-span-2 sm:contents">
+                    <label htmlFor="numberInput" className="sm:inline-block sm:mr-2 text-lg">ใส่เลข</label>
+                    <input type="text" inputMode="numeric" pattern="[0-9]*" className="border rounded-md p-2 w-full sm:w-28 mb-0" value={number} onChange={(e) => handleNumberChange(e, subTab)} onPaste={handlePaste}/>
+                    {(subTab === "2d" || subTab === "3d") && (<button className="px-4 py-2 bg-black my-2 text-white rounded-md hover:cursor-pointer hover:bg-yellow-400 hover:text-black" onClick={handleClickReverseNumbers}>กลับเลข</button>)}
+                </div>
+                {!isThreeDigitMode && (<div className="contents"><div className="sm:contents"><label className="block text-lg font-medium text-green-600">2 ตัวบน</label><input type="text" inputMode="numeric" value={priceTop} onChange={(e) => handlePriceChange(e.target.value, setPriceTop)} className="border rounded-md p-2 w-full sm:w-28"/></div><div className="sm:contents"><label className="block text-lg font-medium text-red-600">2 ตัวล่าง</label><input type="text" inputMode="numeric" value={priceBottom} onChange={(e) => handlePriceChange(e.target.value, setPriceBottom)} className="border rounded-md p-2 w-full sm:w-28"/></div></div>)}
+                {isThreeDigitMode && (<div className="contents"><div className="sm:contents"><label className="block text-lg font-medium text-green-600">3 ตัวตรง</label><input type="text" inputMode="numeric" value={priceTop} onChange={(e) => handlePriceChange(e.target.value, setPriceTop)} className="border rounded-md p-2 w-full sm:w-28"/></div><div className="sm:contents"><label className="block text-lg font-medium text-orange-500">3 ตัวโต๊ด</label><input type="text" inputMode="numeric" value={priceTote} onChange={(e) => handlePriceChange(e.target.value, setPriceTote)} className="border rounded-md p-2 w-full sm:w-28"/></div>{showThreeBottomInput && (<div className="col-span-2 sm:contents"><label className="block text-lg font-medium text-red-600">3 ตัวล่าง</label><input type="text" inputMode="numeric" value={priceBottom} onChange={(e) => handlePriceChange(e.target.value, setPriceBottom)} className="border rounded-md p-2 w-full sm:w-28"/></div>)}</div>)}
+                <div className="col-span-2 sm:contents"><button className={`w-full sm:w-auto px-4 py-2 ${loadingAddBills ? "bg-yellow-300": "bg-black"} text-white rounded-md hover:cursor-pointer hover:bg-yellow-400 hover:text-black`} onClick={handleAddBillEntry} disabled={loadingAddBills}>{loadingAddBills ? "กำลังเพิ่มบิล...":"เพิ่มบิล"}</button></div>
+            </div>
 
-        <div className="flex items-center justify-between mt-4">
-          <div className="flex items-center gap-2">
-            <label htmlFor="memo" className="text-lg">
-              บันทึกช่วยจำ
-            </label>
-            <input
-              id="memo"
-              type="text"
-              className="border rounded-md p-2 w-full md:w-72"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-            />
-          </div>
-          <div className="text-lg font-bold ml-4">
-            ยอดรวม:{" "}
-            <span className="text-red-500">
-              {total.toLocaleString("en-US")}
-            </span>{" "}
-            บาท
-          </div>
-        </div>
+            <div className="overflow-x-auto">
+                <div className="space-y-2 min-w-[450px]">
+                    {bill.map((entry, index) => (
+                        <CardBillForBets key={index} bets={entry.bets} betType={entry.betTypes} bahtPer={entry.bahtPer} priceTop={entry.priceTop} priceTote={entry.priceTote} priceBottom={entry.priceBottom} entryIndex={index} onRemove={handleRemoveEntry} onEdit={handleEditEntry} specialNumbers={specialNumbers} overLimitNumbersSet={overLimitNumbersSet} />
+                    ))}
+                </div>
+            </div>
 
-        <div className="flex justify-center gap-4 mt-6">
-          <button
-            className="px-6 py-2 border border-red-500 text-red-500 rounded-md font-semibold hover:bg-red-500 hover:text-white"
-            onClick={() => handleClearBet()}
-          >
-            ล้างตัวเลข
-          </button>
-          <button
-            className={`px-6 py-2 rounded-md font-semibold transition-colors ${
-              (isBillInvalid || isBillOverLimit) 
-                ? 'bg-gray-400 text-white cursor-not-allowed' 
-                : 'bg-blue-500 text-white hover:bg-blue-600'
-            }`}
-            onClick={handleSaveBill}
-            disabled={isBillInvalid || isBillOverLimit}
-          >
-            {isBillInvalid ? 'ไม่สามารถบันทึก (เลขปิด)' : isBillOverLimit ? 'ไม่สามารถบันทึก (เกินวงเงิน)' : 'บันทึกบิล'}
-          </button>
-        </div>
-      </div>
+            <div className="flex items-center justify-between mt-4">
+                <div className="flex items-center gap-2">
+                    <label htmlFor="memo" className="text-lg">บันทึกช่วยจำ</label>
+                    <input id="memo" type="text" className="border rounded-md p-2 w-full md:w-72" value={note} onChange={(e) => setNote(e.target.value)} />
+                </div>
+                <div className="text-lg font-bold ml-4">ยอดรวม:{" "}<span className="text-red-500">{total.toLocaleString("en-US")}</span>{" "}บาท</div>
+            </div>
 
-      {billToPrint && (
-        <div className="bg-green-100 border-l-4 border-green-500 text-green-800 p-4 mt-6 rounded-lg shadow-md animate-fade-in">
-          <h3 className="font-bold text-lg">บันทึกบิลสำเร็จ!</h3>
-          <p>เลขที่บิล: <span className="font-mono">{billToPrint.billRef}</span></p>
-          <div className="flex flex-wrap gap-4 mt-4">
-            <button
-              onClick={() => setIsModalVisible(true)}
-              disabled={!receiptImageUrl}
-              className="px-4 py-2 bg-purple-600 text-white rounded-md font-semibold hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              <EyeIcon className="h-5 w-5"/>
-              {receiptImageUrl ? 'ดูบิล' : 'กำลังสร้าง...'}
-            </button>
-            <button
-              onClick={handlePrint}
-              className="px-4 py-2 bg-blue-500 text-white rounded-md font-semibold hover:bg-blue-600 flex items-center gap-2"
-            >
-              <PrinterIcon className="h-5 w-5"/>
-              พิมพ์
-            </button>
-            <button
-              onClick={handleSaveAsImage}
-              className="px-4 py-2 bg-gray-600 text-white rounded-md font-semibold hover:bg-gray-700 flex items-center gap-2"
-            >
-              <DownloadIcon className="h-5 w-5"/>
-              บันทึกรูป
-            </button>
-          </div>
-        </div>
-      )}
-
-      {isModalVisible && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex justify-center items-center z-50 animate-fade-in h-screen">
-          <div className="p-4 w-full h-full flex justify-center items-center">
-            <div className="bg-white rounded-lg shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col relative">
-              <div className="absolute top-2 right-2 flex gap-2 z-20">
-                <button 
-                  onClick={handlePrint} 
-                  className="p-2 bg-gray-200 rounded-full hover:bg-blue-200 transition-colors" 
-                  title="พิมพ์"
-                >
-                  <PrinterIcon className="h-6 w-6 text-blue-600" />
-                </button>
-                <button 
-                  onClick={handleSaveAsImage} 
-                  className="p-2 bg-gray-200 rounded-full hover:bg-green-200 transition-colors" 
-                  title="บันทึกรูปภาพ"
-                >
-                  <DownloadIcon className="h-6 w-6 text-green-600" />
-                </button>
-                <button 
-                  onClick={() => setIsModalVisible(false)} 
-                  className="p-2 bg-gray-200 rounded-full hover:bg-red-200 transition-colors" 
-                  title="ปิดหน้าต่างนี้"
-                >
-                  <XIcon className="h-6 w-6 text-red-600" />
-                </button>
-              </div>
-              
-              <div className="overflow-y-auto p-4 pt-12">
-                {receiptImageUrl ? (
-                  <img src={receiptImageUrl} alt="ใบเสร็จ" className="w-full" />
-                ) : (
-                  <div className="flex flex-col justify-center items-center h-48 text-center">
-                    <svg className="animate-spin h-8 w-8 text-gray-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    <p className="text-gray-600 font-semibold">กำลังสร้างรูปภาพใบเสร็จ...</p>
-                    <p className="text-sm text-gray-500 mt-1">กรุณารอสักครู่</p>
-                  </div>
+            <div className="flex justify-center gap-4 mt-6 flex-col items-center">
+                {isBillOverLimit && (
+                    <div className="p-3 mb-2 text-sm text-blue-800 rounded-lg bg-blue-100 w-full md:w-auto text-center animate-fade-in" role="alert">
+                        <span className="font-bold"><ExclamationTriangleIcon className="h-5 w-5 inline-block mr-2" />มีบางรายการอาจเกินวงเงิน!</span>
+                        <p className="mt-1">เลขต่อไปนี้ ({[...overLimitNumbersSet].filter(num => bill.some(entry => entry.bets.includes(num))).join(', ')}) อาจเต็มแล้ว โปรดแก้ไขรายการ</p>
+                    </div>
                 )}
-              </div>
+                <div className="flex gap-4">
+                    <button className="px-6 py-2 border border-red-500 text-red-500 rounded-md font-semibold hover:bg-red-500 hover:text-white" onClick={() => handleClearBet()}>ล้างตัวเลข</button>
+                    <button className={`px-6 py-2 rounded-md font-semibold transition-colors ${(isBillInvalid || isBillOverLimit) ? 'bg-gray-400 text-white cursor-not-allowed' : 'bg-blue-500 text-white hover:bg-blue-600'}`} onClick={handleSaveBill} disabled={isBillInvalid || isBillOverLimit}>
+                        {isBillInvalid ? 'ไม่สามารถบันทึก (เลขปิด)' : isBillOverLimit ? 'ไม่สามารถบันทึก (เกินวงเงิน)' : 'บันทึกบิล'}
+                    </button>
+                </div>
             </div>
-          </div>
         </div>
-      )}
 
-      <div className="flex flex-col lg:flex-row gap-6">
-        <RateDisplayCard details={lottoTypeDetails} />
-        <SpecialNumbersCard
-          lottoId={lottoId}
-          specialNumbers={specialNumbers}
-          onUpdate={fetchSpecialNumbersOnly}
-        />
-        <div className="w-full">
-          {user && lottoId && (
-            <LimitAndSpentSummaryCard
-              summaryData={rawLimitData}
-              currentBill={bill}
+        {billToPrint && ( <div className="bg-green-100 border-l-4 border-green-500 text-green-800 p-4 mt-6 rounded-lg shadow-md animate-fade-in"> <h3 className="font-bold text-lg">บันทึกบิลสำเร็จ!</h3> <p>เลขที่บิล: <span className="font-mono">{billToPrint.billRef}</span></p> <div className="flex flex-wrap gap-4 mt-4"> <button onClick={() => setIsModalVisible(true)} disabled={!receiptImageUrl} className="px-4 py-2 bg-purple-600 text-white rounded-md font-semibold hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2"> <EyeIcon className="h-5 w-5"/> {receiptImageUrl ? 'ดูบิล' : 'กำลังสร้าง...'} </button> <button onClick={handlePrint} className="px-4 py-2 bg-blue-500 text-white rounded-md font-semibold hover:bg-blue-600 flex items-center gap-2"> <PrinterIcon className="h-5 w-5"/> พิมพ์ </button> <button onClick={handleSaveAsImage} className="px-4 py-2 bg-gray-600 text-white rounded-md font-semibold hover:bg-gray-700 flex items-center gap-2"> <DownloadIcon className="h-5 w-5"/> บันทึกรูป </button> </div> </div> )}
+        {isModalVisible && ( <div className="fixed inset-0 bg-black bg-opacity-75 flex justify-center items-center z-50 animate-fade-in h-screen"> <div className="p-4 w-full h-full flex justify-center items-center"> <div className="bg-white rounded-lg shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col relative"> <div className="absolute top-2 right-2 flex gap-2 z-20"> <button onClick={handlePrint} className="p-2 bg-gray-200 rounded-full hover:bg-blue-200 transition-colors" title="พิมพ์"> <PrinterIcon className="h-6 w-6 text-blue-600" /> </button> <button onClick={handleSaveAsImage} className="p-2 bg-gray-200 rounded-full hover:bg-green-200 transition-colors" title="บันทึกรูปภาพ"> <DownloadIcon className="h-6 w-6 text-green-600" /> </button> <button onClick={() => setIsModalVisible(false)} className="p-2 bg-gray-200 rounded-full hover:bg-red-200 transition-colors" title="ปิดหน้าต่างนี้"> <XIcon className="h-6 w-6 text-red-600" /> </button> </div> <div className="overflow-y-auto p-4 pt-12"> {receiptImageUrl ? ( <img src={receiptImageUrl} alt="ใบเสร็จ" className="w-full" /> ) : ( <div className="flex flex-col justify-center items-center h-48 text-center"> <svg className="animate-spin h-8 w-8 text-gray-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"> <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle> <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path> </svg> <p className="text-gray-600 font-semibold">กำลังสร้างรูปภาพใบเสร็จ...</p> <p className="text-sm text-gray-500 mt-1">กรุณารอสักครู่</p> </div> )} </div> </div> </div> </div> )}
+
+        <div className="flex flex-col lg:flex-row gap-6">
+            <RateDisplayCard details={lottoTypeDetails} />
+            <SpecialNumbersCard
+                lottoId={lottoId}
+                specialNumbers={specialNumbers}
+                onUpdate={fetchSpecialNumbersOnly}
             />
-          )}
+            <div className="w-full">
+                {user && lottoId && (
+                    <LimitAndSpentSummaryCard
+                        summaryData={rawLimitData}
+                        currentBill={bill}
+                    />
+                )}
+            </div>
         </div>
-      </div>
 
-      <div style={{ position: "absolute", top: "-9999px", left: "-9999px" }}>
-        <PrintableReceipt 
-          ref={receiptRef} 
-          bill={billToPrint}
-          lottoTypeDetails={lottoTypeDetails}
-          specialNumbers={specialNumbers}
-        />
-      </div> 
+        <div style={{ position: "absolute", top: "-9999px", left: "-9999px" }}>
+            <PrintableReceipt 
+                ref={receiptRef} 
+                bill={billToPrint}
+                lottoTypeDetails={lottoTypeDetails}
+                specialNumbers={specialNumbers}
+            />
+        </div> 
     </div>
   );
 };
 
 export default LottoFormPage;
-

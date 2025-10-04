@@ -39,6 +39,7 @@ const CardBillForBets: React.FC<CardBillForBetProps> = ({
   
   const validBets = bets.filter(bet => !closedNumbersSet.has(bet));
   const closedBets = bets.filter(bet => closedNumbersSet.has(bet));
+
   const halfPaidBets = validBets.filter(bet => halfPayNumbersSet.has(bet));
   
   const pricePerBet = priceTop + priceTote + priceBottom;
@@ -135,4 +136,3 @@ const CardBillForBets: React.FC<CardBillForBetProps> = ({
 };
 
 export default CardBillForBets;
-
