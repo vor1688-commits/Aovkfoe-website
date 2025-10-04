@@ -702,11 +702,12 @@ app.post('/api/bills/batch-delete', async (req, res) => {
 
  
 app.post('/api/batch-check-bet-limits', async (req: Request, res: Response) => {
-    const { userId, lottoRoundId, bets } = req.body;
+    // --- [จุดที่แก้ไข 1] รับ 'pendingBets' (รายการในบิล) เพิ่มเข้ามา ---
+    const { userId, lottoRoundId, bets, pendingBets } = req.body;
     const client = await db.connect();
 
     try {
-        // --- 1. ตรวจสอบ Exemption (เหมือนเดิม) ---
+        // --- ตรวจสอบ Exemption (เหมือนเดิม) ---
         const userResult = await client.query('SELECT role FROM users WHERE id = $1', [userId]);
         if (userResult.rowCount === 0) throw new Error('ไม่พบผู้ใช้');
         const userRole = userResult.rows[0].role;
@@ -719,7 +720,7 @@ app.post('/api/batch-check-bet-limits', async (req: Request, res: Response) => {
             return res.status(200).json({ message: 'สามารถซื้อได้ทั้งหมด (ผู้ใช้ได้รับการยกเว้น)' });
         }
 
-        // --- 2. ดึงข้อมูลกฎและยอดซื้อทั้งหมดที่เกี่ยวข้องในครั้งเดียว ---
+        // --- ดึงข้อมูลกฎและยอดซื้อทั้งหมดที่เกี่ยวข้องในครั้งเดียว ---
         const betNumbersInRequest = [...new Set(bets.map((b: any) => b.betNumber))];
 
         const [roundLimitsResult, rangeLimitsResult, spentResult] = await Promise.all([
@@ -738,6 +739,7 @@ app.post('/api/batch-check-bet-limits', async (req: Request, res: Response) => {
         const roundLimits = roundLimitsResult.rows[0] || {};
         const rangeLimits = rangeLimitsResult.rows;
 
+        // Map ยอดซื้อจากฐานข้อมูล
         const spentMap: { [key: string]: { [key: string]: number } } = {};
         spentResult.rows.forEach(row => {
             if (!spentMap[row.bet_number]) {
@@ -745,8 +747,25 @@ app.post('/api/batch-check-bet-limits', async (req: Request, res: Response) => {
             }
             spentMap[row.bet_number][row.bet_style] = parseFloat(row.total_spent);
         });
+        
+        // --- [จุดที่แก้ไข 2] สร้าง Map ยอดซื้อที่ค้างในรายการบิล (จาก pendingBets) ---
+        const pendingMap: { [key: string]: { [key: string]: number } } = {};
+        if (pendingBets && Array.isArray(pendingBets)) {
+            for (const entry of pendingBets) {
+                const pricePerNumber = (entry.priceTop || 0) + (entry.priceTote || 0) + (entry.priceBottom || 0);
+                for (const betNumber of entry.bets) {
+                     if (!pendingMap[betNumber]) {
+                        pendingMap[betNumber] = { 'บน': 0, 'ตรง': 0, 'ล่าง': 0, 'โต๊ด': 0 };
+                    }
+                    pendingMap[betNumber]['บน'] += entry.priceTop || 0;
+                    pendingMap[betNumber]['ตรง'] += entry.priceTop || 0; // 'บน' กับ 'ตรง' คือยอดเดียวกัน
+                    pendingMap[betNumber]['ล่าง'] += entry.priceBottom || 0;
+                    pendingMap[betNumber]['โต๊ด'] += entry.priceTote || 0;
+                }
+            }
+        }
 
-        // --- 3. Loop หลักสำหรับตรวจสอบแต่ละเลข ---
+        // --- Loop หลักสำหรับตรวจสอบแต่ละเลข ---
         const failedBets: any[] = [];
         for (const bet of bets) {
             const { betNumber, priceTop, priceBottom, priceTote } = bet;
@@ -761,7 +780,7 @@ app.post('/api/batch-check-bet-limits', async (req: Request, res: Response) => {
             let totalIncomingPrice = 0; 
             const simulatedSpent = JSON.parse(JSON.stringify(spentMap[betNumber] || {}));
 
-            // --- 3a. ตรวจสอบกฎแบบเจาะจงประเภท (บน, ล่าง, ตรง, โต๊ด) ---
+            // --- ตรวจสอบกฎแบบเจาะจงประเภท ---
             for (const item of stylesToCheck) {
                 if (isFailed) break; 
                 if (!item.price || item.price <= 0) continue;
@@ -770,7 +789,6 @@ app.post('/api/batch-check-bet-limits', async (req: Request, res: Response) => {
                 
                 const rule = rangeLimits.find(r => 
                     (r.number_limit_types === item.style || (item.alternativeStyle && r.number_limit_types === item.alternativeStyle))
-                    // +++ [จุดที่แก้ไข 1] เพิ่มการตรวจสอบความยาวของตัวเลข +++
                     && betNumber.length === r.range_start.length 
                     && parseInt(betNumber, 10) >= parseInt(r.range_start, 10) 
                     && parseInt(betNumber, 10) <= parseInt(r.range_end, 10)
@@ -778,22 +796,23 @@ app.post('/api/batch-check-bet-limits', async (req: Request, res: Response) => {
 
                 if (rule) {
                     const limit = parseFloat(rule.max_amount);
-                    const currentSpent = (simulatedSpent[item.style] || 0) + (item.alternativeStyle ? (simulatedSpent[item.alternativeStyle] || 0) : 0);
+                    
+                    // --- [จุดที่แก้ไข 3] รวมยอดจาก DB และ ยอดที่ค้างในบิล ---
+                    const spentInDb = (simulatedSpent[item.style] || 0) + (item.alternativeStyle ? (simulatedSpent[item.alternativeStyle] || 0) : 0);
+                    const spentInPending = (pendingMap[betNumber]?.[item.style] || 0) + (item.alternativeStyle ? (pendingMap[betNumber]?.[item.alternativeStyle] || 0) : 0);
+                    const currentTotalSpent = spentInDb + spentInPending;
 
-                    if (currentSpent + item.price > limit) {
+                    if (currentTotalSpent + item.price > limit) {
                         failedBets.push({ betNumber, message: `วงเงินสำหรับ '${item.style}' เต็ม` });
                         isFailed = true;
-                    } else {
-                        simulatedSpent[item.style] = (simulatedSpent[item.style] || 0) + item.price;
                     }
                 }
             }
             if (isFailed) continue;
 
-            // --- 3b. ตรวจสอบกฎ "ทั้งหมด" ---
+            // --- ตรวจสอบกฎ "ทั้งหมด" ---
             const totalRule = rangeLimits.find(r => 
                 r.number_limit_types === 'ทั้งหมด' 
-                // +++ [จุดที่แก้ไข 2] เพิ่มการตรวจสอบความยาวของตัวเลข +++
                 && betNumber.length === r.range_start.length
                 && parseInt(betNumber, 10) >= parseInt(r.range_start, 10) 
                 && parseInt(betNumber, 10) <= parseInt(r.range_end, 10)
@@ -801,15 +820,17 @@ app.post('/api/batch-check-bet-limits', async (req: Request, res: Response) => {
 
             if (totalRule) {
                 const totalLimit = parseFloat(totalRule.max_amount);
+                // --- [จุดที่แก้ไข 4] รวมยอดรวมจาก DB และ ยอดรวมที่ค้างในบิล ---
                 const totalSpentInDb = Object.values(spentMap[betNumber] || {}).reduce((sum: number, val: any) => sum + val, 0);
+                const totalSpentInPending = Object.values(pendingMap[betNumber] || {}).reduce((sum: number, val: any) => sum + val, 0);
                 
-                if (totalSpentInDb + totalIncomingPrice > totalLimit) {
+                if (totalSpentInDb + totalSpentInPending + totalIncomingPrice > totalLimit) {
                     failedBets.push({ betNumber, message: `วงเงินรวม ('ทั้งหมด') เต็ม` });
                     continue;
                 }
             }
 
-            // --- 3c. ตรวจสอบกฎเริ่มต้น (Default) ถ้าไม่มีกฎพิเศษ ---
+            // --- ตรวจสอบกฎเริ่มต้น (Default) ถ้าไม่มีกฎพิเศษ ---
             const hasSpecificRule = rangeLimits.some(r => 
                 betNumber.length === r.range_start.length &&
                 parseInt(betNumber, 10) >= parseInt(r.range_start, 10) && 
@@ -820,8 +841,11 @@ app.post('/api/batch-check-bet-limits', async (req: Request, res: Response) => {
                 const defaultLimit = betNumber.length <= 2 ? roundLimits.limit_2d_amount : roundLimits.limit_3d_amount;
                 if (defaultLimit) {
                     const limit = parseFloat(defaultLimit);
+                    // --- [จุดที่แก้ไข 5] รวมยอดรวมจาก DB และ ยอดรวมที่ค้างในบิล ---
                     const totalSpentInDb = Object.values(spentMap[betNumber] || {}).reduce((sum: number, val: any) => sum + val, 0);
-                    if (totalSpentInDb + totalIncomingPrice > limit) {
+                    const totalSpentInPending = Object.values(pendingMap[betNumber] || {}).reduce((sum: number, val: any) => sum + val, 0);
+
+                    if (totalSpentInDb + totalSpentInPending + totalIncomingPrice > limit) {
                         failedBets.push({ betNumber, message: `วงเงินเริ่มต้นเต็ม` });
                     }
                 }
