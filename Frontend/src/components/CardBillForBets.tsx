@@ -1,10 +1,17 @@
 import React from 'react';
 import { getBetTypeName } from '../services/BetService';
-import { PencilSquareIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { PencilSquareIcon, TrashIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 
 interface SpecialNumbers {
   closed_numbers: string[];
   half_pay_numbers: string[];
+}
+
+interface LimitSummary {
+  [betNumber: string]: {
+    totalSpent: number;
+    limit: number | null;
+  };
 }
 
 interface CardBillForBetProps {
@@ -13,11 +20,12 @@ interface CardBillForBetProps {
   bahtPer: number;
   priceTop: number;
   priceTote: number;
-  priceBottom: number; 
+  priceBottom: number;
   entryIndex: number;
   onRemove: (index: number) => void;
   onEdit: (index: number) => void;
   specialNumbers: SpecialNumbers | null;
+  limitSummary: LimitSummary | null;
 }
 
 const CardBillForBets: React.FC<CardBillForBetProps> = ({
@@ -28,22 +36,39 @@ const CardBillForBets: React.FC<CardBillForBetProps> = ({
   priceTote,
   priceBottom,
   entryIndex,
-  onRemove, 
+  onRemove,
   onEdit,
-  specialNumbers
+  specialNumbers,
+  limitSummary
 }) => {
-  // --- ✅ [จุดที่แก้ไข] ---
   const closedNumbersSet = new Set(specialNumbers?.closed_numbers || []);
-  const halfPayNumbersSet = new Set(specialNumbers?.half_pay_numbers || []); // 1. สร้าง Set สำหรับเลขจ่ายครึ่ง
-  
+  const halfPayNumbersSet = new Set(specialNumbers?.half_pay_numbers || []);
+  const pricePerBet = priceTop + priceTote + priceBottom;
+
+  const overLimitBets = new Set<string>();
+  if (limitSummary) {
+    const amountInThisEntryMap: { [key: string]: number } = {};
+    bets.forEach(betNumber => {
+        amountInThisEntryMap[betNumber] = (amountInThisEntryMap[betNumber] || 0) + pricePerBet;
+    });
+
+    for (const betNumber in amountInThisEntryMap) {
+      const summary = limitSummary[betNumber];
+      if (summary && summary.limit !== null) {
+        const projectedTotal = summary.totalSpent + amountInThisEntryMap[betNumber];
+        if (projectedTotal > summary.limit) {
+          overLimitBets.add(betNumber);
+        }
+      }
+    }
+  }
+
   const validBets = bets.filter(bet => !closedNumbersSet.has(bet));
   const closedBets = bets.filter(bet => closedNumbersSet.has(bet));
-
-  const halfPaidBets = bets.filter(bet => halfPayNumbersSet.has(bet));
-
-  const pricePerBet = priceTop + priceTote + priceBottom;
-  const actualCalculatedTotal = validBets.length * pricePerBet;
-  // --- สิ้นสุดการแก้ไข ---
+  const halfPaidBets = validBets.filter(bet => halfPayNumbersSet.has(bet));
+  const normalBets = validBets.filter(bet => !halfPayNumbersSet.has(bet));
+  
+  const actualCalculatedTotal = (normalBets.length * pricePerBet) + (halfPaidBets.length * (pricePerBet / 2));
 
   const isThreeDigitMode = betType === '3d' || betType === '6d';
   
@@ -61,7 +86,7 @@ const CardBillForBets: React.FC<CardBillForBetProps> = ({
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200 mb-2 border border-gray-200/80 flex items-center p-3 gap-4">
+    <div className={`bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200 mb-2 border flex items-center p-3 gap-4 ${overLimitBets.size > 0 && ![...overLimitBets].every(b => closedNumbersSet.has(b)) ? 'border-blue-500 border-2' : 'border-gray-200/80'}`}>
       <div className="flex-shrink-0 w-32 text-center border-r pr-4 border-gray-200">
         <span className="px-3 py-1 text-sm font-bold leading-5 text-indigo-800 bg-indigo-100 rounded-full">
           {getBetTypeName(betType)}
@@ -79,16 +104,23 @@ const CardBillForBets: React.FC<CardBillForBetProps> = ({
       <div className="flex-grow min-w-0">
         <div className="flex flex-wrap gap-x-3 gap-y-1 font-mono text-base leading-relaxed">
           {bets.map((betNumber, index) => {
-            // --- ✅ [จุดที่แก้ไข] ---
-            // 2. สร้างฟังก์ชันสำหรับกำหนด Class ของตัวเลข
+            
+            // +++ [จุดที่แก้ไข] สลับลำดับการตรวจสอบเงื่อนไข +++
             const getNumberClassName = () => {
-                if (closedNumbersSet.has(betNumber)) {
-                    return 'text-red-500 font-bold line-through'; // เลขปิด
-                }
-                if (halfPayNumbersSet.has(betNumber)) {
-                    return 'text-amber-300 font-bold'; // เลขจ่ายครึ่ง
-                }
-                return 'text-gray-800'; // เลขปกติ
+              // 1. ตรวจสอบสถานะ "เลขปิด" ก่อนเป็นอันดับแรก
+              if (closedNumbersSet.has(betNumber)) {
+                  return 'text-red-500 font-bold line-through';
+              }
+              // 2. หากไม่เป็นเลขปิด จึงตรวจสอบสถานะ "เกินวงเงิน"
+              if (overLimitBets.has(betNumber)) {
+                  return 'text-blue-500 font-bold';
+              }
+              // 3. หากไม่เข้าเงื่อนไขข้างบน จึงตรวจสอบ "เลขจ่ายครึ่ง"
+              if (halfPayNumbersSet.has(betNumber)) {
+                  return 'text-amber-500 font-bold';
+              }
+              // 4. หากไม่เข้าเงื่อนไขใดๆ เลย ให้เป็นเลขปกติ
+              return 'text-gray-800';
             };
             
             return (
@@ -106,16 +138,21 @@ const CardBillForBets: React.FC<CardBillForBetProps> = ({
 
         {closedBets.length > 0 && (
           <div className="text-xs text-red-500 mt-1 italic">
-            *เลขปิดจำนวน {closedBets.length} ตัว ไม่ถูกนำมาคำนวณในยอดรวมนี้
+            *เลขปิด {closedBets.length} ตัว ไม่ถูกนำมาคำนวณยอด
           </div>
         )}
         
-        {halfPaidBets.length > 0 && (
-          <div className="mt-1"> 
-            <div className="text-xs text-amber-400 italic">
-              *เลขจ่ายครึ่งจะแสดงเป็นสีเหลือง มีจำนวน {halfPaidBets.length} ตัว (กรุณาเช็คบิลก่อนดำเนินการบันทึก)
-            </div>
+        {halfPaidBets.length > 0 && !closedBets.some(cb => halfPaidBets.includes(cb)) && (
+          <div className="text-xs text-amber-600 mt-1 italic">
+            *เลขจ่ายครึ่ง {halfPaidBets.length} ตัว ถูกคำนวณยอดครึ่งเดียว
           </div>
+        )}
+
+        {overLimitBets.size > 0 && ![...overLimitBets].every(b => closedNumbersSet.has(b)) && (
+            <div className="text-xs text-blue-600 mt-1 italic flex items-center gap-1 font-semibold">
+               <ExclamationTriangleIcon className="h-4 w-4" />
+               เลขสีฟ้า ({[...overLimitBets].filter(b => !closedNumbersSet.has(b)).join(', ')}) อาจเต็มวงเงินแล้ว
+            </div>
         )}
       </div>
 

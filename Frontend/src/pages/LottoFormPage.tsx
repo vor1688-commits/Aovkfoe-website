@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useReactToPrint } from "react-to-print";
-import { toPng } from "html-to-image"; 
+import { toPng } from "html-to-image";
 
 import {
   generate6Glab,
@@ -17,8 +17,8 @@ import SpecialNumbersCard from "../components/SpecialNumbersCard";
 import { useAuth } from "../contexts/AuthContext";
 import { FullScreenLoader } from "../components/LoadingScreen";
 import PrintableReceipt from "../components/PrintAbleReceip";
-import { PrinterIcon, ArrowDownTrayIcon as DownloadIcon, XMarkIcon as XIcon, EyeIcon } from '@heroicons/react/24/solid';
-import { useModal } from "../components/Modal"; 
+import { PrinterIcon, ArrowDownTrayIcon as DownloadIcon, XMarkIcon as XIcon, EyeIcon, ExclamationTriangleIcon } from '@heroicons/react/24/solid';
+import { useModal } from "../components/Modal";
 import LimitAndSpentSummaryCard from "../components/LimitAndSpentSummaryCard";
 import api from "../api/axiosConfig";
 
@@ -68,6 +68,20 @@ interface SpecialNumbers {
   closed_numbers: string[];
   half_pay_numbers: string[];
 }
+// Interface สำหรับข้อมูลที่ประมวลผลแล้ว (สำหรับ CardBillForBets)
+interface LimitSummary {
+  [betNumber: string]: {
+    totalSpent: number;
+    limit: number | null;
+  };
+}
+// Interface สำหรับข้อมูลดิบจาก API ให้ตรงกับที่ Child Component ต้องการ
+interface RawLimitSummary {
+  defaultLimits: { limit_2d_amount?: string | null; limit_3d_amount?: string | null; };
+  specificLimits: { bet_number: string; max_amount: string; }[];
+  rangeLimits: { range_start: string; range_end: string; max_amount: string; }[];
+  spentSummary: { bet_number: string; total_spent: string; }[];
+}
 
 const LottoFormPage = () => {
   const { user } = useAuth();
@@ -106,17 +120,20 @@ const LottoFormPage = () => {
   const [loadingAddBills, setLoadingAddBills] = useState(false);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [isBillInvalid, setIsBillInvalid] = useState(false);
+  
+  // State ใหม่เพื่อเก็บข้อมูลดิบจาก API
+  const [rawLimitData, setRawLimitData] = useState<RawLimitSummary | null>(null);
 
   const generateReceiptImage = useCallback(async () => {
     if (!receiptRef.current) {
-        throw new Error("Receipt component is not available.");
+      throw new Error("Receipt component is not available.");
     }
     const options = {
-        cacheBust: true,
-        backgroundColor: 'white',
-        canvasWidth: receiptRef.current.scrollWidth,
-        canvasHeight: receiptRef.current.scrollHeight,
-        pixelRatio: window.devicePixelRatio || 2,
+      cacheBust: true,
+      backgroundColor: 'white',
+      canvasWidth: receiptRef.current.scrollWidth,
+      canvasHeight: receiptRef.current.scrollHeight,
+      pixelRatio: window.devicePixelRatio || 2,
     };
     return await toPng(receiptRef.current, options);
   }, []);
@@ -196,13 +213,8 @@ const LottoFormPage = () => {
         if (roundResult.status === 'fulfilled') {
             const roundData = roundResult.value.data;
             const cutoffDate = new Date(roundData.round.cutoff_datetime);
-
-            // ✨ --- [จุดที่แก้ไข] นำ Logic การปรับ Timezone กลับมา --- ✨
-            // เนื่องจากข้อมูล cutoff_datetime จาก API สำหรับหวยบางประเภทอาจเป็น UTC ที่ไม่ถูกต้อง
-            // เราจึงต้องปรับส่วนต่างเวลาที่ฝั่ง Client
             const sevenHoursInMillis = 7 * 60 * 60 * 1000;
             const correctedTimestamp = cutoffDate.getTime() - sevenHoursInMillis;
-            // ----------------------------------------------------
 
             setRoundDetails({
                 name: roundData.round.name,
@@ -210,9 +222,9 @@ const LottoFormPage = () => {
                 lottoTime: new Date(correctedTimestamp).toLocaleTimeString("th-TH", {
                     hour: "2-digit",
                     minute: "2-digit",
-                    timeZone: 'UTC', // ใช้ UTC เพื่อแสดงผลเวลาที่แก้ไขแล้วโดยตรง
+                    timeZone: 'UTC',
                 }),
-                fullCutoffTimestamp: correctedTimestamp, // <-- ใช้เวลาที่ถูกแก้ไขแล้ว
+                fullCutoffTimestamp: correctedTimestamp,
                 lotto_type_id: roundData.round.lotto_type_id,
             });
             setCurrentTime(new Date(roundData.serverTime));
@@ -271,84 +283,28 @@ const LottoFormPage = () => {
     };
   }, [loadInitialData]);
 
-  // useEffect(() => {
-  //   const closedNumbers = specialNumbers?.closed_numbers || [];
-    
-  //   const newTotal = bill.reduce((sum, entry) => {
-  //       const pricePerBet = (entry.priceTop || 0) + (entry.priceTote || 0) + (entry.priceBottom || 0);
-  //       const validBetsInEntry = entry.bets.filter(bet => !closedNumbers.includes(bet));
-  //       const entryTotal = validBetsInEntry.length * pricePerBet;
-  //       return sum + entryTotal;
-  //   }, 0);
-  //   setTotal(newTotal);
-
-  //   if (bill.length > 0) {
-  //       const allNumbersAreClosed = bill.every(entry => 
-  //           entry.bets.every(betNumber => 
-  //               closedNumbers.includes(betNumber)
-  //           )
-  //       );
-  //       setIsBillInvalid(allNumbersAreClosed);
-  //   } else {
-  //       setIsBillInvalid(false);
-  //   }
-  // }, [bill, specialNumbers]);
-
-useEffect(() => { 
-  
-  const closedNumbers = specialNumbers?.closed_numbers || [];
-  const halfPayNumbers = specialNumbers?.half_pay_numbers || [];
-  
-  // คำนวณยอดรวมใหม่ทุกครั้งที่ bill หรือ specialNumbers เปลี่ยนแปลง
-  const newTotal = bill.reduce((sum, entry) => {
-      const pricePerBet = (entry.priceTop || 0) + (entry.priceTote || 0) + (entry.priceBottom || 0);
-      
-      // กรองเอาเฉพาะเลขที่ไม่ใช่เลขปิดออกจากรายการนี้
-      const validBetsInEntry = entry.bets.filter(bet => !closedNumbers.includes(bet));
-      
-      let entryTotal = 0;
-      
-      // วนลูปในรายการที่สามารถคำนวณได้
-      validBetsInEntry.forEach(bet => {
-          if (halfPayNumbers.includes(bet)) {
-              // ถ้าเป็นเลขจ่ายครึ่ง จะบวกยอดแค่ครึ่งเดียว
-              entryTotal += pricePerBet / 2;
-          } else {
-              // ถ้าเป็นเลขปกติ จะบวกยอดเต็ม
-              entryTotal += pricePerBet;
-          }
-      });
-       
-      return sum + entryTotal;
-  }, 0); // 0 คือค่าเริ่มต้นของ 'sum'
-   
-  setTotal(newTotal);
- 
-  if (bill.length > 0) {
-      const allNumbersAreClosed = bill.every(entry => 
-          entry.bets.every(betNumber => 
-              closedNumbers.includes(betNumber)
-          )
-      );
-      setIsBillInvalid(allNumbersAreClosed);
-  } else {
-      setIsBillInvalid(false);
-  }
-}, [bill, specialNumbers]); // dependency array: ให้ useEffect นี้ทำงานใหม่เมื่อค่า bill หรือ specialNumbers เปลี่ยนไป
-
-useEffect(() => {
+  useEffect(() => {
     const closedNumbers = specialNumbers?.closed_numbers || [];
+    const halfPayNumbers = specialNumbers?.half_pay_numbers || [];
     
-    // คำนวณยอดรวมสุทธิ (เหมือนเดิม)
     const newTotal = bill.reduce((sum, entry) => {
         const pricePerBet = (entry.priceTop || 0) + (entry.priceTote || 0) + (entry.priceBottom || 0);
         const validBetsInEntry = entry.bets.filter(bet => !closedNumbers.includes(bet));
-        const entryTotal = validBetsInEntry.length * pricePerBet;
+        let entryTotal = 0;
+        
+        validBetsInEntry.forEach(bet => {
+            if (halfPayNumbers.includes(bet)) {
+                entryTotal += pricePerBet / 2;
+            } else {
+                entryTotal += pricePerBet;
+            }
+        });
+        
         return sum + entryTotal;
     }, 0);
+    
     setTotal(newTotal);
 
-    // ตรวจสอบว่าบิลทั้งหมดเป็นเลขปิดหรือไม่
     if (bill.length > 0) {
         const allNumbersAreClosed = bill.every(entry => 
             entry.bets.every(betNumber => 
@@ -360,7 +316,7 @@ useEffect(() => {
         setIsBillInvalid(false);
     }
   }, [bill, specialNumbers]);
- 
+
   const handlePrint = useReactToPrint({
     content: () => receiptRef.current,
     documentTitle: `bill-${billToPrint?.billRef}`,
@@ -368,24 +324,24 @@ useEffect(() => {
 
   const handleSaveAsImage = useCallback(() => {
     generateReceiptImage()
-        .then((dataUrl) => {
-            const link = document.createElement("a");
-            link.download = `bill-${billToPrint?.billRef}.png`;
-            link.href = dataUrl;
-            link.click();
-        })
-        .catch((err) => {
-            console.error("Image save error:", err);
-            alert("เกิดข้อผิดพลาด", "ไม่สามารถบันทึกเป็นรูปภาพได้!", 'light');
-        });
-  }, [billToPrint, generateReceiptImage]);
+      .then((dataUrl) => {
+        const link = document.createElement("a");
+        link.download = `bill-${billToPrint?.billRef}.png`;
+        link.href = dataUrl;
+        link.click();
+      })
+      .catch((err) => {
+        console.error("Image save error:", err);
+        alert("เกิดข้อผิดพลาด", "ไม่สามารถบันทึกเป็นรูปภาพได้!", 'light');
+      });
+  }, [billToPrint, generateReceiptImage, alert]);
 
   const handleSaveBill = async () => {
     if (bill.length === 0 || !roundDetails) {
       alert("กรุณาเพิ่มรายการในบิลก่อนบันทึก", "", 'light');
       return;
     }
-     if (note === "") {
+    if (note === "") {
       alert("คุณยังไม่ได้ลงบันทึกช่วยจำ!", "กรุณาลงบันทึกช่วยจำก่อน", 'light');
       return;
     }
@@ -403,7 +359,6 @@ useEffect(() => {
       showStatus('loading', 'กำลังบันทึก', 'กรุณารอสักครู่');
       const response = await api.post('/api/savebills', payload);
       const result = response.data; 
-       
 
       showStatus('success', 'บันทึกเสร็จสิ้น', result.message);
       hideStatus();
@@ -440,7 +395,7 @@ useEffect(() => {
     }
   };
 
-const handleAddBillEntry = async () => { 
+  const handleAddBillEntry = async () => { 
     if (!user) {
         alert("ไม่พบข้อมูลผู้ใช้", "กรุณาล็อกอินใหม่อีกครั้ง", 'light');
         return;
@@ -456,7 +411,7 @@ const handleAddBillEntry = async () => {
     }
     setLoadingAddBills(true);
     const pricePerNumberFromForm = Number(priceTop) + Number(priceTote) + Number(priceBottom);
-  
+
     const countsInCurrentSubmission = selectedValidBets.reduce((acc, betNumber) => {
         acc[betNumber] = (acc[betNumber] || 0) + 1;
         return acc;
@@ -485,7 +440,6 @@ const handleAddBillEntry = async () => {
             }))
         });
 
-        // --- ถ้าผ่านการตรวจสอบ ให้เพิ่มรายการลงบิล ---
         const entryTotal = selectedValidBets.length * pricePerNumberFromForm;
         setBill((prev) => [
           ...prev,
@@ -505,7 +459,6 @@ const handleAddBillEntry = async () => {
     } catch (err: any) {
         const errorData = err.response?.data;
         if (errorData && errorData.error === 'LimitExceeded' && errorData.failedBets) {
-             
             let errorMessage = '';
             
             errorData.failedBets.forEach((failedBet: any) => {
@@ -517,7 +470,7 @@ const handleAddBillEntry = async () => {
                 const finalRemaining = limit - totalPurchased; 
                 const priceFromThisAction = pricePerNumberFromForm * (countsInCurrentSubmission[betNumber] || 0); 
                 const overAmount = (totalPurchased + priceFromThisAction) - limit;
- 
+
                 errorMessage += `เลข "${betNumber}" เกินขีดจำกัดการซื้อไว้ที่ ${limit.toLocaleString()} บาท\n`;
                 errorMessage += `  • คุณลงราคาเกินมา: ${overAmount > 0 ? overAmount.toLocaleString() : 0} บาท\n`;
 
@@ -535,8 +488,7 @@ const handleAddBillEntry = async () => {
         }
         setLoadingAddBills(false);
     }
-};
-
+  };
 
   const handleClearInputs = () => {
     setBets([]);
@@ -579,10 +531,7 @@ const handleAddBillEntry = async () => {
     }
   };
 
-  const handlePriceChange = (
-    value: string,
-    setter: React.Dispatch<React.SetStateAction<string>>
-  ) => {
+  const handlePriceChange = (value: string, setter: React.Dispatch<React.SetStateAction<string>>) => {
     const numericValue = value.replace(/[^0-9]/g, "");
 
     if (numericValue.length > 1 && numericValue.startsWith("0")) {
@@ -592,43 +541,31 @@ const handleAddBillEntry = async () => {
     }
   };
 
-  const handleNumberChange = (
-  e: React.ChangeEvent<HTMLInputElement>,
-  type: string
-) => {
-  const value = e.target.value;
-  // อนุญาตให้กรอกเฉพาะตัวเลขเท่านั้น
-  if (!/^\d*$/.test(value)) return;
+  const handleNumberChange = (e: React.ChangeEvent<HTMLInputElement>, type: string) => {
+    const value = e.target.value;
+    if (!/^\d*$/.test(value)) return;
 
-  setNumber(value);
+    setNumber(value);
 
-  // ฟังก์ชันภายในสำหรับเพิ่มเลขเข้ารายการ
-  const add = (list: string[]) => {
-    // ไม่มีการกรองเลขปิด (closed_numbers) ออกจากส่วนนี้แล้ว
-    if (list.length > 0) {
-      setBets((prev) => [
-        ...prev,
-        ...list.map((v) => ({ value: v, selected: true, isValid: true })),
-      ]);
-    }
-    // เคลียร์ช่องใส่เลขหลังเพิ่มรายการสำเร็จ
-    setNumber("");
+    const add = (list: string[]) => {
+      if (list.length > 0) {
+        setBets((prev) => [
+          ...prev,
+          ...list.map((v) => ({ value: v, selected: true, isValid: true })),
+        ]);
+      }
+      setNumber("");
+    };
+
+    if (type === "2d" && value.length === 2) add([value]);
+    if (type === "3d" && value.length === 3) add([value]);
+    if (type === "run" && value.length === 1) add([value]);
+    if (type === "6d" && value.length === 3) add(generate6Glab(value));
+    if (type === "19d" && value.length === 1) add(generate19Doors(value, doorMode));
   };
-
-  // ตรวจสอบความยาวของตัวเลขและประเภทการแทงเพื่อเรียกใช้ฟังก์ชัน 'add'
-  if (type === "2d" && value.length === 2) add([value]);
-  if (type === "3d" && value.length === 3) add([value]);
-  if (type === "run" && value.length === 1) add([value]);
-  if (type === "6d" && value.length === 3) add(generate6Glab(value));
-  if (type === "19d" && value.length === 1) add(generate19Doors(value, doorMode));
-};
-   
-
+    
   const handleClickReverseNumbers = () => {
-    // 1. กรองเอาเฉพาะรายการที่ "ถูกต้อง" และ "ถูกเลือก" (เหมือนเดิม)
     const validSelectedBets = bets.filter(bet => bet.isValid && bet.selected);
-
-    // 2. สร้างลิสต์ของเลขกลับทั้งหมด (เหมือนเดิม)
     const newReversedValues: string[] = [];
     validSelectedBets.forEach(bet => {
         const num = bet.value;
@@ -647,52 +584,114 @@ const handleAddBillEntry = async () => {
         }
     });
 
-    // ✨ [แก้ไข] ลบ Logic การกรองเลขปิดออกทั้งหมด ✨
     const existingBetsSet = new Set(bets.map(b => b.value));
     
-    // กรองเอาเฉพาะเลขที่ยังไม่มีในรายการเท่านั้น (แต่ไม่กรองเลขปิดแล้ว)
-    const finalBetsToAdd = [...new Set(newReversedValues)] // ใช้ Set เพื่อกรองค่าซ้ำกันเองก่อน
-                           .filter(num => !existingBetsSet.has(num)); 
- 
+    const finalBetsToAdd = [...new Set(newReversedValues)]
+        .filter(num => !existingBetsSet.has(num)); 
+
     if (finalBetsToAdd.length > 0) {
         const newBetsToAddObjects = finalBetsToAdd.map(value => ({ value, selected: true, isValid: true }));
         setBets(prevBets => [...prevBets, ...newBetsToAddObjects]);
     }
-};
-
-  // const handleAddDoubleAndTripleNumber = (mode: string) => {
-  //   const numbles = getNumble(mode);
-  //   if (!specialNumbers?.closed_numbers || specialNumbers.closed_numbers.length === 0) {
-  //     const newBets: BetNumber[] = numbles.map(value => ({ value, selected: true, isValid: true }));
-  //     setBets(prevBets => [...prevBets, ...newBets]);
-  //     return;
-  //   }
-  //   const closedNumbers = specialNumbers.closed_numbers;
-  //   const allowedBets = numbles.filter(num => !closedNumbers.includes(num));
-  //   const blockedBets = numbles.filter(num => closedNumbers.includes(num));
-  //   if (blockedBets.length > 0) {
-  //     alert(`เลขปิดรับ: ${blockedBets.join(', ')}`, "ถูกตัดออกจากรายการ", "light");
-  //   }
-  //   if (allowedBets.length > 0) {
-  //     const newBets: BetNumber[] = allowedBets.map(value => ({ value, selected: true, isValid: true }));
-  //     setBets(prevBets => [...prevBets, ...newBets]);
-  //   }
-  // };
+  };
 
   const handleAddDoubleAndTripleNumber = (mode: string) => {
     const numbles = getNumble(mode);
     const existingBetsSet = new Set(bets.map(b => b.value));
- 
+
     const allowedBets = numbles.filter(num => !existingBetsSet.has(num));
 
     if (allowedBets.length > 0) {
         const newBets: BetNumber[] = allowedBets.map(value => ({ value, selected: true, isValid: true }));
         setBets(prevBets => [...prevBets, ...newBets]);
     }
-};
+  };
+  
+  const fetchLimitAndSpentSummary = useCallback(async () => {
+    if (!user || !lottoId) return;
+    try {
+      const response = await api.get<RawLimitSummary>(`/api/round-limit-summary/${lottoId}/user/${user.id}`);
+      setRawLimitData(response.data);
+    } catch (error) {
+      console.error("Error fetching limit summary:", error);
+      setRawLimitData(null);
+    }
+  }, [lottoId, user]);
+
+  useEffect(() => {
+      fetchLimitAndSpentSummary(); 
+      const limitInterval = setInterval(() => {
+          fetchLimitAndSpentSummary();
+      }, 3000);
+      return () => clearInterval(limitInterval);
+  }, [fetchLimitAndSpentSummary]);
+  
+  const limitSummary = useMemo(() => {
+    if (!rawLimitData) return null;
+
+    const { defaultLimits, specificLimits, rangeLimits, spentSummary } = rawLimitData;
+
+    const spentMap: { [key: string]: number } = spentSummary.reduce((acc: any, item: any) => {
+      acc[item.bet_number] = parseFloat(item.total_spent);
+      return acc;
+    }, {});
+
+    const summary: LimitSummary = {};
+
+    const allRelevantNumbers = new Set([
+      ...specificLimits.map((l: any) => l.bet_number),
+      ...Object.keys(spentMap)
+    ]);
+
+    allRelevantNumbers.forEach(num => {
+      let limit: number | null = null;
+      const specificLimit = specificLimits.find((l: any) => l.bet_number === num);
+      
+      if (specificLimit) {
+        limit = parseFloat(specificLimit.max_amount);
+      } else {
+        const matchingRange = rangeLimits.find((r: any) => {
+          const numInt = parseInt(num, 10);
+          return num.length === r.range_start.length && numInt >= parseInt(r.range_start, 10) && numInt <= parseInt(r.range_end, 10);
+        });
+        if (matchingRange) {
+          limit = parseFloat(matchingRange.max_amount);
+        } else {
+          if (num.length <= 2 && defaultLimits.limit_2d_amount) {
+            limit = parseFloat(defaultLimits.limit_2d_amount);
+          } else if (num.length >= 3 && defaultLimits.limit_3d_amount) {
+            limit = parseFloat(defaultLimits.limit_3d_amount);
+          }
+        }
+      }
+      summary[num] = { totalSpent: spentMap[num] || 0, limit: limit };
+    });
+    return summary;
+  }, [rawLimitData]);
+
+  const isBillOverLimit = useMemo(() => {
+    if (!limitSummary || bill.length === 0) {
+      return false;
+    }
+    const pendingAmounts = new Map<string, number>();
+    bill.forEach(entry => {
+      const pricePerBet = entry.priceTop + entry.priceTote + entry.priceBottom;
+      entry.bets.forEach(betNumber => {
+        pendingAmounts.set(betNumber, (pendingAmounts.get(betNumber) || 0) + pricePerBet);
+      });
+    });
+    for (const [betNumber, pendingAmount] of pendingAmounts.entries()) {
+      const summary = limitSummary[betNumber];
+      if (summary && summary.limit !== null) {
+        if (summary.totalSpent + pendingAmount > summary.limit) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }, [bill, limitSummary]);
 
 
-  // --- UI Rendering ---
   if (isLoading) return <FullScreenLoader isLoading={isLoading} />;
   if (error)
     return (
@@ -821,10 +820,10 @@ const handleAddBillEntry = async () => {
                 className={`
                   font-semibold px-4 py-2 rounded-lg shadow animate-pop-in
                   ${!bet.isValid 
-                    ? 'bg-red-500 text-white cursor-not-allowed' // <-- ถ้าไม่ valid จะใช้ class นี้ (สีแดง)
+                    ? 'bg-red-500 text-white cursor-not-allowed'
                     : bet.selected 
-                      ? 'bg-yellow-300 text-black'                // <-- ถ้า valid และ selected (สีเหลือง)
-                      : 'bg-gray-300 text-gray-500 line-through'  // <-- ถ้า valid แต่ไม่ selected (สีเทา)
+                      ? 'bg-yellow-300 text-black'
+                      : 'bg-gray-300 text-gray-500 line-through'
                   }
                 `}
               >
@@ -846,7 +845,6 @@ const handleAddBillEntry = async () => {
         )}
 
         <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-x-4 gap-y-2 mb-4">
-
           <div className="col-span-2 sm:contents">
             <label htmlFor="numberInput" className="sm:inline-block sm:mr-2 text-lg">ใส่เลข</label>
             <input
@@ -926,6 +924,7 @@ const handleAddBillEntry = async () => {
                 onRemove={handleRemoveEntry}
                 onEdit={handleEditEntry}
                 specialNumbers={specialNumbers}
+                limitSummary={limitSummary}
               />
             ))}
           </div>
@@ -962,26 +961,23 @@ const handleAddBillEntry = async () => {
           </button>
           <button
             className={`px-6 py-2 rounded-md font-semibold transition-colors ${
-              isBillInvalid 
-                ? 'bg-red-500 text-white cursor-not-allowed' 
+              (isBillInvalid || isBillOverLimit) 
+                ? 'bg-gray-400 text-white cursor-not-allowed' 
                 : 'bg-blue-500 text-white hover:bg-blue-600'
             }`}
             onClick={handleSaveBill}
-            disabled={isBillInvalid}
+            disabled={isBillInvalid || isBillOverLimit}
           >
-            {isBillInvalid ? 'ไม่สามารถบันทึก (เลขปิดทั้งหมด)' : 'บันทึกบิล'}
+            {isBillInvalid ? 'ไม่สามารถบันทึก (เลขปิด)' : isBillOverLimit ? 'ไม่สามารถบันทึก (เกินวงเงิน)' : 'บันทึกบิล'}
           </button>
         </div>
       </div>
 
-      {/* --- NEW: Result Display Area --- */}
-      {/* 1. Green Success Box */}
       {billToPrint && (
         <div className="bg-green-100 border-l-4 border-green-500 text-green-800 p-4 mt-6 rounded-lg shadow-md animate-fade-in">
           <h3 className="font-bold text-lg">บันทึกบิลสำเร็จ!</h3>
           <p>เลขที่บิล: <span className="font-mono">{billToPrint.billRef}</span></p>
           <div className="flex flex-wrap gap-4 mt-4">
-            
             <button
               onClick={() => setIsModalVisible(true)}
               disabled={!receiptImageUrl}
@@ -990,7 +986,6 @@ const handleAddBillEntry = async () => {
               <EyeIcon className="h-5 w-5"/>
               {receiptImageUrl ? 'ดูบิล' : 'กำลังสร้าง...'}
             </button>
-
             <button
               onClick={handlePrint}
               className="px-4 py-2 bg-blue-500 text-white rounded-md font-semibold hover:bg-blue-600 flex items-center gap-2"
@@ -998,7 +993,6 @@ const handleAddBillEntry = async () => {
               <PrinterIcon className="h-5 w-5"/>
               พิมพ์
             </button>
-
             <button
               onClick={handleSaveAsImage}
               className="px-4 py-2 bg-gray-600 text-white rounded-md font-semibold hover:bg-gray-700 flex items-center gap-2"
@@ -1006,107 +1000,82 @@ const handleAddBillEntry = async () => {
               <DownloadIcon className="h-5 w-5"/>
               บันทึกรูป
             </button>
-
-            {/* <button
-              onClick={() => setBillToPrint(null)}
-              className="px-4 py-2 bg-red-500 text-white rounded-md font-semibold hover:bg-red-600"
-            >
-              ปิด
-            </button> */}
           </div>
         </div>
-       )}
+      )}
 
-      {/* 2. Receipt Preview Modal */}
       {isModalVisible && (
-    <div className="fixed inset-0 bg-black bg-opacity-75 flex justify-center items-center z-50 animate-fade-in h-screen">
-        <div className="p-4 w-full h-full flex justify-center items-center">
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex justify-center items-center z-50 animate-fade-in h-screen">
+          <div className="p-4 w-full h-full flex justify-center items-center">
             <div className="bg-white rounded-lg shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col relative">
-                
-                {/* --- ส่วนปุ่มควบคุม (เหมือนเดิม) --- */}
-                <div className="absolute top-2 right-2 flex gap-2 z-20">
-                    <button 
-                        onClick={handlePrint} 
-                        className="p-2 bg-gray-200 rounded-full hover:bg-blue-200 transition-colors" 
-                        title="พิมพ์"
-                    >
-                        <PrinterIcon className="h-6 w-6 text-blue-600" />
-                    </button>
-                    <button 
-                        onClick={handleSaveAsImage} 
-                        className="p-2 bg-gray-200 rounded-full hover:bg-green-200 transition-colors" 
-                        title="บันทึกรูปภาพ"
-                    >
-                        <DownloadIcon className="h-6 w-6 text-green-600" />
-                    </button>
-                    <button 
-                        onClick={() => setIsModalVisible(false)} 
-                        className="p-2 bg-gray-200 rounded-full hover:bg-red-200 transition-colors" 
-                        title="ปิดหน้าต่างนี้"
-                    >
-                        <XIcon className="h-6 w-6 text-red-600" />
-                    </button>
-                </div>
-                
-                {/* 🔥🔥 จุดที่แก้ไข: เพิ่มเงื่อนไขแสดงผล Loading / Image 🔥🔥 */}
-                <div className="overflow-y-auto p-4 pt-12">
-                    {receiptImageUrl ? (
-                        // 1. ถ้ารูปภาพพร้อมแล้ว: แสดงรูป
-                        <img src={receiptImageUrl} alt="ใบเสร็จ" className="w-full" />
-                    ) : (
-                        // 2. ถ้ารูปภาพยังไม่พร้อม: แสดงตัว Loading
-                        <div className="flex flex-col justify-center items-center h-48 text-center">
-                            <svg className="animate-spin h-8 w-8 text-gray-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            <p className="text-gray-600 font-semibold">กำลังสร้างรูปภาพใบเสร็จ...</p>
-                            <p className="text-sm text-gray-500 mt-1">กรุณารอสักครู่</p>
-                        </div>
-                    )}
-                </div>
-
+              <div className="absolute top-2 right-2 flex gap-2 z-20">
+                <button 
+                  onClick={handlePrint} 
+                  className="p-2 bg-gray-200 rounded-full hover:bg-blue-200 transition-colors" 
+                  title="พิมพ์"
+                >
+                  <PrinterIcon className="h-6 w-6 text-blue-600" />
+                </button>
+                <button 
+                  onClick={handleSaveAsImage} 
+                  className="p-2 bg-gray-200 rounded-full hover:bg-green-200 transition-colors" 
+                  title="บันทึกรูปภาพ"
+                >
+                  <DownloadIcon className="h-6 w-6 text-green-600" />
+                </button>
+                <button 
+                  onClick={() => setIsModalVisible(false)} 
+                  className="p-2 bg-gray-200 rounded-full hover:bg-red-200 transition-colors" 
+                  title="ปิดหน้าต่างนี้"
+                >
+                  <XIcon className="h-6 w-6 text-red-600" />
+                </button>
+              </div>
+              
+              <div className="overflow-y-auto p-4 pt-12">
+                {receiptImageUrl ? (
+                  <img src={receiptImageUrl} alt="ใบเสร็จ" className="w-full" />
+                ) : (
+                  <div className="flex flex-col justify-center items-center h-48 text-center">
+                    <svg className="animate-spin h-8 w-8 text-gray-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <p className="text-gray-600 font-semibold">กำลังสร้างรูปภาพใบเสร็จ...</p>
+                    <p className="text-sm text-gray-500 mt-1">กรุณารอสักครู่</p>
+                  </div>
+                )}
+              </div>
             </div>
-        </div>
-    </div>
-)}
-
-      {/* Other Cards */}
-      <div className="flex flex-col lg:flex-row gap-6">
-  
-          {/* Card 1: ความกว้างคงที่ */}
-          <RateDisplayCard details={lottoTypeDetails} />
-          
-          {/* Card 2: ความกว้างคงที่ */}
-          <SpecialNumbersCard
-            lottoId={lottoId}
-            specialNumbers={specialNumbers}
-            onUpdate={fetchSpecialNumbersOnly}
-          />
-          
-          {/* Card 3: ยืดเต็มพื้นที่ที่เหลือ */}
-          <div className="w-full">
-            {user && lottoId && (
-              <LimitAndSpentSummaryCard
-                lottoRoundId={lottoId}
-                userId={user.id}
-                currentBill={bill} 
-                refreshKey={refreshKey}
-              />
-            )}
           </div>
-
         </div>
+      )}
 
-        {/* Hidden component for printing (วางไว้ข้างนอกเหมือนเดิม) */}
-        <div style={{ position: "absolute", top: "-9999px", left: "-9999px" }}>
-          <PrintableReceipt 
-            ref={receiptRef} 
-            bill={billToPrint}
-            lottoTypeDetails={lottoTypeDetails}
-            specialNumbers={specialNumbers}
-          />
-        </div> 
+      <div className="flex flex-col lg:flex-row gap-6">
+        <RateDisplayCard details={lottoTypeDetails} />
+        <SpecialNumbersCard
+          lottoId={lottoId}
+          specialNumbers={specialNumbers}
+          onUpdate={fetchSpecialNumbersOnly}
+        />
+        <div className="w-full">
+          {user && lottoId && (
+            <LimitAndSpentSummaryCard
+              summaryData={rawLimitData}
+              currentBill={bill}
+            />
+          )}
+        </div>
+      </div>
+
+      <div style={{ position: "absolute", top: "-9999px", left: "-9999px" }}>
+        <PrintableReceipt 
+          ref={receiptRef} 
+          bill={billToPrint}
+          lottoTypeDetails={lottoTypeDetails}
+          specialNumbers={specialNumbers}
+        />
+      </div> 
     </div>
   );
 };

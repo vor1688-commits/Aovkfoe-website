@@ -28,3 +28,8 @@ CREATE INDEX IF NOT EXISTS idx_lotto_round_range_limits_round_id
     ON public.lotto_round_range_limits USING btree
     (lotto_round_id ASC NULLS LAST)
     TABLESPACE pg_default;
+
+
+
+ALTER TABLE public.lotto_round_range_limits
+ADD COLUMN number_limit_types VARCHAR(20) NOT NULL DEFAULT 'ทั้งหมด';

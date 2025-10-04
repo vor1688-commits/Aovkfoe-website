@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import api from '../api/axiosConfig';
+// --- [จุดที่แก้ไข] --- api ไม่ได้ถูกใช้งานแล้ว สามารถลบออกได้
+// import api from '../api/axiosConfig';
 
 // --- Interfaces ---
-// 1. เพิ่ม Interface สำหรับ BillEntry ที่รับมาจาก Prop
 interface BillEntry {
   bets: string[];
   priceTop: number;
@@ -10,18 +10,18 @@ interface BillEntry {
   priceBottom: number;
 }
 
-interface LimitAndSpentSummaryCardProps {
-  lottoRoundId: string;
-  userId: number;
-  currentBill: BillEntry[]; 
-  refreshKey: number;
-}
-
-interface LimitSummary {
+// --- [จุดที่แก้ไข] --- Interface ที่จะรับข้อมูลเข้ามาทาง Props
+interface SummaryData {
   defaultLimits: { limit_2d_amount?: string | null; limit_3d_amount?: string | null; };
   specificLimits: { bet_number: string; max_amount: string; }[];
   rangeLimits: { range_start: string; range_end: string; max_amount: string; }[];
   spentSummary: { bet_number: string; total_spent: string; }[];
+}
+
+// --- [จุดที่แก้ไข] --- อัปเดต Props ของ Component
+interface LimitAndSpentSummaryCardProps {
+  currentBill: BillEntry[]; 
+  summaryData: SummaryData | null; // รับข้อมูลสรุปที่ดึงมาแล้ว
 }
 
 interface CalculatedRow {
@@ -30,35 +30,17 @@ interface CalculatedRow {
   limit: number | null;
   remaining: number | null;
 }
- 
 
 // --- Main Component ---
-// 2. รับ currentBill เข้ามาใน Component
-const LimitAndSpentSummaryCard: React.FC<LimitAndSpentSummaryCardProps> = ({ lottoRoundId, userId, currentBill, refreshKey }) => {
-  const [limitSummary, setLimitSummary] = useState<LimitSummary | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+const LimitAndSpentSummaryCard: React.FC<LimitAndSpentSummaryCardProps> = ({ currentBill, summaryData }) => {
+  // --- [จุดที่แก้ไข] --- State สำหรับการค้นหาเลขยังคงอยู่ แต่ State ที่เกี่ยวกับการดึงข้อมูลถูกลบออก
   const [numberToCheck, setNumberToCheck] = useState<string>('');
   
-  // Data Fetching (ยังทำงานเหมือนเดิม)
-  useEffect(() => {
-    const fetchLimitData = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const response = await api.get(`/api/round-limit-summary/${lottoRoundId}/user/${userId}`);
-        setLimitSummary(response.data);
-      } catch (err: any) {
-        setError(err.message);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    if (lottoRoundId && userId) fetchLimitData();
-  }, [lottoRoundId, userId, refreshKey]);
+  // --- [จุดที่แก้ไข] --- ลบ useEffect ที่ใช้ในการดึงข้อมูลทั้งหมดออก ---
+  // Data Fetching logic has been moved to the parent component (LottoFormPage.tsx)
 
-  // Reusable Calculation Logic (ปรับปรุงเล็กน้อย)
-  const calculateLimitForRow = (betNumber: string, summary: LimitSummary): Omit<CalculatedRow, 'spent' | 'remaining'> => {
+  // Reusable Calculation Logic (ยังทำงานเหมือนเดิม)
+  const calculateLimitForRow = (betNumber: string, summary: SummaryData): Omit<CalculatedRow, 'spent' | 'remaining'> => {
     let limitAmount: number | null = null;
     const numInt = parseInt(betNumber, 10);
     const specificLimit = summary.specificLimits.find(l => l.bet_number === betNumber);
@@ -79,11 +61,10 @@ const LimitAndSpentSummaryCard: React.FC<LimitAndSpentSummaryCardProps> = ({ lot
     return { betNumber, limit: limitAmount };
   };
 
-  // --- 3. ปรับปรุง Logic การคำนวณทั้งหมดให้รวมยอดจาก currentBill ---
+  // --- [จุดที่แก้ไข] --- ปรับปรุง useMemo ให้ทำงานกับ props 'summaryData' แทน state
   const { checkedResult, summaryRows } = useMemo(() => {
-    if (!limitSummary) return { checkedResult: null, summaryRows: [] };
+    if (!summaryData) return { checkedResult: null, summaryRows: [] };
 
-    // Step 1: คำนวณยอดซื้อที่ค้างอยู่ในตะกร้า (currentBill)
     const spentInCurrentBill = new Map<string, number>();
     currentBill.forEach(entry => {
       const pricePerNumber = entry.priceTop + entry.priceTote + entry.priceBottom;
@@ -92,15 +73,14 @@ const LimitAndSpentSummaryCard: React.FC<LimitAndSpentSummaryCardProps> = ({ lot
       });
     });
 
-    // Step 2: สร้างรายการสรุปทั้งหมด (รวมยอดจาก DB และยอดในตะกร้า)
     const allNumbers = new Set([
-      ...limitSummary.spentSummary.map(s => s.bet_number),
+      ...summaryData.spentSummary.map(s => s.bet_number),
       ...Array.from(spentInCurrentBill.keys())
     ]);
     
     let allRows: CalculatedRow[] = Array.from(allNumbers).map(betNumber => {
-      const { limit } = calculateLimitForRow(betNumber, limitSummary);
-      const spentInDb = parseFloat(limitSummary.spentSummary.find(s => s.bet_number === betNumber)?.total_spent || '0');
+      const { limit } = calculateLimitForRow(betNumber, summaryData);
+      const spentInDb = parseFloat(summaryData.spentSummary.find(s => s.bet_number === betNumber)?.total_spent || '0');
       const spentNow = spentInCurrentBill.get(betNumber) || 0;
       const totalSpent = spentInDb + spentNow;
       const remaining = limit !== null ? limit - totalSpent : null;
@@ -108,29 +88,40 @@ const LimitAndSpentSummaryCard: React.FC<LimitAndSpentSummaryCardProps> = ({ lot
       return { betNumber, spent: totalSpent, limit, remaining };
     });
 
-    // Step 3: เรียงข้อมูลจากน้อยไปมาก
-    allRows.sort((a, b) => parseInt(a.betNumber, 10) - parseInt(b.betNumber, 10));
+    allRows.sort((a, b) => {
+      const limitA = a.limit ?? Infinity;
+      const limitB = b.limit ?? Infinity;
+      const remainingA = a.remaining ?? Infinity;
+      const remainingB = b.remaining ?? Infinity;
 
-    // Step 4: หาผลลัพธ์สำหรับเลขที่กำลังตรวจสอบ
+      // ถ้าตัวเลขใดตัวหนึ่งเต็มวงเงิน ให้นำมาไว้ข้างบน
+      if (remainingA <= 0 && remainingB > 0) return -1;
+      if (remainingB <= 0 && remainingA > 0) return 1;
+      
+      // เรียงตามยอดคงเหลือน้อยไปมาก
+      if (remainingA !== remainingB) return remainingA - remainingB;
+      
+      // ถ้าเท่ากัน ให้เรียงตามยอดซื้อมากไปน้อย
+      return b.spent - a.spent;
+    });
+
     let finalCheckedResult: CalculatedRow | null = null;
     if (numberToCheck) {
         const foundRow = allRows.find(r => r.betNumber === numberToCheck);
         if (foundRow) {
             finalCheckedResult = foundRow;
         } else {
-            // ถ้าเลขที่ค้นหายังไม่เคยซื้อเลย ให้คำนวณใหม่โดยมียอดซื้อเป็น 0
-            const { limit } = calculateLimitForRow(numberToCheck, limitSummary);
+            const { limit } = calculateLimitForRow(numberToCheck, summaryData);
             finalCheckedResult = { betNumber: numberToCheck, spent: 0, limit, remaining: limit };
         }
     }
     
     return { checkedResult: finalCheckedResult, summaryRows: allRows };
 
-  }, [limitSummary, currentBill, numberToCheck]); // เพิ่ม currentBill และ numberToCheck ใน dependency
+  }, [summaryData, currentBill, numberToCheck]);
 
 
   // --- UI Rendering ---
-  // (ส่วน render ทั้งหมดเหมือนเดิม ไม่ต้องแก้ไข)
   const renderCheckedResult = (result: CalculatedRow | null) => {
     if (!result) return null;
     const { spent, limit, remaining } = result;
@@ -144,10 +135,12 @@ const LimitAndSpentSummaryCard: React.FC<LimitAndSpentSummaryCardProps> = ({ lot
       </div>
     );
   };
+
   const renderSummaryList = () => {
-    if (isLoading) return <div className="text-center text-gray-400 p-4">กำลังโหลดข้อมูล...</div>;
-    if (error) return <div className="text-center text-red-400 p-4">{error}</div>;
+    // --- [จุดที่แก้ไข] --- เปลี่ยนเงื่อนไขการโหลดข้อมูล
+    if (summaryData === null) return <div className="text-center text-gray-400 p-4">กำลังโหลดข้อมูล...</div>;
     if (summaryRows.length === 0) return <div className="text-center text-gray-500 p-4">ยังไม่มีรายการซื้อในงวดนี้</div>;
+
     return (
       <div className="space-y-1">
         {summaryRows.map((row) => (
