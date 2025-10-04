@@ -255,26 +255,25 @@ app.get('/api/round-limit-summary/:lottoRoundId/user/:userId', (req, res) => __a
     try {
         const roundLimitsResult = yield client.query('SELECT limit_2d_amount, limit_3d_amount FROM lotto_rounds WHERE id = $1', [lottoRoundId]);
         const specificLimitsResult = yield client.query('SELECT bet_number, max_amount FROM lotto_round_number_limits WHERE lotto_round_id = $1', [lottoRoundId]);
-        const rangeLimitsResult = yield client.query('SELECT range_start, range_end, max_amount FROM lotto_round_range_limits WHERE lotto_round_id = $1', [lottoRoundId]);
-        // --- ✨ [จุดที่แก้ไข] ---
-        // คำนวณยอดซื้อรวมของ "ทุกคน" โดยการลบ user_id ออก
+        const rangeLimitsResult = yield client.query('SELECT range_start, range_end, max_amount, number_limit_types FROM lotto_round_range_limits WHERE lotto_round_id = $1', [lottoRoundId]);
+        // +++ [จุดที่แก้ไข] แก้ไข SQL Query ให้ GROUP BY เพิ่ม bet_style +++
         const totalSpentResult = yield client.query(`SELECT 
-             bi.bet_number, 
-             SUM(
-               CASE
-                 WHEN b.status = 'รอผล' THEN bi.price
-                 WHEN b.status IN ('ยืนยันแล้ว', 'ยกเลิก') AND (bi.status IS NULL OR bi.status = 'ยืนยัน') THEN bi.price
-                 ELSE 0
-               END
-             ) as total_spent
-           FROM bet_items bi
-           JOIN bill_entries be ON bi.bill_entry_id = be.id
-           JOIN bills b ON be.bill_id = b.id
-           WHERE b.lotto_round_id = $1
-             AND b.status IN ('รอผล', 'ยืนยันแล้ว', 'ยกเลิก')
-           GROUP BY bi.bet_number`, [lottoRoundId] // <-- เอา userId ออกจาก parameters
-        );
-        // --- สิ้นสุดการแก้ไข ---
+            bi.bet_number,
+            bi.bet_style, 
+            SUM(
+              CASE
+                WHEN b.status = 'รอผล' THEN bi.price
+                WHEN b.status IN ('ยืนยันแล้ว', 'ยกเลิก') AND (bi.status IS NULL OR bi.status = 'ยืนยัน') THEN bi.price
+                ELSE 0
+              END
+            ) as total_spent
+          FROM bet_items bi
+          JOIN bill_entries be ON bi.bill_entry_id = be.id
+          JOIN bills b ON be.bill_id = b.id
+          WHERE b.lotto_round_id = $1
+            AND b.status IN ('รอผล', 'ยืนยันแล้ว', 'ยกเลิก')
+          GROUP BY bi.bet_number, bi.bet_style`, // <-- เพิ่ม bi.bet_style ที่นี่
+        [lottoRoundId]);
         res.json({
             defaultLimits: roundLimitsResult.rows[0] || {},
             specificLimits: specificLimitsResult.rows,

@@ -22,7 +22,7 @@ import { useModal } from "../components/Modal";
 import LimitAndSpentSummaryCard from "../components/LimitAndSpentSummaryCard";
 import api from "../api/axiosConfig";
 
-// Interfaces
+// --- Interfaces ---
 interface BetNumber {
   value: string;
   selected: boolean;
@@ -68,20 +68,14 @@ interface SpecialNumbers {
   closed_numbers: string[];
   half_pay_numbers: string[];
 }
-// Interface สำหรับข้อมูลที่ประมวลผลแล้ว (สำหรับ CardBillForBets)
-interface LimitSummary {
-  [betNumber: string]: {
-    totalSpent: number;
-    limit: number | null;
-  };
-}
-// Interface สำหรับข้อมูลดิบจาก API ให้ตรงกับที่ Child Component ต้องการ
+// Interface for the raw API response data for limits
 interface RawLimitSummary {
   defaultLimits: { limit_2d_amount?: string | null; limit_3d_amount?: string | null; };
   specificLimits: { bet_number: string; max_amount: string; }[];
-  rangeLimits: { range_start: string; range_end: string; max_amount: string; }[];
-  spentSummary: { bet_number: string; total_spent: string; }[];
+  rangeLimits: { range_start: string; range_end: string; max_amount: string; number_limit_types: string; }[];
+  spentSummary: { bet_number: string; bet_style: string; total_spent: string; }[];
 }
+
 
 const LottoFormPage = () => {
   const { user } = useAuth();
@@ -122,6 +116,12 @@ const LottoFormPage = () => {
   const [isBillInvalid, setIsBillInvalid] = useState(false);
   
   const [rawLimitData, setRawLimitData] = useState<RawLimitSummary | null>(null);
+
+  const isThreeDigitMode = subTab === "3d" || subTab === "6d";
+  const showThreeBottomInput =
+    isThreeDigitMode &&
+    lottoTypeDetails &&
+    Number(lottoTypeDetails.rate_3_bottom) > 0;
 
   const generateReceiptImage = useCallback(async () => {
     if (!receiptRef.current) {
@@ -244,14 +244,10 @@ const LottoFormPage = () => {
     }
   }, [lottoId, fetchSpecialNumbersOnly]);
   
+  useEffect(() => { loadInitialData(); }, [loadInitialData]);
+  
   useEffect(() => {
-    loadInitialData();
-  }, [loadInitialData]);
-
-  useEffect(() => {
-    const intervalId = setInterval(() => {
-      fetchSpecialNumbersOnly();
-    }, 5000); 
+    const intervalId = setInterval(() => { fetchSpecialNumbersOnly(); }, 5000); 
     return () => clearInterval(intervalId);
   }, [fetchSpecialNumbersOnly]);
 
@@ -277,28 +273,16 @@ const LottoFormPage = () => {
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
+    return () => { document.removeEventListener('visibilitychange', handleVisibilityChange); };
   }, [loadInitialData]);
 
   useEffect(() => {
     const closedNumbers = specialNumbers?.closed_numbers || [];
-    const halfPayNumbers = specialNumbers?.half_pay_numbers || [];
     
     const newTotal = bill.reduce((sum, entry) => {
         const pricePerBet = (entry.priceTop || 0) + (entry.priceTote || 0) + (entry.priceBottom || 0);
         const validBetsInEntry = entry.bets.filter(bet => !closedNumbers.includes(bet));
-        let entryTotal = 0;
-        
-        validBetsInEntry.forEach(bet => {
-            if (halfPayNumbers.includes(bet)) {
-                entryTotal += pricePerBet / 2;
-            } else {
-                entryTotal += pricePerBet;
-            }
-        });
-        
+        const entryTotal = validBetsInEntry.length * pricePerBet;
         return sum + entryTotal;
     }, 0);
     
@@ -316,10 +300,7 @@ const LottoFormPage = () => {
     }
   }, [bill, specialNumbers]);
 
-  const handlePrint = useReactToPrint({
-    content: () => receiptRef.current,
-    documentTitle: `bill-${billToPrint?.billRef}`,
-  });
+  const handlePrint = useReactToPrint({ content: () => receiptRef.current, documentTitle: `bill-${billToPrint?.billRef}` });
 
   const handleSaveAsImage = useCallback(() => {
     generateReceiptImage()
@@ -336,7 +317,11 @@ const LottoFormPage = () => {
   }, [billToPrint, generateReceiptImage, alert]);
 
   const handleSaveBill = async () => {
-    if (bill.length === 0 || !roundDetails) {
+    if (!roundDetails) {
+        alert("ข้อมูลยังไม่พร้อม", "กรุณารอสักครู่แล้วลองอีกครั้ง", 'light');
+        return;
+    }
+    if (bill.length === 0) {
       alert("กรุณาเพิ่มรายการในบิลก่อนบันทึก", "", 'light');
       return;
     }
@@ -393,9 +378,9 @@ const LottoFormPage = () => {
         setBillToPrint(null);
     }
   };
-
-  // +++ [จุดที่แก้ไข] อัปเดตฟังก์ชันนี้ให้ส่ง Payload รูปแบบใหม่ +++
-  const handleAddBillEntry = async () => { 
+  
+  // +++ [จุดที่แก้ไข] ปรับปรุงฟังก์ชันนี้ให้ส่ง Payload ที่ถูกต้อง +++
+  const handleAddBillEntry = async () => {
     if (!user) {
         alert("ไม่พบข้อมูลผู้ใช้", "กรุณาล็อกอินใหม่อีกครั้ง", 'light');
         return;
@@ -415,43 +400,43 @@ const LottoFormPage = () => {
     }
     setLoadingAddBills(true);
 
-    // สร้าง Payload รูปแบบใหม่ที่ Backend ต้องการ
+    // สร้าง Payload รูปแบบใหม่สำหรับรายการที่กำลังจะเพิ่ม
     const betsForApi = selectedValidBets.map(betNumber => ({
         betNumber,
         priceTop: numPriceTop,
         priceBottom: numPriceBottom,
         priceTote: numPriceTote,
     }));
-    
+
     try {
-        // ส่ง Payload ใหม่ไปให้ API
-        await api.post(`/api/batch-check-bet-limits`, {
+        // ส่ง Payload ใหม่ไปให้ API รวมถึง `bill` ปัจจุบันเป็น `pendingBets`
+        await api.post('/api/batch-check-bet-limits', {
             userId: user.id,
             lottoRoundId: Number(lottoId),
-            bets: betsForApi // <-- ใช้ Payload ใหม่
+            bets: betsForApi,
+            pendingBets: bill, // <-- ส่งรายการที่ค้างในบิล (ตะกร้า) ไปด้วย
         });
 
-        // หาก API ไม่ส่ง Error กลับมา (ผ่านการตรวจสอบ) ให้เพิ่มรายการลง Bill
         const pricePerNumberFromForm = numPriceTop + numPriceTote + numPriceBottom;
         const entryTotal = selectedValidBets.length * pricePerNumberFromForm;
         setBill((prev) => [
-          ...prev,
-          {
-            bets: selectedValidBets,
-            betTypes: subTab,
-            bahtPer: 0,
-            priceTop: numPriceTop,
-            priceTote: numPriceTote,
-            priceBottom: numPriceBottom,
-            total: entryTotal,
-            addBy: user.username,
-          },
+            ...prev,
+            {
+                bets: selectedValidBets,
+                betTypes: subTab,
+                bahtPer: 0,
+                priceTop: numPriceTop,
+                priceTote: numPriceTote,
+                priceBottom: numPriceBottom,
+                total: entryTotal,
+                addBy: user.username,
+            },
         ]);
         handleClearInputs();
     } catch (err: any) {
         const errorData = err.response?.data;
         if (errorData && errorData.error === 'LimitExceeded' && errorData.failedBets) {
-            const errorMessages = errorData.failedBets.map((failedBet: any) => 
+            const errorMessages = errorData.failedBets.map((failedBet: any) =>
                 `- เลข ${failedBet.betNumber}: ${failedBet.message}`
             ).join('\n');
 
@@ -594,77 +579,100 @@ const LottoFormPage = () => {
 
   useEffect(() => {
       fetchLimitAndSpentSummary(); 
-      const limitInterval = setInterval(() => {
-          fetchLimitAndSpentSummary();
-      }, 3000);
+      const limitInterval = setInterval(() => { fetchLimitAndSpentSummary(); }, 3000);
       return () => clearInterval(limitInterval);
   }, [fetchLimitAndSpentSummary]);
   
-  const limitSummary = useMemo(() => {
-    if (!rawLimitData) return null;
-
-    const { defaultLimits, specificLimits, rangeLimits, spentSummary } = rawLimitData;
-
-    const spentMap: { [key: string]: number } = spentSummary.reduce((acc: any, item: any) => {
-      acc[item.bet_number] = parseFloat(item.total_spent);
-      return acc;
-    }, {});
-
-    const summary: LimitSummary = {};
-
-    const allRelevantNumbers = new Set([
-      ...specificLimits.map((l: any) => l.bet_number),
-      ...Object.keys(spentMap)
-    ]);
-
-    allRelevantNumbers.forEach(num => {
-      let limit: number | null = null;
-      const specificLimit = specificLimits.find((l: any) => l.bet_number === num);
-      
-      if (specificLimit) {
-        limit = parseFloat(specificLimit.max_amount);
-      } else {
-        const matchingRange = rangeLimits.find((r: any) => {
-          const numInt = parseInt(num, 10);
-          return num.length === r.range_start.length && numInt >= parseInt(r.range_start, 10) && numInt <= parseInt(r.range_end, 10);
-        });
-        if (matchingRange) {
-          limit = parseFloat(matchingRange.max_amount);
-        } else {
-          if (num.length <= 2 && defaultLimits.limit_2d_amount) {
-            limit = parseFloat(defaultLimits.limit_2d_amount);
-          } else if (num.length >= 3 && defaultLimits.limit_3d_amount) {
-            limit = parseFloat(defaultLimits.limit_3d_amount);
-          }
-        }
-      }
-      summary[num] = { totalSpent: spentMap[num] || 0, limit: limit };
-    });
-    return summary;
-  }, [rawLimitData]);
-
-  const isBillOverLimit = useMemo(() => {
-    if (!limitSummary || bill.length === 0) {
-      return false;
+  // +++ [จุดที่แก้ไข] ปรับปรุง Logic การคำนวณให้แม่นยำยิ่งขึ้น +++
+  const overLimitNumbersSet = useMemo(() => {
+    const overLimitSet = new Set<string>();
+    if (!rawLimitData || bill.length === 0) {
+      return overLimitSet;
     }
-    const pendingAmounts = new Map<string, number>();
+
+    const { defaultLimits, rangeLimits, spentSummary } = rawLimitData;
+
+    // 1. สร้าง Map ยอดซื้อที่บันทึกแล้ว (จาก DB) แยกตามประเภท
+    const spentMapByType = new Map<string, { top: number, bottom: number, tote: number }>();
+    spentSummary.forEach(item => {
+        if (!spentMapByType.has(item.bet_number)) {
+            spentMapByType.set(item.bet_number, { top: 0, bottom: 0, tote: 0 });
+        }
+        const current = spentMapByType.get(item.bet_number)!;
+        if (item.bet_style === 'บน' || item.bet_style === 'ตรง') current.top += parseFloat(item.total_spent);
+        if (item.bet_style === 'ล่าง') current.bottom += parseFloat(item.total_spent);
+        if (item.bet_style === 'โต๊ด') current.tote += parseFloat(item.total_spent);
+    });
+
+    // 2. สร้าง Map ยอดซื้อที่กำลังจะซื้อ (ในตะกร้า) แยกตามประเภท
+    const pendingAmountsByType = new Map<string, { top: number, bottom: number, tote: number }>();
     bill.forEach(entry => {
-      const pricePerBet = entry.priceTop + entry.priceTote + entry.priceBottom;
-      entry.bets.forEach(betNumber => {
-        pendingAmounts.set(betNumber, (pendingAmounts.get(betNumber) || 0) + pricePerBet);
-      });
+        entry.bets.forEach(betNumber => {
+            if (!pendingAmountsByType.has(betNumber)) {
+                pendingAmountsByType.set(betNumber, { top: 0, bottom: 0, tote: 0 });
+            }
+            const current = pendingAmountsByType.get(betNumber)!;
+            current.top += entry.priceTop;
+            current.bottom += entry.priceBottom;
+            current.tote += entry.priceTote;
+        });
     });
-    for (const [betNumber, pendingAmount] of pendingAmounts.entries()) {
-      const summary = limitSummary[betNumber];
-      if (summary && summary.limit !== null) {
-        if (summary.totalSpent + pendingAmount > summary.limit) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }, [bill, limitSummary]);
 
+    // 3. วนลูปตรวจสอบแต่ละเลขในตะกร้า
+    for (const [betNumber, pendingAmount] of pendingAmountsByType.entries()) {
+        const spent = spentMapByType.get(betNumber) || { top: 0, bottom: 0, tote: 0 };
+        
+        const rules = rangeLimits.filter(r => 
+            betNumber.length === r.range_start.length &&
+            parseInt(betNumber, 10) >= parseInt(r.range_start, 10) &&
+            parseInt(betNumber, 10) <= parseInt(r.range_end, 10)
+        );
+
+        let isOverLimit = false;
+
+        const checkSpecificRule = (type: 'บน' | 'ล่าง' | 'โต๊ด' | 'ตรง', pending: number, spent: number) => {
+            const rule = rules.find(r => r.number_limit_types === type);
+            if (rule && spent + pending > parseFloat(rule.max_amount)) {
+                return true;
+            }
+            return false;
+        };
+
+        if (checkSpecificRule('บน', pendingAmount.top, spent.top)) isOverLimit = true;
+        if (!isOverLimit && checkSpecificRule('ตรง', pendingAmount.top, spent.top)) isOverLimit = true;
+        if (!isOverLimit && checkSpecificRule('ล่าง', pendingAmount.bottom, spent.bottom)) isOverLimit = true;
+        if (!isOverLimit && checkSpecificRule('โต๊ด', pendingAmount.tote, spent.tote)) isOverLimit = true;
+
+        const totalRule = rules.find(r => r.number_limit_types === 'ทั้งหมด');
+        if (!isOverLimit && totalRule) {
+            const totalSpent = spent.top + spent.bottom + spent.tote;
+            const totalPending = pendingAmount.top + pendingAmount.bottom + pendingAmount.tote;
+            if (totalSpent + totalPending > parseFloat(totalRule.max_amount)) {
+                isOverLimit = true;
+            }
+        }
+        
+        if (!isOverLimit && rules.length === 0) {
+            const defaultLimitRaw = betNumber.length <= 2 ? defaultLimits.limit_2d_amount : defaultLimits.limit_3d_amount;
+            if (defaultLimitRaw) {
+                const limit = parseFloat(defaultLimitRaw);
+                const totalSpent = spent.top + spent.bottom + spent.tote;
+                const totalPending = pendingAmount.top + pendingAmount.bottom + pendingAmount.tote;
+                if (totalSpent + totalPending > limit) {
+                    isOverLimit = true;
+                }
+            }
+        }
+
+        if (isOverLimit) {
+            overLimitSet.add(betNumber);
+        }
+    }
+
+    return overLimitSet;
+  }, [bill, rawLimitData]);
+
+  const isBillOverLimit = useMemo(() => overLimitNumbersSet.size > 0, [overLimitNumbersSet]);
 
   if (isLoading) return <FullScreenLoader isLoading={isLoading} />;
   if (error)
@@ -677,12 +685,6 @@ const LottoFormPage = () => {
     return (
       <div className="text-center p-10 text-red-500">ไม่พบข้อมูลงวดหวยนี้</div>
     );
-
-  const isThreeDigitMode = subTab === "3d" || subTab === "6d";
-  const showThreeBottomInput =
-    isThreeDigitMode &&
-    lottoTypeDetails &&
-    Number(lottoTypeDetails.rate_3_bottom) > 0;
 
   return (
     <div className="space-y-6">
@@ -898,7 +900,7 @@ const LottoFormPage = () => {
                 onRemove={handleRemoveEntry}
                 onEdit={handleEditEntry}
                 specialNumbers={specialNumbers}
-                limitSummary={limitSummary}
+                overLimitNumbersSet={overLimitNumbersSet}
               />
             ))}
           </div>
@@ -1055,3 +1057,4 @@ const LottoFormPage = () => {
 };
 
 export default LottoFormPage;
+
