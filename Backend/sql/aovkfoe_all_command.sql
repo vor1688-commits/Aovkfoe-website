@@ -310,3 +310,8 @@ BEGIN
     RETURN (SELECT string_agg(c, '' ORDER BY c) FROM unnest(string_to_array(input_text, NULL)) AS c);
 END;
 $$ LANGUAGE plpgsql IMMUTABLE;
+
+
+
+ALTER TABLE public.lotto_round_range_limits
+ADD COLUMN number_limit_types VARCHAR(20) NOT NULL DEFAULT 'ทั้งหมด';

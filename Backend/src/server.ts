@@ -706,9 +706,9 @@ app.post('/api/batch-check-bet-limits', async (req: Request, res: Response) => {
     const client = await db.connect();
 
     try {
-        // --- 1. Provjera izuzeća (ista kao i prije) ---
+        // --- 1. ตรวจสอบ Exemption (เหมือนเดิม) ---
         const userResult = await client.query('SELECT role FROM users WHERE id = $1', [userId]);
-        if (userResult.rowCount === 0) throw new Error('Korisnik nije pronađen');
+        if (userResult.rowCount === 0) throw new Error('ไม่พบผู้ใช้');
         const userRole = userResult.rows[0].role;
         const exemptionResult = await client.query('SELECT * FROM lotto_round_exemptions WHERE lotto_round_id = $1', [lottoRoundId]);
         const isExempt = exemptionResult.rows.some(ex => 
@@ -716,15 +716,14 @@ app.post('/api/batch-check-bet-limits', async (req: Request, res: Response) => {
             (ex.exemption_type === 'role' && ex.user_role === userRole)
         );
         if (isExempt) {
-            return res.status(200).json({ message: 'Sve oklade su dopuštene (korisnik je izuzet)' });
+            return res.status(200).json({ message: 'สามารถซื้อได้ทั้งหมด (ผู้ใช้ได้รับการยกเว้น)' });
         }
 
-        // --- 2. Dohvaćanje svih pravila i potrošenih iznosa odjednom (radi učinkovitosti) ---
+        // --- 2. ดึงข้อมูลกฎและยอดซื้อทั้งหมดที่เกี่ยวข้องในครั้งเดียว ---
         const betNumbersInRequest = [...new Set(bets.map((b: any) => b.betNumber))];
 
-        const [roundLimitsResult, specificLimitsResult, rangeLimitsResult, spentResult] = await Promise.all([
+        const [roundLimitsResult, rangeLimitsResult, spentResult] = await Promise.all([
             client.query('SELECT limit_2d_amount, limit_3d_amount FROM lotto_rounds WHERE id = $1', [lottoRoundId]),
-            client.query('SELECT bet_number, max_amount FROM lotto_round_number_limits WHERE lotto_round_id = $1', [lottoRoundId]), // Iako se ne koristi u novoj logici, ostavljamo ga za kompatibilnost
             client.query('SELECT range_start, range_end, max_amount, number_limit_types FROM lotto_round_range_limits WHERE lotto_round_id = $1', [lottoRoundId]),
             client.query(`
                 SELECT bet_number, bet_style, SUM(price) as total_spent
@@ -739,7 +738,6 @@ app.post('/api/batch-check-bet-limits', async (req: Request, res: Response) => {
         const roundLimits = roundLimitsResult.rows[0] || {};
         const rangeLimits = rangeLimitsResult.rows;
 
-        // Pretvaranje potrošenih iznosa u mapu za lakši pristup: spentMap['broj']['stil'] = iznos
         const spentMap: { [key: string]: { [key: string]: number } } = {};
         spentResult.rows.forEach(row => {
             if (!spentMap[row.bet_number]) {
@@ -748,7 +746,7 @@ app.post('/api/batch-check-bet-limits', async (req: Request, res: Response) => {
             spentMap[row.bet_number][row.bet_style] = parseFloat(row.total_spent);
         });
 
-        // --- 3. Glavna petlja za provjeru svake oklade ---
+        // --- 3. Loop หลักสำหรับตรวจสอบแต่ละเลข ---
         const failedBets: any[] = [];
         for (const bet of bets) {
             const { betNumber, priceTop, priceBottom, priceTote } = bet;
@@ -760,19 +758,22 @@ app.post('/api/batch-check-bet-limits', async (req: Request, res: Response) => {
             ];
 
             let isFailed = false;
-            let totalIncomingPrice = 0; // Ukupna cijena za ovu okladu (sve vrste)
-            const simulatedSpent = JSON.parse(JSON.stringify(spentMap[betNumber] || {})); // Kopija za simulaciju
+            let totalIncomingPrice = 0; 
+            const simulatedSpent = JSON.parse(JSON.stringify(spentMap[betNumber] || {}));
 
-            // --- 3a. Provjera specifičnih ograničenja (gore, dolje, ravno, tote) ---
+            // --- 3a. ตรวจสอบกฎแบบเจาะจงประเภท (บน, ล่าง, ตรง, โต๊ด) ---
             for (const item of stylesToCheck) {
-                if (isFailed) break; // Ako je već neuspješno, preskoči ostale provjere
+                if (isFailed) break; 
                 if (!item.price || item.price <= 0) continue;
                 
                 totalIncomingPrice += item.price;
                 
                 const rule = rangeLimits.find(r => 
-                    r.number_limit_types === item.style || (item.alternativeStyle && r.number_limit_types === item.alternativeStyle)
-                    && parseInt(betNumber) >= parseInt(r.range_start) && parseInt(betNumber) <= parseInt(r.range_end)
+                    (r.number_limit_types === item.style || (item.alternativeStyle && r.number_limit_types === item.alternativeStyle))
+                    // +++ [จุดที่แก้ไข 1] เพิ่มการตรวจสอบความยาวของตัวเลข +++
+                    && betNumber.length === r.range_start.length 
+                    && parseInt(betNumber, 10) >= parseInt(r.range_start, 10) 
+                    && parseInt(betNumber, 10) <= parseInt(r.range_end, 10)
                 );
 
                 if (rule) {
@@ -780,7 +781,7 @@ app.post('/api/batch-check-bet-limits', async (req: Request, res: Response) => {
                     const currentSpent = (simulatedSpent[item.style] || 0) + (item.alternativeStyle ? (simulatedSpent[item.alternativeStyle] || 0) : 0);
 
                     if (currentSpent + item.price > limit) {
-                        failedBets.push({ betNumber, message: `Ograničenje za '${item.style}' je premašeno.` });
+                        failedBets.push({ betNumber, message: `วงเงินสำหรับ '${item.style}' เต็ม` });
                         isFailed = true;
                     } else {
                         simulatedSpent[item.style] = (simulatedSpent[item.style] || 0) + item.price;
@@ -789,50 +790,58 @@ app.post('/api/batch-check-bet-limits', async (req: Request, res: Response) => {
             }
             if (isFailed) continue;
 
-            // --- 3b. Provjera ograničenja "sve" ---
+            // --- 3b. ตรวจสอบกฎ "ทั้งหมด" ---
             const totalRule = rangeLimits.find(r => 
                 r.number_limit_types === 'ทั้งหมด' 
-                && parseInt(betNumber) >= parseInt(r.range_start) && parseInt(betNumber) <= parseInt(r.range_end)
+                // +++ [จุดที่แก้ไข 2] เพิ่มการตรวจสอบความยาวของตัวเลข +++
+                && betNumber.length === r.range_start.length
+                && parseInt(betNumber, 10) >= parseInt(r.range_start, 10) 
+                && parseInt(betNumber, 10) <= parseInt(r.range_end, 10)
             );
 
             if (totalRule) {
                 const totalLimit = parseFloat(totalRule.max_amount);
-                const totalSpentInDb = Object.values(spentMap[betNumber] || {}).reduce((sum, val) => sum + val, 0);
+                const totalSpentInDb = Object.values(spentMap[betNumber] || {}).reduce((sum: number, val: any) => sum + val, 0);
                 
                 if (totalSpentInDb + totalIncomingPrice > totalLimit) {
-                    failedBets.push({ betNumber, message: `Ukupno ograničenje ('sve') je premašeno.` });
-                    continue; // idi na sljedeću okladu
+                    failedBets.push({ betNumber, message: `วงเงินรวม ('ทั้งหมด') เต็ม` });
+                    continue;
                 }
             }
 
-            // --- 3c. Provjera zadanog ograničenja (ako nema specifičnih pravila) ---
-            const hasSpecificRule = rangeLimits.some(r => parseInt(betNumber) >= parseInt(r.range_start) && parseInt(betNumber) <= parseInt(r.range_end));
+            // --- 3c. ตรวจสอบกฎเริ่มต้น (Default) ถ้าไม่มีกฎพิเศษ ---
+            const hasSpecificRule = rangeLimits.some(r => 
+                betNumber.length === r.range_start.length &&
+                parseInt(betNumber, 10) >= parseInt(r.range_start, 10) && 
+                parseInt(betNumber, 10) <= parseInt(r.range_end, 10)
+            );
+
             if (!hasSpecificRule) {
                 const defaultLimit = betNumber.length <= 2 ? roundLimits.limit_2d_amount : roundLimits.limit_3d_amount;
                 if (defaultLimit) {
                     const limit = parseFloat(defaultLimit);
-                    const totalSpentInDb = Object.values(spentMap[betNumber] || {}).reduce((sum, val) => sum + val, 0);
+                    const totalSpentInDb = Object.values(spentMap[betNumber] || {}).reduce((sum: number, val: any) => sum + val, 0);
                     if (totalSpentInDb + totalIncomingPrice > limit) {
-                        failedBets.push({ betNumber, message: `Zadano ograničenje je premašeno.` });
+                        failedBets.push({ betNumber, message: `วงเงินเริ่มต้นเต็ม` });
                     }
                 }
             }
         }
 
-        // --- 4. Slanje odgovora ---
+        // --- 4. ส่งผลลัพธ์ ---
         if (failedBets.length > 0) {
             return res.status(400).json({
                 error: 'LimitExceeded',
-                message: 'Neke oklade premašuju postavljena ograničenja.',
+                message: 'มีบางรายการเกินวงเงินที่กำหนด',
                 failedBets: failedBets
             });
         }
 
-        res.status(200).json({ message: 'Sve oklade su dopuštene' });
+        res.status(200).json({ message: 'สามารถซื้อได้ทั้งหมด' });
 
     } catch (err: any) {
-        console.error('Greška pri provjeri ograničenja oklada:', err);
-        res.status(500).json({ error: 'Sistemska greška', details: err.message });
+        console.error('เกิดข้อผิดพลาดในการตรวจสอบวงเงิน:', err);
+        res.status(500).json({ error: 'เกิดข้อผิดพลาดในระบบ', details: err.message });
     } finally {
         client.release();
     }

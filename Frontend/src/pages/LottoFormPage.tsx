@@ -121,7 +121,6 @@ const LottoFormPage = () => {
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [isBillInvalid, setIsBillInvalid] = useState(false);
   
-  // State ใหม่เพื่อเก็บข้อมูลดิบจาก API
   const [rawLimitData, setRawLimitData] = useState<RawLimitSummary | null>(null);
 
   const generateReceiptImage = useCallback(async () => {
@@ -395,6 +394,7 @@ const LottoFormPage = () => {
     }
   };
 
+  // +++ [จุดที่แก้ไข] อัปเดตฟังก์ชันนี้ให้ส่ง Payload รูปแบบใหม่ +++
   const handleAddBillEntry = async () => { 
     if (!user) {
         alert("ไม่พบข้อมูลผู้ใช้", "กรุณาล็อกอินใหม่อีกครั้ง", 'light');
@@ -405,41 +405,34 @@ const LottoFormPage = () => {
         alert("ไม่มีเลขที่ถูกเลือก", "กรุณาเลือกตัวเลขที่ถูกต้องอย่างน้อย 1 รายการ", "light");
         return;
     }
-    if (!Number(priceTop) && !Number(priceTote) && !Number(priceBottom)) {
+    const numPriceTop = Number(priceTop);
+    const numPriceBottom = Number(priceBottom);
+    const numPriceTote = Number(priceTote);
+
+    if (numPriceTop === 0 && numPriceTote === 0 && numPriceBottom === 0) {
         alert("ยังไม่ได้ใส่ราคา", "กรุณาใส่ราคาอย่างน้อย 1 ช่อง", "light");
         return;
     }
     setLoadingAddBills(true);
-    const pricePerNumberFromForm = Number(priceTop) + Number(priceTote) + Number(priceBottom);
 
-    const countsInCurrentSubmission = selectedValidBets.reduce((acc, betNumber) => {
-        acc[betNumber] = (acc[betNumber] || 0) + 1;
-        return acc;
-    }, {} as Record<string, number>);
-    const uniqueBetsToCheck = Object.keys(countsInCurrentSubmission);
-    const priceAlreadyInBill: { [key: string]: number } = {};
-    for (const betNumber of uniqueBetsToCheck) {
-        const amountInBill = bill.reduce((sum, entry) => {
-            const countInEntry = entry.bets.filter(b => b === betNumber).length;
-            return sum + (countInEntry * (entry.priceTop + entry.priceBottom + entry.priceTote));
-        }, 0);
-        priceAlreadyInBill[betNumber] = amountInBill;
-    }
-    const betsToCheck = uniqueBetsToCheck.map(betNumber => ({
+    // สร้าง Payload รูปแบบใหม่ที่ Backend ต้องการ
+    const betsForApi = selectedValidBets.map(betNumber => ({
         betNumber,
-        price: (pricePerNumberFromForm * countsInCurrentSubmission[betNumber])
+        priceTop: numPriceTop,
+        priceBottom: numPriceBottom,
+        priceTote: numPriceTote,
     }));
     
     try {
+        // ส่ง Payload ใหม่ไปให้ API
         await api.post(`/api/batch-check-bet-limits`, {
             userId: user.id,
             lottoRoundId: Number(lottoId),
-            bets: betsToCheck.map(b => ({
-                betNumber: b.betNumber,
-                price: b.price + (priceAlreadyInBill[b.betNumber] || 0)
-            }))
+            bets: betsForApi // <-- ใช้ Payload ใหม่
         });
 
+        // หาก API ไม่ส่ง Error กลับมา (ผ่านการตรวจสอบ) ให้เพิ่มรายการลง Bill
+        const pricePerNumberFromForm = numPriceTop + numPriceTote + numPriceBottom;
         const entryTotal = selectedValidBets.length * pricePerNumberFromForm;
         setBill((prev) => [
           ...prev,
@@ -447,45 +440,26 @@ const LottoFormPage = () => {
             bets: selectedValidBets,
             betTypes: subTab,
             bahtPer: 0,
-            priceTop: Number(priceTop),
-            priceTote: Number(priceTote),
-            priceBottom: Number(priceBottom),
+            priceTop: numPriceTop,
+            priceTote: numPriceTote,
+            priceBottom: numPriceBottom,
             total: entryTotal,
             addBy: user.username,
           },
         ]);
         handleClearInputs();
-        setLoadingAddBills(false);
     } catch (err: any) {
         const errorData = err.response?.data;
         if (errorData && errorData.error === 'LimitExceeded' && errorData.failedBets) {
-            let errorMessage = '';
-            
-            errorData.failedBets.forEach((failedBet: any) => {
-                const { details, betNumber } = failedBet;
-                const limit = details.limit;
-                const spentInDb = details.spent;
-                const amountInCurrentBill = priceAlreadyInBill[betNumber] || 0; 
-                const totalPurchased = spentInDb + amountInCurrentBill; 
-                const finalRemaining = limit - totalPurchased; 
-                const priceFromThisAction = pricePerNumberFromForm * (countsInCurrentSubmission[betNumber] || 0); 
-                const overAmount = (totalPurchased + priceFromThisAction) - limit;
+            const errorMessages = errorData.failedBets.map((failedBet: any) => 
+                `- เลข ${failedBet.betNumber}: ${failedBet.message}`
+            ).join('\n');
 
-                errorMessage += `เลข "${betNumber}" เกินขีดจำกัดการซื้อไว้ที่ ${limit.toLocaleString()} บาท\n`;
-                errorMessage += `  • คุณลงราคาเกินมา: ${overAmount > 0 ? overAmount.toLocaleString() : 0} บาท\n`;
-
-                if (finalRemaining > 0) {
-                    errorMessage += `  • คุณสามารถซื้อเพิ่มได้ไม่เกิน: ${finalRemaining.toLocaleString()} บาท`;
-                } else {
-                    errorMessage += `  • คุณไม่สามารถแทงเลขนี้ได้อีก`;
-                }
-            }); 
-
-            alert("ไม่สามารถเพิ่มรายการได้เนื่องจากเกินวงเงินที่อณุญาติให้ซื้อ", errorMessage, "light");
-
+            alert("มีบางรายการเกินวงเงินที่กำหนด", errorMessages, "light");
         } else {
             alert("เกิดข้อผิดพลาด", errorData?.message || err.message || "ไม่สามารถตรวจสอบลิมิตได้", "light");
         }
+    } finally {
         setLoadingAddBills(false);
     }
   };
