@@ -826,7 +826,7 @@ app.post('/api/batch-check-bet-limits', async (req: Request, res: Response) => {
 
             let hasFailed = false;
 
-            // Check against the most specific rule for each type found
+            // Function to check a specific style and update failure status
             const check = (price: number, style: 'บน' | 'ล่าง' | 'โต๊ด') => {
                 if (price <= 0 || hasFailed) return;
 
@@ -849,7 +849,7 @@ app.post('/api/batch-check-bet-limits', async (req: Request, res: Response) => {
 
             if (hasFailed) continue;
             
-            // Check against the most specific 'total' rule
+            // If individual styles passed, check the total limit
             const totalRule = getMostSpecificRule(applicableRules, ['ทั้งหมด']);
             if (totalRule) {
                  const limit = parseFloat(totalRule.max_amount);
@@ -861,7 +861,7 @@ app.post('/api/batch-check-bet-limits', async (req: Request, res: Response) => {
                  }
             }
 
-            // Fallback to default limit if no special rules apply at all
+            // If no specific rules were found at all, check default limit
             if (applicableRules.length === 0) {
                 const defaultLimitRaw = betNumber.length <= 2 ? roundLimits.limit_2d_amount : roundLimits.limit_3d_amount;
                 if (defaultLimitRaw && parseFloat(defaultLimitRaw) > 0) {
