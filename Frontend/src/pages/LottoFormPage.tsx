@@ -337,8 +337,22 @@ const LottoFormPage = () => {
       handleClearBill(false);
     } catch (err: any) { 
       hideStatus();
-      showStatus('error', "ไม่สามารถบันทึกได้", err.message);
-    }
+      const errorDetails = err.response?.data?.details || "";
+
+      // ตรวจจับ Error ที่เกิดจาก Race Condition โดยเฉพาะ
+      if (errorDetails.includes('LIMIT_EXCEEDED_ON_SAVE')) {
+          alert(
+              "บันทึกไม่สำเร็จ", 
+              "วงเงินบางเลขมีการเปลี่ยนแปลง โปรดตรวจสอบและลองอีกครั้ง", 
+              'light'
+          );
+          // สั่งให้โหลดข้อมูลลิมิตใหม่ทันทีเพื่อให้หน้าจออัปเดต
+          fetchLimitAndSpentSummary();
+      } else {
+          // ถ้าเป็น Error อื่นๆ ให้แสดงตามปกติ
+          showStatus('error', "ไม่สามารถบันทึกได้", errorDetails || err.message);
+      }
+  }
   };
   
   const handleClearBet = () => {

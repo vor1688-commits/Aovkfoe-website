@@ -594,18 +594,18 @@ app.post("/api/savebills", async (req: Request, res: Response) => {
                 );
 
                 const topRule = getMostSpecificRule(applicableRules, ['บน', 'ตรง']);
-                if (topRule && (currentSpent['บน'] || 0) + priceTop > parseFloat(topRule.max_amount)) throw new Error(`เลข ${betNumber} (บน) เกินวงเงิน`);
+                if (topRule && (currentSpent['บน'] || 0) + priceTop > parseFloat(topRule.max_amount)) throw new Error(`LIMIT_EXCEEDED_ON_SAVE: เลข ${betNumber} (บน) เกินวงเงิน`);
 
                 const bottomRule = getMostSpecificRule(applicableRules, ['ล่าง']);
-                if (bottomRule && (currentSpent['ล่าง'] || 0) + priceBottom > parseFloat(bottomRule.max_amount)) throw new Error(`เลข ${betNumber} (ล่าง) เกินวงเงิน`);
+                if (bottomRule && (currentSpent['ล่าง'] || 0) + priceBottom > parseFloat(bottomRule.max_amount)) throw new Error(`LIMIT_EXCEEDED_ON_SAVE: เลข ${betNumber} (ล่าง) เกินวงเงิน`);
                 
                 const toteRule = getMostSpecificRule(applicableRules, ['โต๊ด']);
-                if (toteRule && (currentSpent['โต๊ด'] || 0) + priceTote > parseFloat(toteRule.max_amount)) throw new Error(`เลข ${betNumber} (โต๊ด) เกินวงเงิน`);
+                if (toteRule && (currentSpent['โต๊ด'] || 0) + priceTote > parseFloat(toteRule.max_amount)) throw new Error(`LIMIT_EXCEEDED_ON_SAVE: เลข ${betNumber} (โต๊ด) เกินวงเงิน`);
 
                 const totalRule = getMostSpecificRule(applicableRules, ['ทั้งหมด']);
                 if (totalRule) {
                     const totalSpent = Object.values(currentSpent).reduce((s, v) => s + v, 0);
-                    if (totalSpent + priceTop + priceBottom + priceTote > parseFloat(totalRule.max_amount)) throw new Error(`ยอดรวมของเลข ${betNumber} เกินวงเงิน`);
+                    if (totalSpent + priceTop + priceBottom + priceTote > parseFloat(totalRule.max_amount)) throw new Error(`LIMIT_EXCEEDED_ON_SAVE: ยอดรวมของเลข ${betNumber} เกินวงเงิน`);
                 }
                 
                 if (applicableRules.length === 0) {
