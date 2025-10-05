@@ -567,7 +567,6 @@ app.post('/api/batch-check-bet-limits', (req, res) => __awaiter(void 0, void 0, 
     const { userId, lottoRoundId, bets, pendingBets } = req.body;
     const client = yield db.connect();
     try {
-        // --- ส่วนการดึงข้อมูลต่างๆ ยังคงเหมือนเดิม ---
         const userResult = yield client.query('SELECT role FROM users WHERE id = $1', [userId]);
         if (userResult.rowCount === 0)
             throw new Error('ไม่พบผู้ใช้');
@@ -623,8 +622,6 @@ app.post('/api/batch-check-bet-limits', (req, res) => __awaiter(void 0, void 0, 
         };
         const failedBets = [];
         for (const betNumber in incomingTotals) {
-            if (failedBets.some(b => b.betNumber === betNumber))
-                continue;
             const { priceTop, priceBottom, priceTote } = incomingTotals[betNumber];
             const spentInDb = spentMap[betNumber] || {};
             const spentInPending = pendingMap[betNumber] || {};
@@ -632,28 +629,35 @@ app.post('/api/batch-check-bet-limits', (req, res) => __awaiter(void 0, void 0, 
                 betNumber.length === r.range_start.length &&
                 parseInt(betNumber, 10) >= parseInt(r.range_start, 10) &&
                 parseInt(betNumber, 10) <= parseInt(r.range_end, 10));
-            // Function to perform a check and update failedBets directly
-            const performCheck = (price, style) => {
-                if (price <= 0)
+            let hasFailed = false;
+            const check = (price, style) => {
+                if (price <= 0 || hasFailed)
                     return;
                 const styleAliases = style === 'บน' ? ['บน', 'ตรง'] : [style];
-                const rule = getMostSpecificRule(applicableRules, styleAliases);
-                if (rule) {
-                    const limit = parseFloat(rule.max_amount);
+                const specificRule = getMostSpecificRule(applicableRules.filter(r => r.range_start === r.range_end), styleAliases);
+                if (specificRule) {
+                    const limit = parseFloat(specificRule.max_amount);
                     const currentSpent = (spentInDb[style] || 0) + (spentInPending[style] || 0) + (spentInDb[styleAliases[1]] || 0) + (spentInPending[styleAliases[1]] || 0);
                     if (currentSpent + price > limit) {
+                        hasFailed = true;
+                        failedBets.push({ betNumber, message: `เกินลิมิต '${style}' (${limit})` });
+                    }
+                    return;
+                }
+                const generalRule = getMostSpecificRule(applicableRules, styleAliases);
+                if (generalRule) {
+                    const limit = parseFloat(generalRule.max_amount);
+                    const currentSpent = (spentInDb[style] || 0) + (spentInPending[style] || 0) + (spentInDb[styleAliases[1]] || 0) + (spentInPending[styleAliases[1]] || 0);
+                    if (currentSpent + price > limit) {
+                        hasFailed = true;
                         failedBets.push({ betNumber, message: `เกินลิมิต '${style}' (${limit})` });
                     }
                 }
             };
-            performCheck(priceTop, 'บน');
-            if (failedBets.some(b => b.betNumber === betNumber))
-                continue;
-            performCheck(priceBottom, 'ล่าง');
-            if (failedBets.some(b => b.betNumber === betNumber))
-                continue;
-            performCheck(priceTote, 'โต๊ด');
-            if (failedBets.some(b => b.betNumber === betNumber))
+            check(priceTop, 'บน');
+            check(priceBottom, 'ล่าง');
+            check(priceTote, 'โต๊ด');
+            if (hasFailed)
                 continue;
             const totalRule = getMostSpecificRule(applicableRules, ['ทั้งหมด']);
             if (totalRule) {
