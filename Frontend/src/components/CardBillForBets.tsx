@@ -1,8 +1,6 @@
 import React from 'react';
 import { getBetTypeName } from '../services/BetService';
 import { PencilSquareIcon, TrashIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
-// ✨ [จุดที่แก้ไข] 1: import Type ที่สร้างขึ้นใหม่เข้ามา
-// ✨ [จุดที่แก้ไข] 1: import Type ที่สร้างขึ้นใหม่เข้ามา
 import type { OverLimitDetails } from '../pages/LottoFormPage';
 
 interface SpecialNumbers {
@@ -21,7 +19,6 @@ interface CardBillForBetProps {
   onRemove: (index: number) => void;
   onEdit: (index: number) => void;
   specialNumbers: SpecialNumbers | null;
-  // ✨ [จุดที่แก้ไข] 2: เปลี่ยนชื่อและ Type ของ prop จาก overLimitNumbersSet เป็น overLimitDetails
   overLimitDetails: OverLimitDetails;
 }
 
@@ -64,7 +61,6 @@ const CardBillForBets: React.FC<CardBillForBetProps> = ({
     priceParts.push(<span key="bottom" className="text-red-600">{label} {priceBottom}</span>);
   }
   
-  // ✨ [จุดที่แก้ไข] 3: สร้าง Logic ใหม่เพื่อเช็คว่า "รายการนี้" เกินลิมิตจริงหรือไม่
   const isEntryOverLimit = bets.some(bet => {
     const limitStyles = overLimitDetails.get(bet);
     if (!limitStyles) return false;
@@ -77,11 +73,19 @@ const CardBillForBets: React.FC<CardBillForBetProps> = ({
     return false;
   });
   
-  const overLimitBetsInThisEntry = bets.filter(bet => overLimitDetails.has(bet));
+  // ✨ [จุดที่แก้ไข] เอาเงื่อนไขที่กรองเลขปิดออก เพื่อให้แสดงเลขในวงเล็บได้ถูกต้องทุกกรณี
+  const overLimitBetsInThisEntry = bets.filter(bet => {
+    const limitStyles = overLimitDetails.get(bet);
+    if (!limitStyles) return false;
+    
+    return limitStyles.has('ทั้งหมด') ||
+           (priceTop > 0 && limitStyles.has('บน')) ||
+           (priceBottom > 0 && limitStyles.has('ล่าง')) ||
+           (priceTote > 0 && limitStyles.has('โต๊ด'));
+  });
 
   return (
-    // ใช้ isEntryOverLimit ในการตัดสินใจแสดง border สีฟ้า
-    <div className={`bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200 mb-2 border flex items-center p-3 gap-4 ${isEntryOverLimit && !bets.every(b => closedNumbersSet.has(b)) ? 'border-blue-500 border-2' : 'border-gray-200/80'}`}>
+    <div className={`bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200 mb-2 border flex items-center p-3 gap-4 ${isEntryOverLimit ? 'border-blue-500 border-2' : 'border-gray-200/80'}`}>
       <div className="flex-shrink-0 w-32 text-center border-r pr-4 border-gray-200">
         <span className="px-3 py-1 text-sm font-bold leading-5 text-indigo-800 bg-indigo-100 rounded-full">
           {getBetTypeName(betType)}
@@ -100,20 +104,19 @@ const CardBillForBets: React.FC<CardBillForBetProps> = ({
         <div className="flex flex-wrap gap-x-3 gap-y-1 font-mono text-base leading-relaxed">
           {bets.map((betNumber, index) => {
             const getNumberClassName = () => {
-              if (closedNumbersSet.has(betNumber)) {
-                return 'text-red-500 font-bold line-through';
-              }
-              // ✨ [จุดที่แก้ไข] 4: เพิ่มการตรวจสอบที่ละเอียดขึ้นก่อนไฮไลท์สีฟ้า
               const limitStyles = overLimitDetails.get(betNumber);
               if (limitStyles) {
-                if (
-                    limitStyles.has('ทั้งหมด') ||
-                    (priceTop > 0 && limitStyles.has('บน')) ||
-                    (priceBottom > 0 && limitStyles.has('ล่าง')) ||
-                    (priceTote > 0 && limitStyles.has('โต๊ด'))
-                ) {
-                    return 'text-blue-500 font-bold';
-                }
+                if (
+                    limitStyles.has('ทั้งหมด') ||
+                    (priceTop > 0 && limitStyles.has('บน')) ||
+                    (priceBottom > 0 && limitStyles.has('ล่าง')) ||
+                    (priceTote > 0 && limitStyles.has('โต๊ด'))
+                ) {
+                    return 'text-blue-500 font-bold';
+                }
+              }
+              if (closedNumbersSet.has(betNumber)) {
+                return 'text-red-500 font-bold line-through';
               }
               if (halfPayNumbersSet.has(betNumber)) {
                 return 'text-amber-500 font-bold';
@@ -145,12 +148,11 @@ const CardBillForBets: React.FC<CardBillForBetProps> = ({
             *เลขจ่ายครึ่ง {halfPaidBets.length} ตัว (จ่ายรางวัลครึ่งเดียวเมื่อถูก)
           </div>
         )}
-
-        {/* ใช้ isEntryOverLimit ในการตัดสินใจแสดงข้อความเตือน */}
-        {isEntryOverLimit && !bets.every(b => closedNumbersSet.has(b)) && (
+        
+        {isEntryOverLimit && (
             <div className="text-xs text-blue-600 mt-1 italic flex items-center gap-1 font-semibold">
                <ExclamationTriangleIcon className="h-4 w-4" />
-               เลขสีฟ้า ({overLimitBetsInThisEntry.filter(b => !closedNumbersSet.has(b)).join(', ')}) อาจเต็มวงเงินแล้ว
+               เลขสีฟ้า ({overLimitBetsInThisEntry.join(', ')}) อาจเต็มวงเงินแล้ว
             </div>
         )}
       </div>
@@ -164,3 +166,4 @@ const CardBillForBets: React.FC<CardBillForBetProps> = ({
 };
 
 export default CardBillForBets;
+

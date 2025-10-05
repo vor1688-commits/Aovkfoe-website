@@ -437,7 +437,7 @@ const LottoFormPage = () => {
               const remaining = limit - currentSpent;
 
               if (remaining <= 0) {
-                  return `- เลข ${betNumber} (${style}): วงเงินเต็มแล้ว`;
+                  return `- เลข ${betNumber} (${style==='บน' ?"บน หรือ ตรง": style}): วงเงินเต็มแล้ว`;
               } else {
                   return `- เลข ${betNumber} (${style==='ทั้งหมด' ? "ยอดรวมทั้งหมดที่ลง" : style}): เกินวงเงิน! (ยอดรวมที่ลงจะซื้อได้อีกไม่เกิน ${remaining.toLocaleString()} บาท)`;
               }
