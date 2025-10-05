@@ -602,7 +602,8 @@ app.post('/api/bills/batch-delete', (req, res) => __awaiter(void 0, void 0, void
     }
 }));
 app.post('/api/batch-check-bet-limits', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    const { userId, lottoRoundId, bets, pendingBets } = req.body;
+    // 🚨 หมายเหตุ: เราจะไม่ใช้ pendingBets ในการคำนวณอีกต่อไปเพื่อป้องกัน Bug
+    const { userId, lottoRoundId, bets } = req.body;
     const client = yield db.connect();
     try {
         const userResult = yield client.query('SELECT role FROM users WHERE id = $1', [userId]);
@@ -628,19 +629,6 @@ app.post('/api/batch-check-bet-limits', (req, res) => __awaiter(void 0, void 0, 
                 spentMap[row.bet_number] = {};
             spentMap[row.bet_number][row.bet_style] = parseFloat(row.total_spent);
         });
-        const pendingMap = {};
-        if (pendingBets && Array.isArray(pendingBets)) {
-            for (const entry of pendingBets) {
-                for (const betNumber of entry.bets) {
-                    if (!pendingMap[betNumber])
-                        pendingMap[betNumber] = { 'บน': 0, 'ตรง': 0, 'ล่าง': 0, 'โต๊ด': 0 };
-                    pendingMap[betNumber]['บน'] += entry.priceTop || 0;
-                    pendingMap[betNumber]['ตรง'] += entry.priceTop || 0;
-                    pendingMap[betNumber]['ล่าง'] += entry.priceBottom || 0;
-                    pendingMap[betNumber]['โต๊ด'] += entry.priceTote || 0;
-                }
-            }
-        }
         const incomingTotals = {};
         for (const bet of bets) {
             if (!incomingTotals[bet.betNumber]) {
@@ -660,11 +648,9 @@ app.post('/api/batch-check-bet-limits', (req, res) => __awaiter(void 0, void 0, 
         };
         const failedBets = [];
         for (const betNumber in incomingTotals) {
-            if (failedBets.some(b => b.betNumber === betNumber))
-                continue;
             const { priceTop, priceBottom, priceTote } = incomingTotals[betNumber];
+            // ยอดที่ซื้อไปแล้วจริงๆ จากฐานข้อมูล
             const spentInDb = spentMap[betNumber] || {};
-            const spentInPending = pendingMap[betNumber] || {};
             const applicableRules = rangeLimits.filter(r => r.range_start && r.range_end &&
                 betNumber.length === r.range_start.length &&
                 parseInt(betNumber, 10) >= parseInt(r.range_start, 10) &&
@@ -677,18 +663,10 @@ app.post('/api/batch-check-bet-limits', (req, res) => __awaiter(void 0, void 0, 
                 const rule = getMostSpecificRule(applicableRules, styleAliases);
                 if (rule) {
                     const limit = parseFloat(rule.max_amount);
-                    const currentSpent = (spentInDb[style] || 0) + (spentInPending[style] || 0) + (spentInDb[styleAliases[1]] || 0) + (spentInPending[styleAliases[1]] || 0);
+                    const currentSpent = (spentInDb[style] || 0) + (spentInDb[styleAliases[1]] || 0);
                     if (currentSpent + price > limit) {
                         hasFailed = true;
-                        // ✅ START: แก้ไขจุดที่ 1
-                        failedBets.push({
-                            betNumber,
-                            style,
-                            limit,
-                            currentSpent,
-                            incomingAmount: price
-                        });
-                        // ✅ END: แก้ไขจุดที่ 1
+                        failedBets.push({ betNumber, style, limit, currentSpent, incomingAmount: price });
                     }
                 }
             };
@@ -700,18 +678,10 @@ app.post('/api/batch-check-bet-limits', (req, res) => __awaiter(void 0, void 0, 
             const totalRule = getMostSpecificRule(applicableRules, ['ทั้งหมด']);
             if (totalRule) {
                 const limit = parseFloat(totalRule.max_amount);
-                const totalSpent = Object.values(spentInDb).reduce((s, v) => s + v, 0) + Object.values(spentInPending).reduce((s, v) => s + v, 0);
+                const totalSpent = Object.values(spentInDb).reduce((s, v) => s + v, 0);
                 const incomingTotal = priceTop + priceBottom + priceTote;
                 if (totalSpent + incomingTotal > limit) {
-                    // ✅ START: แก้ไขจุดที่ 2
-                    failedBets.push({
-                        betNumber,
-                        style: 'ทั้งหมด',
-                        limit,
-                        currentSpent: totalSpent,
-                        incomingAmount: incomingTotal
-                    });
-                    // ✅ END: แก้ไขจุดที่ 2
+                    failedBets.push({ betNumber, style: 'ทั้งหมด', limit, currentSpent: totalSpent, incomingAmount: incomingTotal });
                     continue;
                 }
             }
@@ -719,18 +689,10 @@ app.post('/api/batch-check-bet-limits', (req, res) => __awaiter(void 0, void 0, 
                 const defaultLimitRaw = betNumber.length <= 2 ? roundLimits.limit_2d_amount : roundLimits.limit_3d_amount;
                 if (defaultLimitRaw && parseFloat(defaultLimitRaw) > 0) {
                     const limit = parseFloat(defaultLimitRaw);
-                    const totalSpent = Object.values(spentInDb).reduce((s, v) => s + v, 0) + Object.values(spentInPending).reduce((s, v) => s + v, 0);
+                    const totalSpent = Object.values(spentInDb).reduce((s, v) => s + v, 0);
                     const incomingTotal = priceTop + priceBottom + priceTote;
                     if (totalSpent + incomingTotal > limit) {
-                        // ✅ START: แก้ไขจุดที่ 3
-                        failedBets.push({
-                            betNumber,
-                            style: 'ทั้งหมด',
-                            limit,
-                            currentSpent: totalSpent,
-                            incomingAmount: incomingTotal
-                        });
-                        // ✅ END: แก้ไขจุดที่ 3
+                        failedBets.push({ betNumber, style: 'ทั้งหมด', limit, currentSpent: totalSpent, incomingAmount: incomingTotal });
                     }
                 }
             }
