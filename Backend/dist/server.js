@@ -563,7 +563,9 @@ app.post('/api/bills/batch-delete', (req, res) => __awaiter(void 0, void 0, void
         client.release();
     }
 }));
+// ในไฟล์: server.ts
 app.post('/api/batch-check-bet-limits', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b, _c, _d;
     const { userId, lottoRoundId, bets, pendingBets } = req.body;
     const client = yield db.connect();
     try {
@@ -622,6 +624,8 @@ app.post('/api/batch-check-bet-limits', (req, res) => __awaiter(void 0, void 0, 
         };
         const failedBets = [];
         for (const betNumber in incomingTotals) {
+            if (failedBets.some(b => b.betNumber === betNumber))
+                continue;
             const { priceTop, priceBottom, priceTote } = incomingTotals[betNumber];
             const spentInDb = spentMap[betNumber] || {};
             const spentInPending = pendingMap[betNumber] || {};
@@ -629,56 +633,92 @@ app.post('/api/batch-check-bet-limits', (req, res) => __awaiter(void 0, void 0, 
                 betNumber.length === r.range_start.length &&
                 parseInt(betNumber, 10) >= parseInt(r.range_start, 10) &&
                 parseInt(betNumber, 10) <= parseInt(r.range_end, 10));
+            // -- Logic "จองโควต้า" --
             let hasFailed = false;
-            const check = (price, style) => {
-                if (price <= 0 || hasFailed)
-                    return;
-                const styleAliases = style === 'บน' ? ['บน', 'ตรง'] : [style];
-                const specificRule = getMostSpecificRule(applicableRules.filter(r => r.range_start === r.range_end), styleAliases);
-                if (specificRule) {
-                    const limit = parseFloat(specificRule.max_amount);
-                    const currentSpent = (spentInDb[style] || 0) + (spentInPending[style] || 0) + (spentInDb[styleAliases[1]] || 0) + (spentInPending[styleAliases[1]] || 0);
-                    if (currentSpent + price > limit) {
-                        hasFailed = true;
-                        failedBets.push({ betNumber, message: `เกินลิมิต '${style}' (${limit})` });
-                    }
-                    return;
+            const specificRules = applicableRules.filter(r => r.range_start === r.range_end);
+            const generalRules = applicableRules.filter(r => r.range_start !== r.range_end);
+            let finalTopLimit = Infinity, finalBottomLimit = Infinity, finalToteLimit = Infinity, finalTotalLimit = Infinity;
+            let ruleSource = 'default';
+            // Priority 1 & 2: Specific range rules (e.g., 0-0)
+            if (specificRules.length > 0) {
+                ruleSource = 'specific';
+                const topRule = getMostSpecificRule(specificRules, ['บน', 'ตรง']);
+                const bottomRule = getMostSpecificRule(specificRules, ['ล่าง']);
+                const toteRule = getMostSpecificRule(specificRules, ['โต๊ด']);
+                const totalRule = getMostSpecificRule(specificRules, ['ทั้งหมด']);
+                finalTotalLimit = totalRule ? parseFloat(totalRule.max_amount) : Infinity;
+                let remainingPool = finalTotalLimit;
+                if (topRule) {
+                    finalTopLimit = parseFloat(topRule.max_amount);
+                    if (finalTotalLimit !== Infinity)
+                        remainingPool -= finalTopLimit;
                 }
-                const generalRule = getMostSpecificRule(applicableRules, styleAliases);
-                if (generalRule) {
-                    const limit = parseFloat(generalRule.max_amount);
-                    const currentSpent = (spentInDb[style] || 0) + (spentInPending[style] || 0) + (spentInDb[styleAliases[1]] || 0) + (spentInPending[styleAliases[1]] || 0);
-                    if (currentSpent + price > limit) {
-                        hasFailed = true;
-                        failedBets.push({ betNumber, message: `เกินลิมิต '${style}' (${limit})` });
-                    }
+                if (bottomRule) {
+                    finalBottomLimit = parseFloat(bottomRule.max_amount);
+                    if (finalTotalLimit !== Infinity)
+                        remainingPool -= finalBottomLimit;
                 }
-            };
-            check(priceTop, 'บน');
-            check(priceBottom, 'ล่าง');
-            check(priceTote, 'โต๊ด');
-            if (hasFailed)
-                continue;
-            const totalRule = getMostSpecificRule(applicableRules, ['ทั้งหมด']);
-            if (totalRule) {
-                const limit = parseFloat(totalRule.max_amount);
-                const totalSpent = Object.values(spentInDb).reduce((s, v) => s + v, 0) + Object.values(spentInPending).reduce((s, v) => s + v, 0);
-                const incomingTotal = priceTop + priceBottom + priceTote;
-                if (totalSpent + incomingTotal > limit) {
-                    failedBets.push({ betNumber, message: `เกินลิมิตรวม (${limit})` });
-                    continue;
+                if (toteRule) {
+                    finalToteLimit = parseFloat(toteRule.max_amount);
+                    if (finalTotalLimit !== Infinity)
+                        remainingPool -= finalToteLimit;
                 }
+                if (!topRule)
+                    finalTopLimit = remainingPool < 0 ? 0 : remainingPool;
+                if (!bottomRule)
+                    finalBottomLimit = remainingPool < 0 ? 0 : remainingPool;
+                if (!toteRule)
+                    finalToteLimit = remainingPool < 0 ? 0 : remainingPool;
             }
-            if (applicableRules.length === 0) {
+            // Priority 3 & 4: General range rules (e.g., 0-7)
+            else if (generalRules.length > 0) {
+                ruleSource = 'general';
+                finalTopLimit = ((_a = getMostSpecificRule(generalRules, ['บน', 'ตรง'])) === null || _a === void 0 ? void 0 : _a.max_amount) ? parseFloat(getMostSpecificRule(generalRules, ['บน', 'ตรง']).max_amount) : Infinity;
+                finalBottomLimit = ((_b = getMostSpecificRule(generalRules, ['ล่าง'])) === null || _b === void 0 ? void 0 : _b.max_amount) ? parseFloat(getMostSpecificRule(generalRules, ['ล่าง']).max_amount) : Infinity;
+                finalToteLimit = ((_c = getMostSpecificRule(generalRules, ['โต๊ด'])) === null || _c === void 0 ? void 0 : _c.max_amount) ? parseFloat(getMostSpecificRule(generalRules, ['โต๊ด']).max_amount) : Infinity;
+                finalTotalLimit = ((_d = getMostSpecificRule(generalRules, ['ทั้งหมด'])) === null || _d === void 0 ? void 0 : _d.max_amount) ? parseFloat(getMostSpecificRule(generalRules, ['ทั้งหมด']).max_amount) : Infinity;
+            }
+            // Final Priority: Default round limits
+            else {
                 const defaultLimitRaw = betNumber.length <= 2 ? roundLimits.limit_2d_amount : roundLimits.limit_3d_amount;
                 if (defaultLimitRaw && parseFloat(defaultLimitRaw) > 0) {
-                    const limit = parseFloat(defaultLimitRaw);
-                    const totalSpent = Object.values(spentInDb).reduce((s, v) => s + v, 0) + Object.values(spentInPending).reduce((s, v) => s + v, 0);
-                    const incomingTotal = priceTop + priceBottom + priceTote;
-                    if (totalSpent + incomingTotal > limit) {
-                        failedBets.push({ betNumber, message: `เกินลิมิตเริ่มต้น (${limit})` });
-                    }
+                    finalTotalLimit = parseFloat(defaultLimitRaw);
                 }
+            }
+            // --- Perform Checks ---
+            const totalSpentTop = (spentInDb['บน'] || 0) + (spentInPending['บน'] || 0);
+            const totalSpentBottom = (spentInDb['ล่าง'] || 0) + (spentInPending['ล่าง'] || 0);
+            const totalSpentTote = (spentInDb['โต๊ด'] || 0) + (spentInPending['โต๊ด'] || 0);
+            if (ruleSource === 'specific') {
+                const unruledSpent = (finalTopLimit === Infinity ? totalSpentTop : 0) + (finalBottomLimit === Infinity ? totalSpentBottom : 0) + (finalToteLimit === Infinity ? totalSpentTote : 0);
+                const unruledIncoming = (finalTopLimit === Infinity ? priceTop : 0) + (finalBottomLimit === Infinity ? priceBottom : 0) + (finalToteLimit === Infinity ? priceTote : 0);
+                if (totalSpentTop + priceTop > finalTopLimit)
+                    hasFailed = true;
+                if (!hasFailed && totalSpentBottom + priceBottom > finalBottomLimit)
+                    hasFailed = true;
+                if (!hasFailed && totalSpentTote + priceTote > finalToteLimit)
+                    hasFailed = true;
+                if (!hasFailed && finalTotalLimit !== Infinity) {
+                    if (unruledSpent + unruledIncoming > (finalTotalLimit - (isFinite(finalTopLimit) ? finalTopLimit : 0) - (isFinite(finalBottomLimit) ? finalBottomLimit : 0) - (isFinite(finalToteLimit) ? finalToteLimit : 0)))
+                        hasFailed = true;
+                }
+            }
+            else { // General or Default logic
+                if (totalSpentTop + priceTop > finalTopLimit)
+                    hasFailed = true;
+                if (!hasFailed && totalSpentBottom + priceBottom > finalBottomLimit)
+                    hasFailed = true;
+                if (!hasFailed && totalSpentTote + priceTote > finalToteLimit)
+                    hasFailed = true;
+                if (!hasFailed && finalTotalLimit !== Infinity) {
+                    const totalSpent = totalSpentTop + totalSpentBottom + totalSpentTote;
+                    const incomingTotal = priceTop + priceBottom + priceTote;
+                    if (totalSpent + incomingTotal > finalTotalLimit)
+                        hasFailed = true;
+                }
+            }
+            if (hasFailed) {
+                failedBets.push({ betNumber, message: `เกินลิมิตที่กำหนด` });
             }
         }
         if (failedBets.length > 0) {
