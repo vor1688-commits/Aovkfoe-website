@@ -622,8 +622,8 @@ app.post('/api/batch-check-bet-limits', (req, res) => __awaiter(void 0, void 0, 
         };
         const failedBets = [];
         for (const betNumber in incomingTotals) {
-            if (failedBets.length > 0)
-                break;
+            if (failedBets.some(b => b.betNumber === betNumber))
+                continue;
             const { priceTop, priceBottom, priceTote } = incomingTotals[betNumber];
             const spentInDb = spentMap[betNumber] || {};
             const spentInPending = pendingMap[betNumber] || {};
@@ -634,8 +634,8 @@ app.post('/api/batch-check-bet-limits', (req, res) => __awaiter(void 0, void 0, 
             let hasFailed = false;
             const specificRules = applicableRules.filter(r => r.range_start === r.range_end);
             const generalRules = applicableRules.filter(r => r.range_start !== r.range_end);
+            // Priority 1 & 2: Specific range rules (e.g., 0-0)
             if (specificRules.length > 0) {
-                // Priority 1 & 2: Specific range rules (e.g., 0-0)
                 const topRule = getMostSpecificRule(specificRules, ['บน', 'ตรง']);
                 const bottomRule = getMostSpecificRule(specificRules, ['ล่าง']);
                 const toteRule = getMostSpecificRule(specificRules, ['โต๊ด']);
@@ -678,8 +678,8 @@ app.post('/api/batch-check-bet-limits', (req, res) => __awaiter(void 0, void 0, 
                         hasFailed = true;
                 }
             }
+            // Priority 3 & 4: General range rules (e.g., 0-7)
             else if (generalRules.length > 0) {
-                // Priority 3 & 4: General range rules (e.g., 0-7)
                 const topRule = getMostSpecificRule(generalRules, ['บน', 'ตรง']);
                 const bottomRule = getMostSpecificRule(generalRules, ['ล่าง']);
                 const totalRule = getMostSpecificRule(generalRules, ['ทั้งหมด']);
@@ -703,8 +703,8 @@ app.post('/api/batch-check-bet-limits', (req, res) => __awaiter(void 0, void 0, 
                         hasFailed = true;
                 }
             }
+            // Final Priority: Default round limits
             else {
-                // Final Priority: Default round limits
                 const defaultLimitRaw = betNumber.length <= 2 ? roundLimits.limit_2d_amount : roundLimits.limit_3d_amount;
                 if (defaultLimitRaw && parseFloat(defaultLimitRaw) > 0) {
                     const limit = parseFloat(defaultLimitRaw);

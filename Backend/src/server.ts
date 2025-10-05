@@ -763,12 +763,12 @@ app.post('/api/batch-check-bet-limits', async (req: Request, res: Response) => {
 
         const failedBets: any[] = [];
         for (const betNumber in incomingTotals) {
-            if (failedBets.length > 0) break; 
+            if (failedBets.some(b => b.betNumber === betNumber)) continue;
 
             const { priceTop, priceBottom, priceTote } = incomingTotals[betNumber];
             const spentInDb = spentMap[betNumber] || {};
             const spentInPending = pendingMap[betNumber] || {};
-            
+
             const applicableRules = rangeLimits.filter(r => 
                 r.range_start && r.range_end &&
                 betNumber.length === r.range_start.length &&
@@ -781,8 +781,8 @@ app.post('/api/batch-check-bet-limits', async (req: Request, res: Response) => {
             const specificRules = applicableRules.filter(r => r.range_start === r.range_end);
             const generalRules = applicableRules.filter(r => r.range_start !== r.range_end);
             
+            // Priority 1 & 2: Specific range rules (e.g., 0-0)
             if (specificRules.length > 0) {
-                // Priority 1 & 2: Specific range rules (e.g., 0-0)
                 const topRule = getMostSpecificRule(specificRules, ['บน', 'ตรง']);
                 const bottomRule = getMostSpecificRule(specificRules, ['ล่าง']);
                 const toteRule = getMostSpecificRule(specificRules, ['โต๊ด']);
@@ -821,9 +821,10 @@ app.post('/api/batch-check-bet-limits', async (req: Request, res: Response) => {
                     const totalSpentTote = (spentInDb['โต๊ด'] || 0) + (spentInPending['โต๊ด'] || 0);
                     if (totalSpentTote + priceTote > finalToteLimit) hasFailed = true;
                 }
-                
-            } else if (generalRules.length > 0) {
-                // Priority 3 & 4: General range rules (e.g., 0-7)
+
+            } 
+            // Priority 3 & 4: General range rules (e.g., 0-7)
+            else if (generalRules.length > 0) {
                 const topRule = getMostSpecificRule(generalRules, ['บน', 'ตรง']);
                 const bottomRule = getMostSpecificRule(generalRules, ['ล่าง']);
                 const totalRule = getMostSpecificRule(generalRules, ['ทั้งหมด']);
@@ -844,8 +845,9 @@ app.post('/api/batch-check-bet-limits', async (req: Request, res: Response) => {
                     const incomingTotal = priceTop + priceBottom + priceTote;
                     if (totalSpent + incomingTotal > limit) hasFailed = true;
                 }
-            } else {
-                // Final Priority: Default round limits
+            }
+            // Final Priority: Default round limits
+            else {
                  const defaultLimitRaw = betNumber.length <= 2 ? roundLimits.limit_2d_amount : roundLimits.limit_3d_amount;
                  if (defaultLimitRaw && parseFloat(defaultLimitRaw) > 0) {
                      const limit = parseFloat(defaultLimitRaw);
