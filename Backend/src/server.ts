@@ -820,7 +820,7 @@ app.post('/api/batch-check-bet-limits', async (req: Request, res: Response) => {
 
                 if (rule) {
                     const limit = parseFloat(rule.max_amount);
-                    const currentSpent = (spentInDb[style] || 0) + (spentInDb[styleAliases[1]] || 0);
+                    const currentSpent = style === 'บน' ? ((spentInDb['บน'] || 0) + (spentInDb['ตรง'] || 0)) : (spentInDb[style] || 0);
                     if (currentSpent + price > limit) {
                         hasFailed = true;
                         failedBets.push({ betNumber, style, limit, currentSpent, incomingAmount: price });
