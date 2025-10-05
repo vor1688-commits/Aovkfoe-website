@@ -235,7 +235,7 @@ const LottoFormPage = () => {
   useEffect(() => { loadInitialData(); }, [loadInitialData]);
   
   useEffect(() => {
-    const intervalId = setInterval(fetchSpecialNumbersOnly, 1000); 
+    const intervalId = setInterval(fetchSpecialNumbersOnly, 100); 
     return () => clearInterval(intervalId);
   }, [fetchSpecialNumbersOnly]);
 
@@ -421,9 +421,9 @@ const LottoFormPage = () => {
               const remaining = limit - currentSpent;
 
               if (remaining <= 0) {
-                  return `- เลข ${betNumber} (${style}): วงเงินเต็มแล้ว (ซื้อไปแล้ว ${currentSpent.toLocaleString()}/${limit.toLocaleString()})`;
+                  return `- เลข ${betNumber} (${style}): วงเงินเต็มแล้ว`;
               } else {
-                  return `- เลข ${betNumber} (${style}): เกินวงเงิน! (ซื้อเพิ่มได้อีกไม่เกิน ${remaining.toLocaleString()} บาท)`;
+                  return `- เลข ${betNumber} (${style==='ทั้งหมด' ? "ยอดรวมทั้งหมดที่ลง" : style}): เกินวงเงิน! (ยอดรวมที่ลงจะซื้อได้อีกไม่เกิน ${remaining.toLocaleString()} บาท)`;
               }
           }).join('\n');
 
@@ -578,7 +578,7 @@ const LottoFormPage = () => {
           return;
       }
       fetchLimitAndSpentSummary();
-      const limitInterval = setInterval(fetchLimitAndSpentSummary, 1000);
+      const limitInterval = setInterval(fetchLimitAndSpentSummary, 100);
       return () => {
           clearInterval(limitInterval);
       };
