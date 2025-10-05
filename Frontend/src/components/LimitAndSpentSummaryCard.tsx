@@ -144,7 +144,7 @@ const LimitAndSpentSummaryCard: React.FC<LimitAndSpentSummaryCardProps> = ({ cur
 
     const Header = () => (
         <div className="text-center p-3 bg-black rounded-t-2xl flex-shrink-0">
-            <p className="text-sm text-gray-400">ยอดซื้อรวม (ไม่มีกฎพิเศษ)</p>
+            <p className="text-sm text-gray-400">สำหรับตรวจสอบวงเงิน</p>
             <p className="text-lg font-bold text-yellow-400">{defaultLimitText}</p>
         </div>
     );

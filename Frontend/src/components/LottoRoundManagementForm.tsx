@@ -106,9 +106,7 @@ const ManagementLottoRoundsPage: React.FC = () => {
     }, [token]); 
 
     useEffect(() => { fetchInitialData(); }, [fetchInitialData]);
-
-    // ✨ --- [จุดที่แก้ไข] --- ✨
-    // กรองเอาเฉพาะงวดที่มีสถานะ 'active' หรือ 'manual_active' ก่อนนำไปจัดกลุ่ม
+ 
     const groupedRounds = useMemo(() => 
         allRounds
             .filter(round => round.status === 'active' || round.status === 'manual_active')
@@ -117,8 +115,25 @@ const ManagementLottoRoundsPage: React.FC = () => {
                 acc[round.name].push(round);
                 return acc;
             }, {} as Record<string, LottoRound[]>)
-    , [allRounds]);
-    // ✨ --- [สิ้นสุดการแก้ไข] --- ✨
+    , [allRounds]); 
+
+    const isFormInvalid = useMemo(() => {
+        return rangeLimits.some(limit => {
+            const startLen = limit.range_start.length;
+            const endLen = limit.range_end.length;
+            
+            // ไม่ต้อง validate ถ้ายังกรอกไม่ครบ
+            if (startLen === 0 || endLen === 0) return false;
+            
+            // เงื่อนไข 1: จำนวนหลักไม่เท่ากัน
+            if (startLen !== endLen) return true;
+
+            // เงื่อนไข 2: เลขสิ้นสุดน้อยกว่าเลขเริ่มต้น
+            if (parseInt(limit.range_end) < parseInt(limit.range_start)) return true;
+
+            return false;
+        });
+    }, [rangeLimits]);
 
     const handleStartEdit = async (round: LottoRound) => {
         setEditingRoundId(round.id);
@@ -248,10 +263,17 @@ const ManagementLottoRoundsPage: React.FC = () => {
     const handleSave = async (roundId: number) => {
         showStatus("loading", "กำลังบันทึกข้อมูล...", "");
         for (const limit of rangeLimits) {
-            if (limit.range_start && limit.range_end && parseInt(limit.range_end, 10) < parseInt(limit.range_start, 10)) {
-                hideStatus();
-                alert(`Error: ช่วงตัวเลขไม่ถูกต้อง (${limit.range_start} - ${limit.range_end}) เลขสิ้นสุดต้องมากกว่าหรือเท่ากับเลขเริ่มต้น`, "", "light");
-                return;
+            if (limit.range_start && limit.range_end) {
+                if (limit.range_start.length !== limit.range_end.length) {
+                    hideStatus();
+                    alert(`Error: ประเภทตัวเลขไม่ตรงกัน (${limit.range_start} - ${limit.range_end})`, "จำนวนหลักของเลขเริ่มต้นและสิ้นสุดต้องเท่ากัน", "light");
+                    return;
+                }
+                if (parseInt(limit.range_end, 10) < parseInt(limit.range_start, 10)) {
+                    hideStatus();
+                    alert(`Error: ช่วงตัวเลขไม่ถูกต้อง (${limit.range_start} - ${limit.range_end})`, "เลขสิ้นสุดต้องมากกว่าหรือเท่ากับเลขเริ่มต้น", "light");
+                    return;
+                }
             }
         }
         setIsSaving(roundId);
@@ -396,69 +418,44 @@ const ManagementLottoRoundsPage: React.FC = () => {
                                                                 <div className="space-y-2">
                                                                 <label className="block text-sm font-medium text-gray-300">ยอดซื้อสูงสุดสำหรับช่วงตัวเลข (กฎพิเศษ)</label>
                                                                 {rangeLimits.map((limit, index) => {
-                                                                    const startLen = limit.range_start.length;
-                                                                    const isEndDisabled = !startLen;
-                                                                    const isInvalidRange = startLen > 0 && limit.range_end.length > 0 && parseInt(limit.range_end) < parseInt(limit.range_start);
-                                                                    return (
-                                                                    <div key={index} className={`flex flex-col sm:flex-row sm:items-center gap-2 p-2 bg-gray-800/60 rounded-md transition-all ${isInvalidRange ? 'ring-2 ring-red-500' : 'ring-1 ring-gray-700'}`}>
-                                                                        <div className="flex w-full items-center gap-2">
-                                                                        <input 
-                                                                            type="text" 
-                                                                            placeholder="ตั้งแต่เลข" 
-                                                                            value={limit.range_start} 
-                                                                            onChange={e => handleRangeLimitChange(index, 'range_start', e.target.value)} 
-                                                                            className="input-field w-full"
-                                                                            disabled={!isOwner}
-                                                                        />
-                                                                        <span className="text-gray-500">-</span>
-                                                                        <input 
-                                                                            type="text" 
-                                                                            placeholder="ถึงเลขที่" 
-                                                                            value={limit.range_end} 
-                                                                            onChange={e => handleRangeLimitChange(index, 'range_end', e.target.value)} 
-                                                                            className="input-field w-full" 
-                                                                            disabled={!isOwner || isEndDisabled}
-                                                                        />
-                                                                        </div>
-                                                                        <input 
-                                                                        type="text" 
-                                                                        placeholder="ยอดสูงสุด (บาท)" 
-                                                                        value={limit.max_amount} 
-                                                                        onChange={e => handleRangeLimitChange(index, 'max_amount', e.target.value)} 
-                                                                        className="input-field w-full sm:w-auto"
-                                                                        disabled={!isOwner}
-                                                                        />
-
-                                                                         <select
-                                                                            value={limit.number_limit_types}
-                                                                            onChange={e => handleRangeLimitChange(index, 'number_limit_types', e.target.value)}
-                                                                            className="input-field w-full sm:w-auto"
-                                                                            disabled={!isOwner}
-                                                                        >
-                                                                            <option value="ทั้งหมด">ทั้งหมด</option>
-                                                                            {startLen >= 3 ? (
-                                                                                <>
-                                                                                    <option value="ตรง">ตรง</option>
-                                                                                    <option value="โต๊ด">โต๊ด</option>
-                                                                                    <option value="ล่าง">ล่าง</option>
-                                                                                </>
-                                                                            ) : (
-                                                                                <>
-                                                                                    <option value="บน">บน</option>
-                                                                                    <option value="ล่าง">ล่าง</option>
-                                                                                </>
-                                                                            )}
-                                                                        </select>
-
-                                                                        <div className="flex w-full items-center sm:w-auto">
-                                                                        {startLen > 0 && <span className="text-xs text-gray-400 whitespace-nowrap">{getNumberTypeLabel(limit.range_start)}</span>}
-                                                                        <button onClick={() => handleRemoveRangeLimit(index)} className="btn-icon-danger ml-auto">
-                                                                            <XCircleIcon className="h-5 w-5"/>
-                                                                        </button>
-                                                                        </div>
-                                                                    </div>
-                                                                    )
-                                                                })}
+                                                                    const startLen = limit.range_start.length;
+                                                                    const endLen = limit.range_end.length;
+                                                                    const isEndDisabled = !startLen;
+                                                            // ✨ [จุดที่แก้ไข 4] เพิ่มการตรวจสอบความยาวไม่เท่ากันเข้าไปในเงื่อนไข isInvalidRange
+                                                            const isInvalidRange = (startLen > 0 && endLen > 0) && 
+                                                                                   ((startLen !== endLen) || (parseInt(limit.range_end) < parseInt(limit.range_start)));
+                                                                    return (
+                                                                    <div key={index} className={`flex flex-col sm:flex-row sm:items-center gap-2 p-2 bg-gray-800/60 rounded-md transition-all ${isInvalidRange ? 'ring-2 ring-red-500' : 'ring-1 ring-gray-700'}`}>
+                                                                        <div className="flex w-full items-center gap-2">
+                                                                        <input type="text" placeholder="ตั้งแต่เลข" value={limit.range_start} onChange={e => handleRangeLimitChange(index, 'range_start', e.target.value)} className="input-field w-full" disabled={!isOwner}/>
+                                                                        <span className="text-gray-500">-</span>
+                                                                        <input type="text" placeholder="ถึงเลขที่" value={limit.range_end} onChange={e => handleRangeLimitChange(index, 'range_end', e.target.value)} className="input-field w-full" disabled={!isOwner || isEndDisabled}/>
+                                                                        </div>
+                                                                        <input type="text" placeholder="ยอดสูงสุด (บาท)" value={limit.max_amount} onChange={e => handleRangeLimitChange(index, 'max_amount', e.target.value)} className="input-field w-full sm:w-auto" disabled={!isOwner}/>
+                                                                     <select value={limit.number_limit_types} onChange={e => handleRangeLimitChange(index, 'number_limit_types', e.target.value)} className="input-field w-full sm:w-auto" disabled={!isOwner}>
+                                                                            <option value="ทั้งหมด">ทั้งหมด</option>
+                                                                            {startLen >= 3 ? (
+                                                                                <>
+                                                                                    <option value="ตรง">ตรง</option>
+                                                                                    <option value="โต๊ด">โต๊ด</option>
+                                                                                    <option value="ล่าง">ล่าง</option>
+                                                                                </>
+                                                                            ) : (
+                                                                                <>
+                                                                                    <option value="บน">บน</option>
+                                                                                    <option value="ล่าง">ล่าง</option>
+                                                                                </>
+                                                                            )}
+                                                                        </select>
+                                                                        <div className="flex w-full items-center sm:w-auto">
+                                                                        {startLen > 0 && <span className="text-xs text-gray-400 whitespace-nowrap">{getNumberTypeLabel(limit.range_start)}</span>}
+                                                                        <button onClick={() => handleRemoveRangeLimit(index)} className="btn-icon-danger ml-auto">
+                                                                            <XCircleIcon className="h-5 w-5"/>
+                                                                        </button>
+                                                                        </div>
+                                                                    </div>
+                                                                    )
+                                                                })}
                                                                 </div>
                                                                 {rangeLimits.some(l => l.range_start && l.range_end && parseInt(l.range_end) < parseInt(l.range_start)) && <p className="text-xs text-red-400 mt-2">ตรวจพบช่วงตัวเลขไม่ถูกต้อง</p>}
                                                                 {rangeLimits.some(l => !l.range_start) && <p className="text-xs text-gray-500 mt-2 flex items-center gap-1"><InformationCircleIcon className="h-4 w-4"/>ช่อง 'ถึงเลขที่' จะเปิดให้กรอกเมื่อใส่ 'ตั้งแต่เลข'</p>}
