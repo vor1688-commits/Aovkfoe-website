@@ -413,19 +413,36 @@ const LottoFormPage = () => {
         ]);
         handleClearInputs();
     } catch (err: any) {
-        const errorData = err.response?.data;
-        if (errorData && errorData.error === 'LimitExceeded' && errorData.failedBets) {
-            const errorMessages = errorData.failedBets.map((failedBet: any) =>
-                `- เลข ${failedBet.betNumber}: ${failedBet.message}`
-            ).join('\n');
+      const errorData = err.response?.data;
+      if (errorData && errorData.error === 'LimitExceeded' && errorData.failedBets) {
+          
+          const errorMessages = errorData.failedBets.map((failedBet: any) => {
+              const { betNumber, style, limit, currentSpent, incomingAmount } = failedBet;
+              const remaining = limit - currentSpent;
 
-            alert("มีบางรายการเกินวงเงินที่กำหนด", errorMessages, "light");
-        } else {
-            alert("เกิดข้อผิดพลาด", errorData?.message || err.message || "ไม่สามารถตรวจสอบลิมิตได้", "light");
-        }
-    } finally {
-        setLoadingAddBills(false);
-    }
+              if (remaining <= 0) {
+                  return `- เลข ${betNumber} (${style}): วงเงินเต็มแล้ว (ซื้อไปแล้ว ${currentSpent.toLocaleString()}/${limit.toLocaleString()})`;
+              } else {
+                  return `- เลข ${betNumber} (${style}): เกินวงเงิน! (ซื้อเพิ่มได้อีกไม่เกิน ${remaining.toLocaleString()} บาท)`;
+              }
+          }).join('\n');
+
+          alert(
+              "มีบางรายการเกินวงเงินที่กำหนด", 
+              errorMessages, 
+              "light"
+          );
+
+      } else {
+          alert(
+              "เกิดข้อผิดพลาด", 
+              errorData?.message || err.message || "ไม่สามารถตรวจสอบลิมิตได้", 
+              "light"
+          );
+      }
+  } finally {
+      setLoadingAddBills(false);
+  }
   };
 
   const handleClearInputs = () => {

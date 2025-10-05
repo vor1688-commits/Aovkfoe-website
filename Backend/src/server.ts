@@ -778,7 +778,6 @@ app.post('/api/batch-check-bet-limits', async (req: Request, res: Response) => {
 
             let hasFailed = false;
 
-            // Check against the most specific rule for each type found
             const check = (price: number, style: 'บน' | 'ล่าง' | 'โต๊ด') => {
                 if (price <= 0 || hasFailed) return;
 
@@ -790,7 +789,15 @@ app.post('/api/batch-check-bet-limits', async (req: Request, res: Response) => {
                     const currentSpent = (spentInDb[style] || 0) + (spentInPending[style] || 0) + (spentInDb[styleAliases[1]] || 0) + (spentInPending[styleAliases[1]] || 0);
                     if (currentSpent + price > limit) {
                         hasFailed = true;
-                        failedBets.push({ betNumber, message: `เกินลิมิต '${style}' (${limit})` });
+                        // ✅ START: แก้ไขจุดที่ 1
+                        failedBets.push({ 
+                            betNumber, 
+                            style,
+                            limit,
+                            currentSpent,
+                            incomingAmount: price
+                        });
+                        // ✅ END: แก้ไขจุดที่ 1
                     }
                 }
             };
@@ -801,19 +808,25 @@ app.post('/api/batch-check-bet-limits', async (req: Request, res: Response) => {
 
             if (hasFailed) continue;
             
-            // Check against the most specific 'total' rule
             const totalRule = getMostSpecificRule(applicableRules, ['ทั้งหมด']);
             if (totalRule) {
                  const limit = parseFloat(totalRule.max_amount);
                  const totalSpent = Object.values(spentInDb).reduce((s, v) => s + v, 0) + Object.values(spentInPending).reduce((s, v) => s + v, 0);
                  const incomingTotal = priceTop + priceBottom + priceTote;
                  if (totalSpent + incomingTotal > limit) {
-                     failedBets.push({ betNumber, message: `เกินลิมิตรวม (${limit})` });
+                     // ✅ START: แก้ไขจุดที่ 2
+                     failedBets.push({ 
+                         betNumber, 
+                         style: 'ทั้งหมด',
+                         limit,
+                         currentSpent: totalSpent,
+                         incomingAmount: incomingTotal
+                     });
+                     // ✅ END: แก้ไขจุดที่ 2
                      continue;
                  }
             }
 
-            // Fallback to default limit if no special rules apply at all
             if (applicableRules.length === 0) {
                 const defaultLimitRaw = betNumber.length <= 2 ? roundLimits.limit_2d_amount : roundLimits.limit_3d_amount;
                 if (defaultLimitRaw && parseFloat(defaultLimitRaw) > 0) {
@@ -821,7 +834,15 @@ app.post('/api/batch-check-bet-limits', async (req: Request, res: Response) => {
                     const totalSpent = Object.values(spentInDb).reduce((s, v) => s + v, 0) + Object.values(spentInPending).reduce((s, v) => s + v, 0);
                     const incomingTotal = priceTop + priceBottom + priceTote;
                     if (totalSpent + incomingTotal > limit) {
-                        failedBets.push({ betNumber, message: `เกินลิมิตเริ่มต้น (${limit})` });
+                        // ✅ START: แก้ไขจุดที่ 3
+                        failedBets.push({ 
+                            betNumber, 
+                            style: 'ทั้งหมด',
+                            limit,
+                            currentSpent: totalSpent,
+                            incomingAmount: incomingTotal
+                        });
+                        // ✅ END: แก้ไขจุดที่ 3
                     }
                 }
             }
