@@ -466,7 +466,7 @@ const ManagementLottoRoundsPage: React.FC = () => {
                                                             </div>
                                                             
                                                             <div className="pt-4 border-t border-gray-700">
-                                                            <h4 className="font-semibold text-cyan-400 mb-3">ตั้งค่าข้อยกเว้น (ไม่ต้องตรวจสอบลิมิต)</h4>
+                                                            {/* <h4 className="font-semibold text-cyan-400 mb-3">ตั้งค่าข้อยกเว้น (ไม่ต้องตรวจสอบลิมิต)</h4>
                                                             <div className="space-y-3">
                                                                 {exemptions.map((ex, index) => (
                                                                     <div key={index} className="flex flex-col sm:grid sm:grid-cols-[auto_1fr_auto] sm:items-center gap-3 p-2 bg-gray-800/60 rounded-md border border-gray-700">
@@ -510,10 +510,10 @@ const ManagementLottoRoundsPage: React.FC = () => {
                                                                         </button>
                                                                     </div>
                                                                 ))}
-                                                            </div>
-                                                            <button onClick={handleAddExemption} className="btn-add-rule mt-4" disabled={!isOwner}>
+                                                            </div> */}
+                                                            {/* <button onClick={handleAddExemption} className="btn-add-rule mt-4" disabled={!isOwner}>
                                                                 <PlusIcon className="h-4 w-4 mr-1"/> เพิ่มข้อยกเว้น
-                                                            </button>
+                                                            </button> */}
                                                             </div>
                                                             <div className='flex justify-end gap-2'><button onClick={handleCancelEdit} className="btn-secondary"><XCircleIcon className="h-5 w-5"/><span>ยกเลิก</span></button><button onClick={() => handleSave(round.id)} disabled={isSaving === round.id} className="btn-primary"><CheckCircleIcon className="h-5 w-5"/><span>{isSaving ? 'กำลังบันทึก...' : 'บันทึก'}</span></button></div>
                                                         </div>
