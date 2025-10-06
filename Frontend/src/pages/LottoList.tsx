@@ -344,7 +344,8 @@ const handlePageChange = (newPage: number) => {
     }
 
   } catch (err: any) {
-    alert("เกิดข้อผิดพลาด", err.response?.data?.error || err.message || "การอัปเดตสถานะล้มเหลว", "light");
+    const msg = err.response?.data?.details || err.response?.data?.error || "การอัปเดตสถานะล้มเหลว";
+    alert("ผิดพลาด", msg, "light");
     setDetailEntries(originalEntries);
   }
 };
@@ -397,9 +398,9 @@ const handlePageChange = (newPage: number) => {
             );
         }
     } catch (err: any) {
-        // Interceptor จะจัดการกับ 401/403, ส่วนนี้จะแสดง alert สำหรับ error อื่นๆ
-        alert("เกิดข้อผิดพลาด", err.response?.data?.error || err.message || "การอัปเดตสถานะล้มเหลว", "light");
-    }
+        const msg = err.response?.data?.details || err.response?.data?.error || "การอัปเดตสถานะล้มเหลว";
+        alert("เกิดข้อผิดพลาด", msg, "light");
+      }
 };
   const handlePrint = useReactToPrint({
     content: () => printableBillRef.current,

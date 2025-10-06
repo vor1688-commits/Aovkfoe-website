@@ -1251,9 +1251,7 @@ app.put('/api/bet-items/:itemId/status', async (req: Request, res: Response) => 
         const billId = entryResult.rows[0].bill_id;
         
         let newBillStatus = null;
-
-        // ✨ --- [เริ่ม] Logic ที่แก้ไขใหม่ --- ✨
-        // 1. ดึงข้อมูล "ทุก" รายการในบิลนี้มาตรวจสอบสถานะ
+ 
         const allItemsResult = await client.query(
             `SELECT status FROM bet_items WHERE bill_entry_id IN (SELECT id FROM bill_entries WHERE bill_id = $1)`,
             [billId]
@@ -1284,8 +1282,7 @@ app.put('/api/bet-items/:itemId/status', async (req: Request, res: Response) => 
                     newBillStatus = billUpdateResult.rows[0].status;
                 }
             }
-        }
-        // ✨ --- [สิ้นสุด] Logic ที่แก้ไขใหม่ --- ✨
+        } 
 
         await client.query('COMMIT');
         
@@ -1400,6 +1397,20 @@ app.post('/api/bills/:billId/confirm', async (req: Request, res: Response) => {
     try {
         await client.query('BEGIN');
 
+        const roundStatusResult = await client.query(
+            `SELECT lr.status FROM bills b JOIN lotto_rounds lr ON b.lotto_round_id = lr.id WHERE b.id = $1`, 
+            [billId]
+        );
+
+        if (roundStatusResult.rowCount === 0) {
+            throw new Error('ไม่พบบิลที่ต้องการยืนยัน');
+        }
+
+        const roundStatus = roundStatusResult.rows[0].status;
+        if (roundStatus.includes('closed')) {
+            throw new Error('ไม่สามารถยืนยันบิลได้ เนื่องจากงวดนี้ปิดรับแล้ว');
+        }
+
         const billUpdateResult = await client.query(
             `UPDATE bills SET status = 'ยืนยันแล้ว' WHERE id = $1 RETURNING *`,
             [billId]
@@ -1421,15 +1432,13 @@ app.post('/api/bills/:billId/confirm', async (req: Request, res: Response) => {
             updatedBill: billUpdateResult.rows[0] 
         });
 
-    } catch (err: any) {
-        // --- ⬇️ คือ catch block ที่คุณถามถึง ⬇️ ---
+    } catch (err: any) { 
         await client.query('ROLLBACK');
         console.error(`Error canceling bill ${billId}:`, err);
         res.status(403).json({ 
             error: 'เกิดข้อผิดพลาดในการยืนยันบิล', // <-- หัวข้อเรื่อง
             details: err.message  // <-- เนื้อหาจดหมาย (ข้อความที่เรา throw)
-        });
-        // --- ⬆️ สิ้นสุด catch block ⬆️ ---
+        }); 
     } finally {
         client.release();
     }

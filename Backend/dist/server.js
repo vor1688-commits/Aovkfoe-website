@@ -1033,8 +1033,6 @@ app.put('/api/bet-items/:itemId/status', (req, res) => __awaiter(void 0, void 0,
         const entryResult = yield client.query('SELECT bill_id FROM bill_entries WHERE id = $1', [updatedItem.bill_entry_id]);
         const billId = entryResult.rows[0].bill_id;
         let newBillStatus = null;
-        // ✨ --- [เริ่ม] Logic ที่แก้ไขใหม่ --- ✨
-        // 1. ดึงข้อมูล "ทุก" รายการในบิลนี้มาตรวจสอบสถานะ
         const allItemsResult = yield client.query(`SELECT status FROM bet_items WHERE bill_entry_id IN (SELECT id FROM bill_entries WHERE bill_id = $1)`, [billId]);
         const allItems = allItemsResult.rows;
         // 2. ตรวจสอบเงื่อนไขเพื่อตัดสินใจสถานะของบิล
@@ -1056,7 +1054,6 @@ app.put('/api/bet-items/:itemId/status', (req, res) => __awaiter(void 0, void 0,
                 }
             }
         }
-        // ✨ --- [สิ้นสุด] Logic ที่แก้ไขใหม่ --- ✨
         yield client.query('COMMIT');
         res.json({ updatedItem, newBillStatus });
     }
@@ -1146,6 +1143,14 @@ app.post('/api/bills/:billId/confirm', (req, res) => __awaiter(void 0, void 0, v
     const client = yield db.connect();
     try {
         yield client.query('BEGIN');
+        const roundStatusResult = yield client.query(`SELECT lr.status FROM bills b JOIN lotto_rounds lr ON b.lotto_round_id = lr.id WHERE b.id = $1`, [billId]);
+        if (roundStatusResult.rowCount === 0) {
+            throw new Error('ไม่พบบิลที่ต้องการยืนยัน');
+        }
+        const roundStatus = roundStatusResult.rows[0].status;
+        if (roundStatus.includes('closed')) {
+            throw new Error('ไม่สามารถยืนยันบิลได้ เนื่องจากงวดนี้ปิดรับแล้ว');
+        }
         const billUpdateResult = yield client.query(`UPDATE bills SET status = 'ยืนยันแล้ว' WHERE id = $1 RETURNING *`, [billId]);
         if (((_a = billUpdateResult.rowCount) !== null && _a !== void 0 ? _a : 0) === 0) {
             throw new Error('ไม่พบบิลที่ต้องการยืนยัน');
@@ -1159,14 +1164,12 @@ app.post('/api/bills/:billId/confirm', (req, res) => __awaiter(void 0, void 0, v
         });
     }
     catch (err) {
-        // --- ⬇️ คือ catch block ที่คุณถามถึง ⬇️ ---
         yield client.query('ROLLBACK');
         console.error(`Error canceling bill ${billId}:`, err);
         res.status(403).json({
             error: 'เกิดข้อผิดพลาดในการยืนยันบิล', // <-- หัวข้อเรื่อง
             details: err.message // <-- เนื้อหาจดหมาย (ข้อความที่เรา throw)
         });
-        // --- ⬆️ สิ้นสุด catch block ⬆️ ---
     }
     finally {
         client.release();
