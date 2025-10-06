@@ -1292,10 +1292,13 @@ app.put('/api/bet-items/:itemId/status', async (req: Request, res: Response) => 
         res.json({ updatedItem, newBillStatus });
 
     } catch (err: any) {
-        await client.query('ROLLBACK');
-        console.error('Error updating item status:', err);
-        res.status(500).json({ error: 'อัปเดตสถานะไม่สำเร็จ', details: err.message });
-    } finally {
+        await client.query('ROLLBACK');
+        console.error('Error updating item status:', err);
+        res.status(403).json({ 
+            error: 'อัปเดตสถานะไม่สำเร็จ', 
+            details: err.message 
+        });
+    } finally {
         client.release();
     }
 });
@@ -1326,16 +1329,14 @@ app.post('/api/bills/:billId/update-all-items', async (req: Request, res: Respon
         if (roundStatus.includes('closed')) {
             throw new Error('ไม่สามารถอัปเดตรายการได้ เนื่องจากงวดนี้ปิดรับแล้ว');
         }
-
-        // 1. อัปเดตรายการที่ยังเป็น NULL (รอการตัดสินใจ) ให้เป็นสถานะใหม่
+ 
         const updateItemsResult = await client.query(`
             UPDATE bet_items SET status = $1 
             WHERE status IS NULL AND bill_entry_id IN (SELECT id FROM bill_entries WHERE bill_id = $2)
             RETURNING *`, [newItemStatus, billId]);
         
         let newBillStatus = null;
-
-        // 2. ดึงข้อมูล "ทุก" รายการในบิลนี้มาตรวจสอบอีกครั้ง
+ 
         const allItemsResult = await client.query(
             `SELECT status FROM bet_items WHERE bill_entry_id IN (SELECT id FROM bill_entries WHERE bill_id = $1)`,
             [billId]
@@ -1348,8 +1349,7 @@ app.post('/api/bills/:billId/update-all-items', async (req: Request, res: Respon
             const areAllItemsReturned = allItems.every(item => item.status === 'คืนเลข');
             const areAllItemsProcessed = allItems.every(item => item.status === 'ยืนยัน' || item.status === 'คืนเลข');
 
-            if (areAllItemsReturned) {
-                // ✨ ถ้าทุกรายการถูก 'คืนเลข' -> สถานะบิลหลักจะเป็น 'ยกเลิก'
+            if (areAllItemsReturned) { 
                 const billUpdateResult = await client.query(
                     `UPDATE bills SET status = 'ยกเลิก' WHERE id = $1 RETURNING status`,
                     [billId]
@@ -1357,8 +1357,7 @@ app.post('/api/bills/:billId/update-all-items', async (req: Request, res: Respon
                 if ((billUpdateResult.rowCount ?? 0) > 0) {
                     newBillStatus = billUpdateResult.rows[0].status;
                 }
-            } else if (areAllItemsProcessed) {
-                // ✨ ถ้าทุกรายการถูกจัดการแล้ว (ไม่มีรายการที่รอผล) -> สถานะบิลหลักจะเป็น 'ยืนยันแล้ว'
+            } else if (areAllItemsProcessed) { 
                 const billUpdateResult = await client.query(
                     `UPDATE bills SET status = 'ยืนยันแล้ว' WHERE id = $1 AND status = 'รอผล' RETURNING status`,
                     [billId]
@@ -1378,10 +1377,13 @@ app.post('/api/bills/:billId/update-all-items', async (req: Request, res: Respon
         });
 
     } catch (err: any) {
-        await client.query('ROLLBACK');
-        console.error('Error bulk updating items:', err);
-        res.status(500).json({ error: 'เกิดข้อผิดพลาดในการอัปเดตรายการทั้งหมด', details: err.message });
-    } finally {
+        await client.query('ROLLBACK');
+        console.error('Error bulk updating items:', err);
+        res.status(403).json({ 
+            error: 'เกิดข้อผิดพลาดในการอัปเดตรายการทั้งหมด', 
+            details: err.message 
+        });
+    } finally {
         client.release();
     }
 });
@@ -1415,11 +1417,14 @@ app.post('/api/bills/:billId/confirm', async (req: Request, res: Response) => {
             updatedBill: billUpdateResult.rows[0] 
         });
 
-    } catch (err: any) {
-        await client.query('ROLLBACK');
-        console.error(`Error confirming bill ${billId}:`, err);
-        res.status(500).json({ error: 'เกิดข้อผิดพลาดในการยืนยันบิล (หวยงวดนี้ปิดรับการยืนยันหรือยกเลิกแล้ว)', details: err.message });
-    } finally {
+    } catch (err: any) { 
+        await client.query('ROLLBACK');
+        console.error(`Error canceling bill ${billId}:`, err);
+        res.status(403).json({ 
+            error: 'เกิดข้อผิดพลาดในการยืนยันบิล', 
+            details: err.message   
+        }); 
+    } finally {
         client.release();
     }
 });
@@ -1467,11 +1472,14 @@ app.post('/api/bills/:billId/cancel', async (req: Request, res: Response) => {
             updatedBill: billUpdateResult.rows[0]
         });
 
-    } catch (err: any) {
-        await client.query('ROLLBACK');
-        console.error(`Error canceling bill ${billId}:`, err);
-        res.status(500).json({ error: 'เกิดข้อผิดพลาดในการยกเลิกบิล', details: err.message });
-    } finally {
+    } catch (err: any) { 
+        await client.query('ROLLBACK');
+        console.error(`Error canceling bill ${billId}:`, err);
+        res.status(403).json({ 
+            error: 'เกิดข้อผิดพลาดในการยกเลิกบิล', // <-- หัวข้อเรื่อง
+            details: err.message  // <-- เนื้อหาจดหมาย (ข้อความที่เรา throw)
+        }); 
+    } finally {
         client.release();
     }
 });

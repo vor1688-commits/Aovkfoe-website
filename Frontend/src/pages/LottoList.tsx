@@ -244,9 +244,9 @@ const handlePageChange = (newPage: number) => {
         alert("สำเร็จ", response.data.message, "light", false);
         setExpandedRowId(null);
 
-      } catch (err: any) { 
-        const msg = err.response?.data?.error || "เกิดข้อผิดพลาดในการยืนยันบิล";
-        alert("ผิดพลาด", msg, "light");
+      } catch (err: any) {  
+          const msg = err.response?.data?.details || err.response?.data?.error || "เกิดข้อผิดพลาดในการยืนยันบิล";
+          alert("ผิดพลาด", msg, "light");
       }
     }
 };
@@ -268,9 +268,9 @@ const handlePageChange = (newPage: number) => {
         ); 
         alert("ยกเลิกสำเร็จ", `บิล #${billRef} ถูกยกเลิกเรียบร้อยแล้ว`, "light", false);
         setExpandedRowId(null); 
-    } catch (err: any) { 
-        const msg = err.response?.data?.error || "เกิดข้อผิดพลาดในการยกเลิกบิล";
-        alert("ผิดพลาด", msg, "light");
+    } catch (err: any) {  
+        const msg = err.response?.data?.details || err.response?.data?.error || "เกิดข้อผิดพลาดในการยกเลิกบิล";
+        alert("ผิดพลาด", msg, "light");
     }
 };
   
