@@ -435,7 +435,14 @@ app.post("/api/savebills", (req, res) => __awaiter(void 0, void 0, void 0, funct
     const client = yield db.connect();
     try {
         yield client.query("BEGIN");
-        // ⬇️⬇️⬇️ START: ส่วนที่เพิ่มเข้ามาเพื่อความปลอดภัย ⬇️⬇️⬇️
+        const roundCheckResult = yield client.query('SELECT status, cutoff_datetime FROM lotto_rounds WHERE id = $1 FOR UPDATE', [lottoRoundId]);
+        if (roundCheckResult.rowCount === 0) {
+            throw new Error("ไม่พบข้อมูลงวดหวย (Lotto Round ID ไม่ถูกต้อง)");
+        }
+        const roundData = roundCheckResult.rows[0];
+        if (roundData.status.includes('closed') || new Date(roundData.cutoff_datetime) < new Date()) {
+            throw new Error('ไม่สามารถบันทึกบิลได้ เนื่องจากงวดนี้ปิดรับแล้ว');
+        }
         // 1. ล็อคแถวข้อมูล lotto_round เพื่อป้องกัน Race Condition
         yield client.query('SELECT id FROM lotto_rounds WHERE id = $1 FOR UPDATE', [lottoRoundId]);
         // 2. ตรวจสอบลิมิตครั้งสุดท้ายก่อนบันทึกจริง
@@ -1002,6 +1009,21 @@ app.put('/api/bet-items/:itemId/status', (req, res) => __awaiter(void 0, void 0,
     const client = yield db.connect();
     try {
         yield client.query('BEGIN');
+        const roundStatusResult = yield client.query(`
+            SELECT lr.status
+            FROM bet_items bi
+            JOIN bill_entries be ON bi.bill_entry_id = be.id
+            JOIN bills b ON be.bill_id = b.id
+            JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
+            WHERE bi.id = $1
+        `, [itemId]);
+        if (roundStatusResult.rowCount === 0) {
+            throw new Error('ไม่พบรายการที่ต้องการอัปเดต');
+        }
+        const roundStatus = roundStatusResult.rows[0].status;
+        if (roundStatus.includes('closed')) {
+            throw new Error('ไม่สามารถอัปเดตรายการได้ เนื่องจากงวดนี้ปิดรับแล้ว');
+        }
         const itemResult = yield client.query('UPDATE bet_items SET status = $1 WHERE id = $2 RETURNING *', [status, itemId]);
         if (((_a = itemResult.rowCount) !== null && _a !== void 0 ? _a : 0) === 0) {
             yield client.query('ROLLBACK');
@@ -1055,6 +1077,19 @@ app.post('/api/bills/:billId/update-all-items', (req, res) => __awaiter(void 0, 
     const client = yield db.connect();
     try {
         yield client.query('BEGIN');
+        const roundStatusResult = yield client.query(`
+            SELECT lr.status
+            FROM bills b
+            JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
+            WHERE b.id = $1
+        `, [billId]);
+        if (roundStatusResult.rowCount === 0) {
+            throw new Error('ไม่พบบิลที่ต้องการอัปเดต');
+        }
+        const roundStatus = roundStatusResult.rows[0].status;
+        if (roundStatus.includes('closed')) {
+            throw new Error('ไม่สามารถอัปเดตรายการได้ เนื่องจากงวดนี้ปิดรับแล้ว');
+        }
         // 1. อัปเดตรายการที่ยังเป็น NULL (รอการตัดสินใจ) ให้เป็นสถานะใหม่
         const updateItemsResult = yield client.query(`
             UPDATE bet_items SET status = $1 
@@ -1132,6 +1167,19 @@ app.post('/api/bills/:billId/cancel', (req, res) => __awaiter(void 0, void 0, vo
     const client = yield db.connect();
     try {
         yield client.query('BEGIN');
+        const roundStatusResult = yield client.query(`
+            SELECT lr.status
+            FROM bills b
+            JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
+            WHERE b.id = $1
+        `, [billId]);
+        if (roundStatusResult.rowCount === 0) {
+            throw new Error('ไม่พบบิลที่ต้องการยกเลิก');
+        }
+        const roundStatus = roundStatusResult.rows[0].status;
+        if (roundStatus.includes('closed')) {
+            throw new Error('ไม่สามารถยกเลิกบิลได้ เนื่องจากงวดนี้ปิดรับแล้ว');
+        }
         const billUpdateResult = yield client.query(`UPDATE bills SET status = 'ยกเลิก' WHERE id = $1 RETURNING *`, [billId]);
         if (((_a = billUpdateResult.rowCount) !== null && _a !== void 0 ? _a : 0) === 0) {
             throw new Error('ไม่พบบิลที่ต้องการยกเลิก');

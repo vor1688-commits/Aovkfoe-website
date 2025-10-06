@@ -541,7 +541,19 @@ app.post("/api/savebills", async (req: Request, res: Response) => {
     try {
         await client.query("BEGIN");
 
-        // ⬇️⬇️⬇️ START: ส่วนที่เพิ่มเข้ามาเพื่อความปลอดภัย ⬇️⬇️⬇️
+        const roundCheckResult = await client.query(
+            'SELECT status, cutoff_datetime FROM lotto_rounds WHERE id = $1 FOR UPDATE', 
+            [lottoRoundId]
+        );
+
+        if (roundCheckResult.rowCount === 0) {
+            throw new Error("ไม่พบข้อมูลงวดหวย (Lotto Round ID ไม่ถูกต้อง)");
+        }
+
+        const roundData = roundCheckResult.rows[0];
+        if (roundData.status.includes('closed') || new Date(roundData.cutoff_datetime) < new Date()) {
+            throw new Error('ไม่สามารถบันทึกบิลได้ เนื่องจากงวดนี้ปิดรับแล้ว');
+        }
 
         // 1. ล็อคแถวข้อมูล lotto_round เพื่อป้องกัน Race Condition
         await client.query('SELECT id FROM lotto_rounds WHERE id = $1 FOR UPDATE', [lottoRoundId]);
@@ -1210,6 +1222,24 @@ app.put('/api/bet-items/:itemId/status', async (req: Request, res: Response) => 
     try {
         await client.query('BEGIN');
 
+        const roundStatusResult = await client.query(`
+            SELECT lr.status
+            FROM bet_items bi
+            JOIN bill_entries be ON bi.bill_entry_id = be.id
+            JOIN bills b ON be.bill_id = b.id
+            JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
+            WHERE bi.id = $1
+        `, [itemId]);
+
+        if (roundStatusResult.rowCount === 0) {
+            throw new Error('ไม่พบรายการที่ต้องการอัปเดต');
+        }
+
+        const roundStatus = roundStatusResult.rows[0].status;
+        if (roundStatus.includes('closed')) {
+            throw new Error('ไม่สามารถอัปเดตรายการได้ เนื่องจากงวดนี้ปิดรับแล้ว');
+        }
+
         const itemResult = await client.query('UPDATE bet_items SET status = $1 WHERE id = $2 RETURNING *', [status, itemId]);
         if ((itemResult.rowCount ?? 0) === 0) {
             await client.query('ROLLBACK');
@@ -1280,6 +1310,22 @@ app.post('/api/bills/:billId/update-all-items', async (req: Request, res: Respon
 
     try {
         await client.query('BEGIN');
+
+        const roundStatusResult = await client.query(`
+            SELECT lr.status
+            FROM bills b
+            JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
+            WHERE b.id = $1
+        `, [billId]);
+
+        if (roundStatusResult.rowCount === 0) {
+            throw new Error('ไม่พบบิลที่ต้องการอัปเดต');
+        }
+
+        const roundStatus = roundStatusResult.rows[0].status;
+        if (roundStatus.includes('closed')) {
+            throw new Error('ไม่สามารถอัปเดตรายการได้ เนื่องจากงวดนี้ปิดรับแล้ว');
+        }
 
         // 1. อัปเดตรายการที่ยังเป็น NULL (รอการตัดสินใจ) ให้เป็นสถานะใหม่
         const updateItemsResult = await client.query(`
@@ -1385,6 +1431,22 @@ app.post('/api/bills/:billId/cancel', async (req: Request, res: Response) => {
 
     try {
         await client.query('BEGIN');
+
+          const roundStatusResult = await client.query(`
+            SELECT lr.status
+            FROM bills b
+            JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
+            WHERE b.id = $1
+        `, [billId]);
+
+        if (roundStatusResult.rowCount === 0) {
+            throw new Error('ไม่พบบิลที่ต้องการยกเลิก');
+        }
+
+        const roundStatus = roundStatusResult.rows[0].status;
+        if (roundStatus.includes('closed')) {
+            throw new Error('ไม่สามารถยกเลิกบิลได้ เนื่องจากงวดนี้ปิดรับแล้ว');
+        }
 
         const billUpdateResult = await client.query(
             `UPDATE bills SET status = 'ยกเลิก' WHERE id = $1 RETURNING *`,
