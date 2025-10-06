@@ -20,7 +20,7 @@ export const setupAxiosInterceptors = (logoutUser: () => void) => {
   api.interceptors.response.use(
     (response) => response,  
     (error) => { 
-      if (error.response && (error.response.status === 401 || error.response.status === 403)) { 
+      if (error.response && (error.response.status === 401 /* || error.response.status === 403)*/)) { 
         console.log('Session expired or invalid, logging out...');
         logoutUser();
 

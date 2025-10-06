@@ -111,7 +111,7 @@ const isAuthenticated = (req: Request, res: Response, next: NextFunction) => {
     }
     jwt.verify(token, process.env.JWT_SECRET || 'YOUR_SUPER_SECRET_KEY', (err: any, user: any) => {
         if (err) {
-            return res.status(403).json({ error: 'Forbidden: Invalid or expired token' });
+            return res.status(401).json({ error: 'Forbidden: Invalid or expired token' });
         }
         req.user = user as AuthenticatedUser;
         next();
@@ -124,7 +124,7 @@ const isAdminOrOwner = async (req: Request, res: Response, next: NextFunction) =
     if (userRole === 'admin' || userRole === 'owner') {
         next(); // ผ่าน! ไปยัง Endpoint ต่อไปได้
     } else {
-        res.status(403).json({ error: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' });
+        res.status(401).json({ error: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' });
     }
 };
 
@@ -1329,14 +1329,16 @@ app.post('/api/bills/:billId/update-all-items', async (req: Request, res: Respon
         if (roundStatus.includes('closed')) {
             throw new Error('ไม่สามารถอัปเดตรายการได้ เนื่องจากงวดนี้ปิดรับแล้ว');
         }
- 
+
+        // 1. อัปเดตรายการที่ยังเป็น NULL (รอการตัดสินใจ) ให้เป็นสถานะใหม่
         const updateItemsResult = await client.query(`
             UPDATE bet_items SET status = $1 
             WHERE status IS NULL AND bill_entry_id IN (SELECT id FROM bill_entries WHERE bill_id = $2)
             RETURNING *`, [newItemStatus, billId]);
         
         let newBillStatus = null;
- 
+
+        // 2. ดึงข้อมูล "ทุก" รายการในบิลนี้มาตรวจสอบอีกครั้ง
         const allItemsResult = await client.query(
             `SELECT status FROM bet_items WHERE bill_entry_id IN (SELECT id FROM bill_entries WHERE bill_id = $1)`,
             [billId]
@@ -1349,7 +1351,8 @@ app.post('/api/bills/:billId/update-all-items', async (req: Request, res: Respon
             const areAllItemsReturned = allItems.every(item => item.status === 'คืนเลข');
             const areAllItemsProcessed = allItems.every(item => item.status === 'ยืนยัน' || item.status === 'คืนเลข');
 
-            if (areAllItemsReturned) { 
+            if (areAllItemsReturned) {
+                // ✨ ถ้าทุกรายการถูก 'คืนเลข' -> สถานะบิลหลักจะเป็น 'ยกเลิก'
                 const billUpdateResult = await client.query(
                     `UPDATE bills SET status = 'ยกเลิก' WHERE id = $1 RETURNING status`,
                     [billId]
@@ -1357,7 +1360,8 @@ app.post('/api/bills/:billId/update-all-items', async (req: Request, res: Respon
                 if ((billUpdateResult.rowCount ?? 0) > 0) {
                     newBillStatus = billUpdateResult.rows[0].status;
                 }
-            } else if (areAllItemsProcessed) { 
+            } else if (areAllItemsProcessed) {
+                // ✨ ถ้าทุกรายการถูกจัดการแล้ว (ไม่มีรายการที่รอผล) -> สถานะบิลหลักจะเป็น 'ยืนยันแล้ว'
                 const billUpdateResult = await client.query(
                     `UPDATE bills SET status = 'ยืนยันแล้ว' WHERE id = $1 AND status = 'รอผล' RETURNING status`,
                     [billId]
@@ -1376,14 +1380,14 @@ app.post('/api/bills/:billId/update-all-items', async (req: Request, res: Respon
             newBillStatus 
         });
 
-    } catch (err: any) {
+    }  catch (err: any) {
         await client.query('ROLLBACK');
         console.error('Error bulk updating items:', err);
         res.status(403).json({ 
             error: 'เกิดข้อผิดพลาดในการอัปเดตรายการทั้งหมด', 
             details: err.message 
         });
-    } finally {
+    }finally {
         client.release();
     }
 });
@@ -1417,13 +1421,15 @@ app.post('/api/bills/:billId/confirm', async (req: Request, res: Response) => {
             updatedBill: billUpdateResult.rows[0] 
         });
 
-    } catch (err: any) { 
+    } catch (err: any) {
+        // --- ⬇️ คือ catch block ที่คุณถามถึง ⬇️ ---
         await client.query('ROLLBACK');
         console.error(`Error canceling bill ${billId}:`, err);
         res.status(403).json({ 
-            error: 'เกิดข้อผิดพลาดในการยืนยันบิล', 
-            details: err.message   
-        }); 
+            error: 'เกิดข้อผิดพลาดในการยืนยันบิล', // <-- หัวข้อเรื่อง
+            details: err.message  // <-- เนื้อหาจดหมาย (ข้อความที่เรา throw)
+        });
+        // --- ⬆️ สิ้นสุด catch block ⬆️ ---
     } finally {
         client.release();
     }
@@ -1472,13 +1478,15 @@ app.post('/api/bills/:billId/cancel', async (req: Request, res: Response) => {
             updatedBill: billUpdateResult.rows[0]
         });
 
-    } catch (err: any) { 
+    } catch (err: any) {
+        // --- ⬇️ คือ catch block ที่คุณถามถึง ⬇️ ---
         await client.query('ROLLBACK');
         console.error(`Error canceling bill ${billId}:`, err);
         res.status(403).json({ 
             error: 'เกิดข้อผิดพลาดในการยกเลิกบิล', // <-- หัวข้อเรื่อง
             details: err.message  // <-- เนื้อหาจดหมาย (ข้อความที่เรา throw)
-        }); 
+        });
+        // --- ⬆️ สิ้นสุด catch block ⬆️ ---
     } finally {
         client.release();
     }

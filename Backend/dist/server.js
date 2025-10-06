@@ -74,7 +74,7 @@ const isAuthenticated = (req, res, next) => {
     }
     jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET || 'YOUR_SUPER_SECRET_KEY', (err, user) => {
         if (err) {
-            return res.status(403).json({ error: 'Forbidden: Invalid or expired token' });
+            return res.status(401).json({ error: 'Forbidden: Invalid or expired token' });
         }
         req.user = user;
         next();
@@ -87,7 +87,7 @@ const isAdminOrOwner = (req, res, next) => __awaiter(void 0, void 0, void 0, fun
         next(); // ผ่าน! ไปยัง Endpoint ต่อไปได้
     }
     else {
-        res.status(403).json({ error: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' });
+        res.status(401).json({ error: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' });
     }
 });
 app.post("/api/register", isAuthenticated, isAdminOrOwner, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -1093,11 +1093,13 @@ app.post('/api/bills/:billId/update-all-items', (req, res) => __awaiter(void 0, 
         if (roundStatus.includes('closed')) {
             throw new Error('ไม่สามารถอัปเดตรายการได้ เนื่องจากงวดนี้ปิดรับแล้ว');
         }
+        // 1. อัปเดตรายการที่ยังเป็น NULL (รอการตัดสินใจ) ให้เป็นสถานะใหม่
         const updateItemsResult = yield client.query(`
             UPDATE bet_items SET status = $1 
             WHERE status IS NULL AND bill_entry_id IN (SELECT id FROM bill_entries WHERE bill_id = $2)
             RETURNING *`, [newItemStatus, billId]);
         let newBillStatus = null;
+        // 2. ดึงข้อมูล "ทุก" รายการในบิลนี้มาตรวจสอบอีกครั้ง
         const allItemsResult = yield client.query(`SELECT status FROM bet_items WHERE bill_entry_id IN (SELECT id FROM bill_entries WHERE bill_id = $1)`, [billId]);
         const allItems = allItemsResult.rows;
         // 3. Logic ใหม่ในการตัดสินใจสถานะของบิล
@@ -1105,12 +1107,14 @@ app.post('/api/bills/:billId/update-all-items', (req, res) => __awaiter(void 0, 
             const areAllItemsReturned = allItems.every(item => item.status === 'คืนเลข');
             const areAllItemsProcessed = allItems.every(item => item.status === 'ยืนยัน' || item.status === 'คืนเลข');
             if (areAllItemsReturned) {
+                // ✨ ถ้าทุกรายการถูก 'คืนเลข' -> สถานะบิลหลักจะเป็น 'ยกเลิก'
                 const billUpdateResult = yield client.query(`UPDATE bills SET status = 'ยกเลิก' WHERE id = $1 RETURNING status`, [billId]);
                 if (((_a = billUpdateResult.rowCount) !== null && _a !== void 0 ? _a : 0) > 0) {
                     newBillStatus = billUpdateResult.rows[0].status;
                 }
             }
             else if (areAllItemsProcessed) {
+                // ✨ ถ้าทุกรายการถูกจัดการแล้ว (ไม่มีรายการที่รอผล) -> สถานะบิลหลักจะเป็น 'ยืนยันแล้ว'
                 const billUpdateResult = yield client.query(`UPDATE bills SET status = 'ยืนยันแล้ว' WHERE id = $1 AND status = 'รอผล' RETURNING status`, [billId]);
                 if (((_b = billUpdateResult.rowCount) !== null && _b !== void 0 ? _b : 0) > 0) {
                     newBillStatus = billUpdateResult.rows[0].status;
@@ -1155,12 +1159,14 @@ app.post('/api/bills/:billId/confirm', (req, res) => __awaiter(void 0, void 0, v
         });
     }
     catch (err) {
+        // --- ⬇️ คือ catch block ที่คุณถามถึง ⬇️ ---
         yield client.query('ROLLBACK');
         console.error(`Error canceling bill ${billId}:`, err);
         res.status(403).json({
-            error: 'เกิดข้อผิดพลาดในการยืนยันบิล',
-            details: err.message
+            error: 'เกิดข้อผิดพลาดในการยืนยันบิล', // <-- หัวข้อเรื่อง
+            details: err.message // <-- เนื้อหาจดหมาย (ข้อความที่เรา throw)
         });
+        // --- ⬆️ สิ้นสุด catch block ⬆️ ---
     }
     finally {
         client.release();
@@ -1193,12 +1199,14 @@ app.post('/api/bills/:billId/cancel', (req, res) => __awaiter(void 0, void 0, vo
         });
     }
     catch (err) {
+        // --- ⬇️ คือ catch block ที่คุณถามถึง ⬇️ ---
         yield client.query('ROLLBACK');
         console.error(`Error canceling bill ${billId}:`, err);
         res.status(403).json({
             error: 'เกิดข้อผิดพลาดในการยกเลิกบิล', // <-- หัวข้อเรื่อง
             details: err.message // <-- เนื้อหาจดหมาย (ข้อความที่เรา throw)
         });
+        // --- ⬆️ สิ้นสุด catch block ⬆️ ---
     }
     finally {
         client.release();
