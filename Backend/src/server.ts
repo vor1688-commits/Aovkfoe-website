@@ -1408,7 +1408,7 @@ app.post('/api/bills/:billId/confirm', async (req: Request, res: Response) => {
 
         const roundStatus = roundStatusResult.rows[0].status;
         if (roundStatus.includes('closed')) {
-            throw new Error('ไม่สามารถยืนยันบิลได้ด้วยตนเอง เนื่องจากงวดนี้ปิดรับแล้ว (เซิฟเวอร์จะยืนยันบิลให้อัตโนมัติ)');
+            throw new Error('ไม่สามารถยืนยันบิลได้ด้วยตนเอง เนื่องจากงวดนี้ปิดรับแล้ว (เซิฟเวอร์จะยืนยันบิลให้อัตโนมัติ แต่จะไม่สามารถยกเลิกหรือกระทำใดๆต่อบิลนี้ได้)');
         }
 
         const billUpdateResult = await client.query(
