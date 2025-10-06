@@ -749,156 +749,155 @@ app.post('/api/bills/batch-delete', async (req, res) => {
 
  
 app.post('/api/batch-check-bet-limits', async (req: Request, res: Response) => {
-    // ✅ 1. นำ pendingBets กลับมาใช้งาน
-    const { userId, lottoRoundId, bets, pendingBets } = req.body;
-    const client = await db.connect();
+    const { userId, lottoRoundId, bets, pendingBets } = req.body;
+    const client = await db.connect();
 
-    try {
-        const userResult = await client.query('SELECT role FROM users WHERE id = $1', [userId]);
-        if (userResult.rowCount === 0) throw new Error('ไม่พบผู้ใช้');
-        const userRole = userResult.rows[0].role;
-        const exemptionResult = await client.query('SELECT * FROM lotto_round_exemptions WHERE lotto_round_id = $1', [lottoRoundId]);
-        const isExempt = exemptionResult.rows.some(ex => 
-            (ex.exemption_type === 'user' && ex.user_id === userId) ||
-            (ex.exemption_type === 'role' && ex.user_role === userRole)
-        );
-        if (isExempt) return res.status(200).json({ message: 'สามารถซื้อได้ทั้งหมด (ผู้ใช้ได้รับการยกเว้น)' });
+    try {
+        const userResult = await client.query('SELECT role FROM users WHERE id = $1', [userId]);
+        if (userResult.rowCount === 0) throw new Error('ไม่พบผู้ใช้');
+        const userRole = userResult.rows[0].role;
+        const exemptionResult = await client.query('SELECT * FROM lotto_round_exemptions WHERE lotto_round_id = $1', [lottoRoundId]);
+        const isExempt = exemptionResult.rows.some(ex => 
+            (ex.exemption_type === 'user' && ex.user_id === userId) ||
+            (ex.exemption_type === 'role' && ex.user_role === userRole)
+        );
+        if (isExempt) return res.status(200).json({ message: 'สามารถซื้อได้ทั้งหมด (ผู้ใช้ได้รับการยกเว้น)' });
 
-        const betNumbersInRequest = [...new Set(bets.map((b: any) => b.betNumber))];
-        const [roundLimitsResult, rangeLimitsResult, spentResult] = await Promise.all([
-            client.query('SELECT limit_2d_amount, limit_3d_amount FROM lotto_rounds WHERE id = $1', [lottoRoundId]),
-            client.query('SELECT range_start, range_end, max_amount, number_limit_types FROM lotto_round_range_limits WHERE lotto_round_id = $1', [lottoRoundId]),
-            client.query(`SELECT bet_number, bet_style, SUM(price) as total_spent FROM bet_items bi JOIN bill_entries be ON bi.bill_entry_id = be.id JOIN bills b ON be.bill_id = b.id WHERE b.lotto_round_id = $1 AND bi.bet_number = ANY($2) AND b.status IN ('รอผล', 'ยืนยันแล้ว', 'ยกเลิก') GROUP BY bi.bet_number, bi.bet_style`, [lottoRoundId, betNumbersInRequest])
-        ]);
+        const betNumbersInRequest = [...new Set(bets.map((b: any) => b.betNumber))];
+        const [roundLimitsResult, rangeLimitsResult, spentResult] = await Promise.all([
+            client.query('SELECT limit_2d_amount, limit_3d_amount FROM lotto_rounds WHERE id = $1', [lottoRoundId]),
+            client.query('SELECT range_start, range_end, max_amount, number_limit_types FROM lotto_round_range_limits WHERE lotto_round_id = $1', [lottoRoundId]),
+            client.query(`SELECT bet_number, bet_style, SUM(price) as total_spent FROM bet_items bi JOIN bill_entries be ON bi.bill_entry_id = be.id JOIN bills b ON be.bill_id = b.id WHERE b.lotto_round_id = $1 AND bi.bet_number = ANY($2) AND b.status IN ('รอผล', 'ยืนยันแล้ว', 'ยกเลิก') GROUP BY bi.bet_number, bi.bet_style`, [lottoRoundId, betNumbersInRequest])
+        ]);
 
-        const roundLimits = roundLimitsResult.rows[0] || {};
-        const rangeLimits = rangeLimitsResult.rows;
-        
-        const spentMap: { [key: string]: { [key:string]: number } } = {};
-        spentResult.rows.forEach(row => {
-            if (!spentMap[row.bet_number]) spentMap[row.bet_number] = {};
-            spentMap[row.bet_number][row.bet_style] = parseFloat(row.total_spent);
-        });
+        const roundLimits = roundLimitsResult.rows[0] || {};
+        const rangeLimits = rangeLimitsResult.rows;
+        
+        const spentMap: { [key: string]: { [key:string]: number } } = {};
+        spentResult.rows.forEach(row => {
+            if (!spentMap[row.bet_number]) spentMap[row.bet_number] = {};
+            spentMap[row.bet_number][row.bet_style] = parseFloat(row.total_spent);
+        });
 
-        // ✅ 2. นำ Logic การคำนวณ pendingMap ที่ถูกต้องกลับมา
-        const pendingMap: { [key: string]: { [key: string]: number } } = {};
-        if (pendingBets && Array.isArray(pendingBets)) {
-            for (const entry of pendingBets) {
-                for (const betNumber of entry.bets) {
-                    if (!pendingMap[betNumber]) {
-                        pendingMap[betNumber] = { 'บน': 0, 'ตรง': 0, 'ล่าง': 0, 'โต๊ด': 0 };
-                    }
-                    const isThreeDigitMode = entry.betTypes === '3d' || entry.betTypes === '6d';
-                    if (entry.priceTop > 0) {
-                        if (isThreeDigitMode) {
-                            pendingMap[betNumber]['ตรง'] += entry.priceTop;
-                        } else {
-                            pendingMap[betNumber]['บน'] += entry.priceTop;
-                        }
-                    }
-                    pendingMap[betNumber]['ล่าง'] += entry.priceBottom || 0;
-                    pendingMap[betNumber]['โต๊ด'] += entry.priceTote || 0;
-                }
-            }
-        }
-        
-        const incomingTotals: { [key: string]: { priceTop: number, priceBottom: number, priceTote: number } } = {};
-        for (const bet of bets) {
-            if (!incomingTotals[bet.betNumber]) {
-                incomingTotals[bet.betNumber] = { priceTop: 0, priceBottom: 0, priceTote: 0 };
-            }
-            incomingTotals[bet.betNumber].priceTop += bet.priceTop || 0;
-            incomingTotals[bet.betNumber].priceBottom += bet.priceBottom || 0;
-            incomingTotals[bet.betNumber].priceTote += bet.priceTote || 0;
-        }
+        const pendingMap: { [key: string]: { [key: string]: number } } = {};
+        if (pendingBets && Array.isArray(pendingBets)) {
+            for (const entry of pendingBets) {
+                for (const betNumber of entry.bets) {
+                    if (!pendingMap[betNumber]) {
+                        pendingMap[betNumber] = { 'บน': 0, 'ตรง': 0, 'ล่าง': 0, 'โต๊ด': 0 };
+                    }
+                    const isThreeDigitMode = entry.betTypes === '3d' || entry.betTypes === '6d';
+                    if (entry.priceTop > 0) {
+                        if (isThreeDigitMode) {
+                            pendingMap[betNumber]['ตรง'] += entry.priceTop;
+                        } else {
+                            pendingMap[betNumber]['บน'] += entry.priceTop;
+                        }
+                    }
+                    pendingMap[betNumber]['ล่าง'] += entry.priceBottom || 0;
+                    pendingMap[betNumber]['โต๊ด'] += entry.priceTote || 0;
+                }
+            }
+        }
+        
+        const incomingTotals: { [key: string]: { priceTop: number, priceBottom: number, priceTote: number } } = {};
+        for (const bet of bets) {
+            if (!incomingTotals[bet.betNumber]) {
+                incomingTotals[bet.betNumber] = { priceTop: 0, priceBottom: 0, priceTote: 0 };
+            }
+            incomingTotals[bet.betNumber].priceTop += bet.priceTop || 0;
+            incomingTotals[bet.betNumber].priceBottom += bet.priceBottom || 0;
+            incomingTotals[bet.betNumber].priceTote += bet.priceTote || 0;
+        }
 
-        const getMostSpecificRule = (rules: typeof rangeLimits, type: string[]) => {
-            const filteredRules = rules.filter(r => type.includes(r.number_limit_types as any));
-            if (filteredRules.length === 0) return null;
-            if (filteredRules.length === 1) return filteredRules[0];
-            return filteredRules.sort((a, b) => (parseInt(a.range_end) - parseInt(a.range_start)) - (parseInt(b.range_end) - parseInt(b.range_start)))[0];
-        };
+        const getMostSpecificRule = (rules: typeof rangeLimits, type: string[]) => {
+            const filteredRules = rules.filter(r => type.includes(r.number_limit_types as any));
+            if (filteredRules.length === 0) return null;
+            if (filteredRules.length === 1) return filteredRules[0];
+            return filteredRules.sort((a, b) => (parseInt(a.range_end) - parseInt(a.range_start)) - (parseInt(b.range_end) - parseInt(b.range_start)))[0];
+        };
 
-        const failedBets: any[] = [];
-        for (const betNumber in incomingTotals) {
-            const { priceTop, priceBottom, priceTote } = incomingTotals[betNumber];
-            const spentInDb = spentMap[betNumber] || {};
-            const spentInPending = pendingMap[betNumber] || {}; // ใช้งานตัวนี้
-            
-            const applicableRules = rangeLimits.filter(r => 
-                r.range_start && r.range_end &&
-                betNumber.length === r.range_start.length &&
-                parseInt(betNumber, 10) >= parseInt(r.range_start, 10) &&
-                parseInt(betNumber, 10) <= parseInt(r.range_end, 10)
-            );
+        const failedBets: any[] = [];
+        for (const betNumber in incomingTotals) {
+            const { priceTop, priceBottom, priceTote } = incomingTotals[betNumber];
+            const spentInDb = spentMap[betNumber] || {};
+            const spentInPending = pendingMap[betNumber] || {};
+            
+            const applicableRules = rangeLimits.filter(r => 
+                r.range_start && r.range_end &&
+                betNumber.length === r.range_start.length &&
+                parseInt(betNumber, 10) >= parseInt(r.range_start, 10) &&
+                parseInt(betNumber, 10) <= parseInt(r.range_end, 10)
+            );
 
-            let hasFailed = false;
+            let hasFailed = false;
 
-            const check = (price: number, style: 'บน' | 'ล่าง' | 'โต๊ด') => {
-                if (price <= 0 || hasFailed) return;
-                const styleAliases = style === 'บน' ? ['บน', 'ตรง'] : [style];
-                const rule = getMostSpecificRule(applicableRules, styleAliases);
+            const check = (price: number, style: 'บน' | 'ล่าง' | 'โต๊ด') => {
+                if (price <= 0 || hasFailed) return;
+                const styleAliases = style === 'บน' ? ['บน', 'ตรง'] : [style];
+                const rule = getMostSpecificRule(applicableRules, styleAliases);
 
-                if (rule) {
-                    const limit = parseFloat(rule.max_amount);
-                    // ✅ 3. นำยอดจาก spentInPending มารวมในการคำนวณ
-                    const currentSpent = (spentInDb[styleAliases[0]] || 0) + (spentInDb[styleAliases[1]] || 0) +
-                                       (spentInPending[styleAliases[0]] || 0) + (spentInPending[styleAliases[1]] || 0);
-                    
-                    if (currentSpent + price > limit) {
-                        hasFailed = true;
-                        failedBets.push({ betNumber, style, limit, currentSpent, incomingAmount: price });
-                    }
-                }
-            };
-            
-            check(priceTop, 'บน');
-            check(priceBottom, 'ล่าง');
-            check(priceTote, 'โต๊ด');
+                if (rule) {
+                    const limit = parseFloat(rule.max_amount); 
+                    const currentSpent = (spentInDb[styleAliases[0]] || 0) + (spentInDb[styleAliases[1]] || 0) +
+                                       (spentInPending[styleAliases[0]] || 0) + (spentInPending[styleAliases[1]] || 0);
+                    
+                    if (currentSpent + price > limit) {
+                        hasFailed = true;
+                        failedBets.push({ betNumber, style, limit, currentSpent, incomingAmount: price });
+                    }
+                }
+            };
+            
+            check(priceTop, 'บน');
+            check(priceBottom, 'ล่าง');
+            check(priceTote, 'โต๊ด');
 
-            if (hasFailed) continue;
-            
-            const totalRule = getMostSpecificRule(applicableRules, ['ทั้งหมด']);
-            if (totalRule) {
-                 const limit = parseFloat(totalRule.max_amount);
-                 const totalSpent = Object.values(spentInDb).reduce((s, v) => s + v, 0) + Object.values(spentInPending).reduce((s, v) => s + v, 0);
-                 const incomingTotal = priceTop + priceBottom + priceTote;
-                 if (totalSpent + incomingTotal > limit) {
-                     failedBets.push({ betNumber, style: 'ทั้งหมด', limit, currentSpent: totalSpent, incomingAmount: incomingTotal });
-                     continue;
-                 }
-            }
+            if (hasFailed) continue;
+            
+            const totalRule = getMostSpecificRule(applicableRules, ['ทั้งหมด']);
+            const totalSpent = Object.values(spentInDb).reduce((s, v) => s + v, 0) + Object.values(spentInPending).reduce((s, v) => s + v, 0);
+            const incomingTotal = priceTop + priceBottom + priceTote;
 
-            if (applicableRules.length === 0) {
-                const defaultLimitRaw = betNumber.length <= 2 ? roundLimits.limit_2d_amount : roundLimits.limit_3d_amount;
-                if (defaultLimitRaw && parseFloat(defaultLimitRaw) > 0) {
-                    const limit = parseFloat(defaultLimitRaw);
-                    const totalSpent = Object.values(spentInDb).reduce((s, v) => s + v, 0) + Object.values(spentInPending).reduce((s, v) => s + v, 0);
-                    const incomingTotal = priceTop + priceBottom + priceTote;
-                    if (totalSpent + incomingTotal > limit) {
-                        failedBets.push({ betNumber, style: 'ทั้งหมด', limit, currentSpent: totalSpent, incomingAmount: incomingTotal });
-                    }
-                }
-            }
-        }
+            if (totalRule) {
+                // 1. ถ้ามีกฎ "ทั้งหมด" ที่เจาะจง ให้ใช้กฎนั้น
+                const limit = parseFloat(totalRule.max_amount);
+                if (totalSpent + incomingTotal > limit) {
+                    failedBets.push({ betNumber, style: 'ทั้งหมด', limit, currentSpent: totalSpent, incomingAmount: incomingTotal });
+                    continue;
+                }
+            } else {
+                // 2. ถ้าไม่มีกฎ "ทั้งหมด" ที่เจาะจง ให้ fallback ไปใช้กฎ Default
+                const defaultLimitRaw = betNumber.length <= 2 ? roundLimits.limit_2d_amount : roundLimits.limit_3d_amount;
+                if (defaultLimitRaw && parseFloat(defaultLimitRaw) > 0) {
+                    const limit = parseFloat(defaultLimitRaw);
+                    if (totalSpent + incomingTotal > limit) {
+                        failedBets.push({ betNumber, style: 'ทั้งหมด', limit, currentSpent: totalSpent, incomingAmount: incomingTotal });
+                        continue;
+                    }
+                }
+            }
+        }
 
-        if (failedBets.length > 0) {
-            return res.status(400).json({
-                error: 'LimitExceeded',
-                message: 'มีบางรายการเกินวงเงินที่กำหนด',
-                failedBets: failedBets
-            });
-        }
+        if (failedBets.length > 0) {
+            return res.status(400).json({
+                error: 'LimitExceeded',
+                message: 'มีบางรายการเกินวงเงินที่กำหนด',
+                failedBets: failedBets
+            });
+        }
 
-        res.status(200).json({ message: 'สามารถซื้อได้ทั้งหมด' });
+        res.status(200).json({ message: 'สามารถซื้อได้ทั้งหมด' });
 
-    } catch (err: any) {
-        console.error('เกิดข้อผิดพลาดในการตรวจสอบวงเงิน:', err);
-        res.status(500).json({ error: 'เกิดข้อผิดพลาดในระบบ', details: err.message });
-    } finally {
-        client.release();
-    }
+    } catch (err: any) {
+        console.error('เกิดข้อผิดพลาดในการตรวจสอบวงเงิน:', err);
+        res.status(500).json({ error: 'เกิดข้อผิดพลาดในระบบ', details: err.message });
+    } finally {
+        client.release();
+    }
 });
+
+
 
 
 app.get('/api/lotto-rounds/:id/range-limits', async (req, res) => {

@@ -602,7 +602,6 @@ app.post('/api/bills/batch-delete', (req, res) => __awaiter(void 0, void 0, void
     }
 }));
 app.post('/api/batch-check-bet-limits', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    // ✅ 1. นำ pendingBets กลับมาใช้งาน
     const { userId, lottoRoundId, bets, pendingBets } = req.body;
     const client = yield db.connect();
     try {
@@ -629,7 +628,6 @@ app.post('/api/batch-check-bet-limits', (req, res) => __awaiter(void 0, void 0, 
                 spentMap[row.bet_number] = {};
             spentMap[row.bet_number][row.bet_style] = parseFloat(row.total_spent);
         });
-        // ✅ 2. นำ Logic การคำนวณ pendingMap ที่ถูกต้องกลับมา
         const pendingMap = {};
         if (pendingBets && Array.isArray(pendingBets)) {
             for (const entry of pendingBets) {
@@ -672,7 +670,7 @@ app.post('/api/batch-check-bet-limits', (req, res) => __awaiter(void 0, void 0, 
         for (const betNumber in incomingTotals) {
             const { priceTop, priceBottom, priceTote } = incomingTotals[betNumber];
             const spentInDb = spentMap[betNumber] || {};
-            const spentInPending = pendingMap[betNumber] || {}; // ใช้งานตัวนี้
+            const spentInPending = pendingMap[betNumber] || {};
             const applicableRules = rangeLimits.filter(r => r.range_start && r.range_end &&
                 betNumber.length === r.range_start.length &&
                 parseInt(betNumber, 10) >= parseInt(r.range_start, 10) &&
@@ -685,7 +683,6 @@ app.post('/api/batch-check-bet-limits', (req, res) => __awaiter(void 0, void 0, 
                 const rule = getMostSpecificRule(applicableRules, styleAliases);
                 if (rule) {
                     const limit = parseFloat(rule.max_amount);
-                    // ✅ 3. นำยอดจาก spentInPending มารวมในการคำนวณ
                     const currentSpent = (spentInDb[styleAliases[0]] || 0) + (spentInDb[styleAliases[1]] || 0) +
                         (spentInPending[styleAliases[0]] || 0) + (spentInPending[styleAliases[1]] || 0);
                     if (currentSpent + price > limit) {
@@ -700,23 +697,24 @@ app.post('/api/batch-check-bet-limits', (req, res) => __awaiter(void 0, void 0, 
             if (hasFailed)
                 continue;
             const totalRule = getMostSpecificRule(applicableRules, ['ทั้งหมด']);
+            const totalSpent = Object.values(spentInDb).reduce((s, v) => s + v, 0) + Object.values(spentInPending).reduce((s, v) => s + v, 0);
+            const incomingTotal = priceTop + priceBottom + priceTote;
             if (totalRule) {
+                // 1. ถ้ามีกฎ "ทั้งหมด" ที่เจาะจง ให้ใช้กฎนั้น
                 const limit = parseFloat(totalRule.max_amount);
-                const totalSpent = Object.values(spentInDb).reduce((s, v) => s + v, 0) + Object.values(spentInPending).reduce((s, v) => s + v, 0);
-                const incomingTotal = priceTop + priceBottom + priceTote;
                 if (totalSpent + incomingTotal > limit) {
                     failedBets.push({ betNumber, style: 'ทั้งหมด', limit, currentSpent: totalSpent, incomingAmount: incomingTotal });
                     continue;
                 }
             }
-            if (applicableRules.length === 0) {
+            else {
+                // 2. ถ้าไม่มีกฎ "ทั้งหมด" ที่เจาะจง ให้ fallback ไปใช้กฎ Default
                 const defaultLimitRaw = betNumber.length <= 2 ? roundLimits.limit_2d_amount : roundLimits.limit_3d_amount;
                 if (defaultLimitRaw && parseFloat(defaultLimitRaw) > 0) {
                     const limit = parseFloat(defaultLimitRaw);
-                    const totalSpent = Object.values(spentInDb).reduce((s, v) => s + v, 0) + Object.values(spentInPending).reduce((s, v) => s + v, 0);
-                    const incomingTotal = priceTop + priceBottom + priceTote;
                     if (totalSpent + incomingTotal > limit) {
                         failedBets.push({ betNumber, style: 'ทั้งหมด', limit, currentSpent: totalSpent, incomingAmount: incomingTotal });
+                        continue;
                     }
                 }
             }
