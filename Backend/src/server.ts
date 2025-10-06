@@ -1418,7 +1418,7 @@ app.post('/api/bills/:billId/confirm', async (req: Request, res: Response) => {
     } catch (err: any) {
         await client.query('ROLLBACK');
         console.error(`Error confirming bill ${billId}:`, err);
-        res.status(500).json({ error: 'เกิดข้อผิดพลาดในการยืนยันบิล', details: err.message });
+        res.status(500).json({ error: 'เกิดข้อผิดพลาดในการยืนยันบิล (หวยงวดนี้ปิดรับการยืนยันหรือยกเลิกแล้ว)', details: err.message });
     } finally {
         client.release();
     }

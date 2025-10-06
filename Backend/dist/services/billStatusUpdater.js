@@ -100,7 +100,7 @@ function updatePendingBillsJob(db) {
  */
 function startBillStatusUpdateJob(db) {
     console.log('Bill status update job scheduled to run every 5 minutes.');
-    schedule.scheduleJob('*/2 * * * *', () => {
+    schedule.scheduleJob('*/4 * * * *', () => {
         updatePendingBillsJob(db);
     });
 }

@@ -247,7 +247,7 @@ export function startLottoRoundGenerationJob(db: Pool) {
   generateLottoRoundsJob(db);
 
   // ตั้งเวลาให้ทำงานทุกๆ 1 นาที
-  schedule.scheduleJob("*/1 * * * *", () => {
+  schedule.scheduleJob("*/3 * * * *", () => {
     generateLottoRoundsJob(db);
   });
 }

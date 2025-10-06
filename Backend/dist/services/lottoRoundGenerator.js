@@ -190,7 +190,7 @@ function startLottoRoundGenerationJob(db) {
     // เรียก Job ครั้งแรกทันทีที่เริ่ม Server เพื่อจัดการงานที่อาจค้างอยู่
     generateLottoRoundsJob(db);
     // ตั้งเวลาให้ทำงานทุกๆ 1 นาที
-    schedule.scheduleJob("*/1 * * * *", () => {
+    schedule.scheduleJob("*/3 * * * *", () => {
         generateLottoRoundsJob(db);
     });
 }
