@@ -542,7 +542,7 @@ app.post("/api/savebills", async (req: Request, res: Response) => {
         await client.query("BEGIN");
 
         const roundCheckResult = await client.query(
-            'SELECT status, cutoff_datetime FROM lotto_rounds WHERE id = $1 FOR UPDATE', 
+            `SELECT status, cutoff_datetime FROM lotto_rounds WHERE id = $1 FOR UPDATE`, 
             [lottoRoundId]
         );
 
@@ -1433,7 +1433,7 @@ app.post('/api/bills/:billId/cancel', async (req: Request, res: Response) => {
         await client.query('BEGIN');
 
           const roundStatusResult = await client.query(`
-            SELECT lr.status
+            SELECT lr.status
             FROM bills b
             JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
             WHERE b.id = $1

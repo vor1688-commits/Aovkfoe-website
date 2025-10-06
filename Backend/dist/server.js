@@ -435,7 +435,7 @@ app.post("/api/savebills", (req, res) => __awaiter(void 0, void 0, void 0, funct
     const client = yield db.connect();
     try {
         yield client.query("BEGIN");
-        const roundCheckResult = yield client.query('SELECT status, cutoff_datetime FROM lotto_rounds WHERE id = $1 FOR UPDATE', [lottoRoundId]);
+        const roundCheckResult = yield client.query(`SELECT status, cutoff_datetime FROM lotto_rounds WHERE id = $1 FOR UPDATE`, [lottoRoundId]);
         if (roundCheckResult.rowCount === 0) {
             throw new Error("ไม่พบข้อมูลงวดหวย (Lotto Round ID ไม่ถูกต้อง)");
         }
@@ -1168,7 +1168,7 @@ app.post('/api/bills/:billId/cancel', (req, res) => __awaiter(void 0, void 0, vo
     try {
         yield client.query('BEGIN');
         const roundStatusResult = yield client.query(`
-            SELECT lr.status
+            SELECT lr.status
             FROM bills b
             JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
             WHERE b.id = $1
