@@ -1149,7 +1149,7 @@ app.post('/api/bills/:billId/confirm', (req, res) => __awaiter(void 0, void 0, v
         }
         const roundStatus = roundStatusResult.rows[0].status;
         if (roundStatus.includes('closed')) {
-            throw new Error('ไม่สามารถยืนยันบิลได้ เนื่องจากงวดนี้ปิดรับแล้ว');
+            throw new Error('ไม่สามารถยืนยันบิลได้ด้วยตนเอง เนื่องจากงวดนี้ปิดรับแล้ว (เซิฟเวอร์จะยืนยันบิลให้อัตโนมัติ)');
         }
         const billUpdateResult = yield client.query(`UPDATE bills SET status = 'ยืนยันแล้ว' WHERE id = $1 RETURNING *`, [billId]);
         if (((_a = billUpdateResult.rowCount) !== null && _a !== void 0 ? _a : 0) === 0) {
