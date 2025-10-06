@@ -1167,12 +1167,7 @@ app.post('/api/bills/:billId/cancel', (req, res) => __awaiter(void 0, void 0, vo
     const client = yield db.connect();
     try {
         yield client.query('BEGIN');
-        const roundStatusResult = yield client.query(`
-            SELECT lr.status
-            FROM bills b
-            JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
-            WHERE b.id = $1
-        `, [billId]);
+        const roundStatusResult = yield client.query(`SELECT lr.status FROM bills b JOIN lotto_rounds lr ON b.lotto_round_id = lr.id WHERE b.id = $1`, [billId]);
         if (roundStatusResult.rowCount === 0) {
             throw new Error('ไม่พบบิลที่ต้องการยกเลิก');
         }

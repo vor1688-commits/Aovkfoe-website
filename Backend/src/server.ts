@@ -1432,12 +1432,10 @@ app.post('/api/bills/:billId/cancel', async (req: Request, res: Response) => {
     try {
         await client.query('BEGIN');
 
-          const roundStatusResult = await client.query(`
-            SELECT lr.status
-            FROM bills b
-            JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
-            WHERE b.id = $1
-        `, [billId]);
+          const roundStatusResult = await client.query(
+          `SELECT lr.status FROM bills b JOIN lotto_rounds lr ON b.lotto_round_id = lr.id WHERE b.id = $1`, 
+          [billId]
+        );
 
         if (roundStatusResult.rowCount === 0) {
             throw new Error('ไม่พบบิลที่ต้องการยกเลิก');
