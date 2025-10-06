@@ -69,7 +69,7 @@ export async function updatePendingBillsJob(db: Pool) {
  */
 export function startBillStatusUpdateJob(db: Pool) {
     console.log('Bill status update job scheduled to run every 5 minutes.');
-    schedule.scheduleJob('*/4 * * * *', () => { 
+    schedule.scheduleJob('*/2 * * * *', () => { 
         updatePendingBillsJob(db);
     });
 }
