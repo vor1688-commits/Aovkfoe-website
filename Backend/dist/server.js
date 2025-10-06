@@ -1010,13 +1010,13 @@ app.put('/api/bet-items/:itemId/status', (req, res) => __awaiter(void 0, void 0,
     try {
         yield client.query('BEGIN');
         const roundStatusResult = yield client.query(`
-            SELECT lr.status
-            FROM bet_items bi
-            JOIN bill_entries be ON bi.bill_entry_id = be.id
-            JOIN bills b ON be.bill_id = b.id
-            JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
-            WHERE bi.id = $1
-        `, [itemId]);
+        SELECT lr.status
+        FROM bet_items bi
+        JOIN bill_entries be ON bi.bill_entry_id = be.id
+        JOIN bills b ON be.bill_id = b.id
+        JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
+        WHERE bi.id = $1
+        `, [itemId]);
         if (roundStatusResult.rowCount === 0) {
             throw new Error('ไม่พบรายการที่ต้องการอัปเดต');
         }
@@ -1078,11 +1078,11 @@ app.post('/api/bills/:billId/update-all-items', (req, res) => __awaiter(void 0, 
     try {
         yield client.query('BEGIN');
         const roundStatusResult = yield client.query(`
-            SELECT lr.status
-            FROM bills b
-            JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
-            WHERE b.id = $1
-        `, [billId]);
+            SELECT lr.status
+            FROM bills b
+            JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
+            WHERE b.id = $1
+            `, [billId]);
         if (roundStatusResult.rowCount === 0) {
             throw new Error('ไม่พบบิลที่ต้องการอัปเดต');
         }
