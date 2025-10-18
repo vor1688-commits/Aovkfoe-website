@@ -244,7 +244,7 @@ const LottoFormPage = () => {
   useEffect(() => { loadInitialData(); }, [loadInitialData]);
   
   useEffect(() => {
-    const intervalId = setInterval(fetchSpecialNumbersOnly, 100); 
+    const intervalId = setInterval(fetchSpecialNumbersOnly, 3000); 
     return () => clearInterval(intervalId);
   }, [fetchSpecialNumbersOnly]);
 
@@ -586,8 +586,8 @@ const LottoFormPage = () => {
           return;
       }
       fetchLimitAndSpentSummary();
-      const limitInterval = setInterval(fetchLimitAndSpentSummary, 100);
-      return () => {
+      const limitInterval = setInterval(fetchLimitAndSpentSummary, 3000);
+      return () => {3
           clearInterval(limitInterval);
       };
   }, [lottoId, user, fetchLimitAndSpentSummary]);

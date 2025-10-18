@@ -2297,6 +2297,8 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, (req, res) => __
                 -- [OK] 3tote check for array
                 (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'โต๊ด' AND lr.winning_numbers->'3tote' @> to_jsonb(bi.bet_number::text)) OR
                 
+                (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->'3bottom' @> to_jsonb(bi.bet_number::text)) OR
+
                 -- [FIXED] 2top check for array
                 (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'บน' AND lr.winning_numbers->'2top' @> to_jsonb(bi.bet_number::text)) OR
                 
@@ -2304,8 +2306,8 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, (req, res) => __
                 (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->'2bottom' @> to_jsonb(bi.bet_number::text)) OR
                 
                 -- [OK] Run number check (adjusted for array)
-                (be.bet_type = 'run' AND bi.bet_style = 'บน' AND lr.winning_numbers->>'3top' LIKE '%"' || bi.bet_number || '"%') OR
-                (be.bet_type = 'run' AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' LIKE '%"' || bi.bet_number || '"%')
+                (be.bet_type = 'run' AND bi.bet_style = 'บน' AND strpos(lr.winning_numbers->>'3top', bi.bet_number) > 0) OR
+                (be.bet_type = 'run' AND bi.bet_style = 'ล่าง' AND strpos(lr.winning_numbers->>'2bottom', bi.bet_number) > 0)
             );`;
         const byLottoTypeQuery = `
             SELECT b.bet_name as name, SUM(b.total_amount - COALESCE(ra.returned_amount, 0))::float AS "totalAmount", COUNT(b.id) AS "billCount"
