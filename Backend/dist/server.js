@@ -2515,55 +2515,6 @@ app.get("/api/prize-check/all-items", isAuthenticated, (req, res) => __awaiter(v
         res.status(500).json({ error: "Server error while fetching prize check items", details: err.message });
     }
 }));
-// app.get("/api/winning-report", isAuthenticated, async (req: Request, res: Response) => {
-//     const loggedInUser = req.user!;
-//     const { startDate, endDate, username } = req.query;
-//     if (!startDate || !endDate) {
-//         return res.status(400).json({ error: 'กรุณาระบุ startDate และ endDate' });
-//     }
-//     const client = await db.connect();
-//     try {
-//         const queryParams: any[] = [startDate, `${endDate} 23:59:59`];
-//         let userFilterClause = '';
-//         if (loggedInUser.role === 'owner' || loggedInUser.role === 'admin') {
-//             if (username && username !== 'all') {
-//                 userFilterClause = `AND u.username = $${queryParams.length + 1}`;
-//                 queryParams.push(username as string);
-//             }
-//         } else {
-//             userFilterClause = `AND u.id = $${queryParams.length + 1}`;
-//             queryParams.push(loggedInUser.id);
-//         }
-//         const winningItemsQuery = `
-//             SELECT
-//                 bi.id, b.bill_ref AS "billRef", u.username, lr.name AS "lottoName",
-//                 lr.cutoff_datetime AS "lottoDrawDate", be.bet_type AS "betType",
-//                 bi.bet_style AS "betStyle", bi.bet_number AS "betNumber",
-//                 bi.payout_amount AS "payoutAmount"
-//             FROM bet_items bi
-//             JOIN bill_entries be ON bi.bill_entry_id = be.id
-//             JOIN bills b ON be.bill_id = b.id
-//             JOIN users u ON b.user_id = u.id
-//             JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
-//             WHERE b.created_at BETWEEN $1 AND $2 AND bi.status = 'ยืนยัน'
-//               AND lr.status IN ('closed', 'manual_closed') ${userFilterClause}
-//               AND (
-//                     (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ตรง' AND lr.winning_numbers->>'3top' = bi.bet_number) OR
-//                     (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'โต๊ด' AND lr.winning_numbers->'3tote' @> to_jsonb(bi.bet_number::text)) OR
-//                     (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'บน' AND lr.winning_numbers->>'2top' = bi.bet_number) OR
-//                     (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->>'2bottom' = bi.bet_number)
-//               )
-//             ORDER BY lr.cutoff_datetime DESC, b.id DESC;
-//         `;
-//         const result = await client.query(winningItemsQuery, queryParams);
-//         res.json({ items: result.rows });
-//     } catch (err: any) {
-//         console.error("Error fetching winning report:", err);
-//         res.status(500).json({ error: 'เกิดข้อผิดพลาดในการดึงข้อมูล', details: err.message });
-//     } finally {
-//         client.release();
-//     }
-// });
 app.get("/api/winning-report", isAuthenticated, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const loggedInUser = req.user;
     const client = yield db.connect();
@@ -2611,6 +2562,7 @@ app.get("/api/winning-report", isAuthenticated, (req, res) => __awaiter(void 0, 
         const winningLogic = `(
           (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ตรง' AND lr.winning_numbers->'3top' @> to_jsonb(bi.bet_number::text)) OR
           (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'โต๊ด' AND lr.winning_numbers->'3tote' @> to_jsonb(bi.bet_number::text)) OR
+          (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->'3bottom' @> to_jsonb(bi.bet_number::text)) OR
           (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'บน' AND lr.winning_numbers->'2top' @> to_jsonb(bi.bet_number::text)) OR
           (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->'2bottom' @> to_jsonb(bi.bet_number::text)) OR
           
