@@ -2523,8 +2523,8 @@ app.get("/api/prize-check/all-items", isAuthenticated, (req, res) => __awaiter(v
     const whereConditions = [];
     let paramIndex = 1;
     // Filter วันที่
-    whereConditions.push(`b.created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`);
-    queryParams.push(startDate, `${endDate} 23:59:59`);
+    whereConditions.push(`b.created_at::date BETWEEN $${paramIndex++} AND $${paramIndex++}`);
+    queryParams.push(startDate, endDate);
     // Filter User Permission
     if (loggedInUser.role === 'owner' || loggedInUser.role === 'admin') {
         if (username && username !== 'all' && username !== '') {
