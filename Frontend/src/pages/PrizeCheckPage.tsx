@@ -1464,15 +1464,12 @@ const PrizeCheckPage: React.FC = () => {
             </div>
             <div>
               <label className="block mb-2 text-sm font-medium text-gray-700">สถานะผลลัพธ์</label>
-              <select
-                value={derivedStatus}
-                onChange={(e) => setDerivedStatus(e.target.value)} // เปลี่ยนแค่ State เดี๋ยว useEffect จัดการต่อเอง
-                className="..."
-              >
+              <select value={derivedStatus} onChange={(e) => setDerivedStatus(e.target.value)} className="w-full p-2.5 bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg">
                 <option value="">ทั้งหมด</option>
                 <option value="ถูกรางวัล">ถูกรางวัล</option>
                 <option value="ไม่ถูกรางวัล">ไม่ถูกรางวัล</option>
                 <option value="รอประกาศผล">รอประกาศผล</option>
+                <option value="รอใส่ผลรางวัล">รอใส่ผลรางวัล</option>
               </select>
             </div>
             <div>
