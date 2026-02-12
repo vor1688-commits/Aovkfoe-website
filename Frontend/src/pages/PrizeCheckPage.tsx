@@ -1177,7 +1177,7 @@ const PrizeCheckPage: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
-  const [itemsPerPage] = useState(200); // กำหนดจำนวนรายการต่อหน้าตรงนี้
+  const [itemsPerPage] = useState(2000); // กำหนดจำนวนรายการต่อหน้าตรงนี้
 
   const [masterItems, setMasterItems] = useState<PrizeCheckItem[]>([]);
   // const [filteredItems, setFilteredItems] = useState<PrizeCheckItem[]>([]); // ไม่ใช้แล้ว เพราะ Backend กรองมาให้แล้ว
@@ -1427,9 +1427,9 @@ const PrizeCheckPage: React.FC = () => {
       <div className="bg-white p-6 rounded-lg shadow-md">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-bold text-gray-800">สรุปผลรางวัล</h1>
-          <div className="text-sm text-gray-500">
+          {/* <div className="text-sm text-gray-500">
              พบทั้งหมด: <span className="font-bold text-blue-600">{totalItems.toLocaleString()}</span> รายการ
-          </div>
+          </div> */}
         </div>
 
         <form onSubmit={handleSearch}  className="space-y-4 mb-6 p-4 rounded-lg bg-gray-50" >
@@ -1657,7 +1657,8 @@ const PrizeCheckPage: React.FC = () => {
         {/* --- Pagination Controls (เพิ่มใหม่) --- */}
         <div className="flex flex-col sm:flex-row justify-between items-center mt-6 pt-4 border-t border-gray-200">
             <span className="text-sm text-gray-700 mb-4 sm:mb-0">
-                แสดงหน้า <span className="font-semibold text-gray-900">{currentPage}</span> จาก <span className="font-semibold text-gray-900">{totalPages}</span> (ทั้งหมด {totalItems} รายการ)
+                แสดงหน้า <span className="font-semibold text-gray-900">{currentPage}</span> จาก <span className="font-semibold text-gray-900">{totalPages}</span> หน้า
+                 {/* (ทั้งหมด {totalItems} รายการ) */}
             </span>
             <div className="inline-flex mt-2 xs:mt-0">
                 <button
