@@ -2511,21 +2511,24 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, (req, res) => __
 // });
 app.get("/api/prize-check/all-items", isAuthenticated, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const loggedInUser = req.user;
-    // 1. ตรวจสอบว่า Frontend ส่ง limit มาไหม? (เช็คว่าเป็น Frontend ใหม่หรือเก่า)
-    const isNewFrontend = req.query.limit && !isNaN(parseInt(req.query.limit, 10));
-    // รับ Filter ต่างๆ
     const { startDate, endDate, status, username, lottoName, lottoDate, billRef, derivedStatus } = req.query;
     if (!startDate || !endDate) {
-        return res.status(400).json({ error: 'Please provide both startDate and endDate.' });
+        return res.status(400).json({ error: 'กรุณาระบุช่วงวันที่ให้ครบถ้วน' });
     }
-    // --- สร้างเงื่อนไข WHERE ---
     const queryParams = [];
     const whereConditions = [];
     let paramIndex = 1;
-    // Filter วันที่
-    whereConditions.push(`b.created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`);
-    queryParams.push(startDate, `${endDate} 23:59:59`);
-    // Filter User Permission
+    // --- 1. การจัดการวันที่ (ประยุกต์จาก winning-report) ---
+    // ถ้าเลือกวันที่งวด (lottoDate) ให้กรองตามวันนั้นเลย แต่ถ้าไม่เลือก ให้กรองตามช่วงวันที่สั่งซื้อ
+    if (lottoDate && lottoDate !== 'all') {
+        whereConditions.push(`lr.cutoff_datetime::date = $${paramIndex++}`);
+        queryParams.push(lottoDate);
+    }
+    else {
+        whereConditions.push(`b.created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`);
+        queryParams.push(startDate, `${endDate} 23:59:59`);
+    }
+    // --- 2. การกรองสิทธิ์ (Owner/Admin ดูได้หมด, User ดูได้เฉพาะของตนเอง) ---
     if (loggedInUser.role === 'owner' || loggedInUser.role === 'admin') {
         if (username && username !== 'all' && username !== '') {
             whereConditions.push(`u.username = $${paramIndex++}`);
@@ -2536,7 +2539,7 @@ app.get("/api/prize-check/all-items", isAuthenticated, (req, res) => __awaiter(v
         whereConditions.push(`u.id = $${paramIndex++}`);
         queryParams.push(loggedInUser.id);
     }
-    // Filter ทั่วไป
+    // --- 3. ตัวกรองเพิ่มเติม ---
     if (status && status !== 'all') {
         whereConditions.push(`b.status = $${paramIndex++}`);
         queryParams.push(status);
@@ -2549,104 +2552,67 @@ app.get("/api/prize-check/all-items", isAuthenticated, (req, res) => __awaiter(v
         whereConditions.push(`lr.name LIKE $${paramIndex++}`);
         queryParams.push(`%${lottoName}%`);
     }
-    if (lottoDate && lottoDate !== 'all') {
-        whereConditions.push(`lr.cutoff_datetime::date = $${paramIndex++}`);
-        queryParams.push(lottoDate);
-    }
-    // Filter สถานะถูกรางวัล (Derived Status)
-    // ✨ [แก้ไขจุดที่ 1] เพิ่ม Logic เลขวิ่ง (Run) เข้าไปให้ครบ
-    const winningConditions = `
-        (
-            -- 1. [ตรง/3บน] เช็คว่าเลขที่แทง อยู่ในกลุ่มรางวัล 3 ตัวบนหรือไม่
-            (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ตรง' AND lr.winning_numbers->'3top' @> to_jsonb(bi.bet_number::text)) OR
-            
-            -- 2. [โต๊ด] เช็คว่าเลขที่แทง อยู่ในกลุ่มรางวัลเลขสลับ (ที่ระบบเจนไว้ให้) หรือไม่
-            (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'โต๊ด' AND lr.winning_numbers->'3tote' @> to_jsonb(bi.bet_number::text)) OR
-            
-            -- 3. [3ล่าง] เช็คว่าเลขที่แทง อยู่ในกลุ่มรางวัล 3 ตัวล่าง (รองรับทั้งหวยหุ้นและหวยรัฐที่มีหลายรางวัล)
-            (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->'3bottom' @> to_jsonb(bi.bet_number::text)) OR
-
-            -- 4. [2บน] เช็คว่าเลขที่แทง อยู่ในกลุ่มรางวัล 2 ตัวบนหรือไม่
-            (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'บน' AND lr.winning_numbers->'2top' @> to_jsonb(bi.bet_number::text)) OR
-            
-            -- 5. [2ล่าง] เช็คว่าเลขที่แทง อยู่ในกลุ่มรางวัล 2 ตัวล่างหรือไม่
-            (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->'2bottom' @> to_jsonb(bi.bet_number::text)) OR
-            
-            -- 6. [วิ่งบน] เช็คว่าตัวเลขที่แทง (1 หลัก) ปรากฏอยู่ในเลข 3 ตัวบนตัวไหนบ้างไหม
-            (be.bet_type = 'run' AND bi.bet_style = 'บน' AND EXISTS (
-                SELECT 1 FROM jsonb_array_elements_text(lr.winning_numbers->'3top') x WHERE x LIKE '%' || bi.bet_number || '%'
-            )) OR
-            
-            -- 7. [วิ่งล่าง] เช็คว่าตัวเลขที่แทง (1 หลัก) ปรากฏอยู่ในเลข 2 ตัวล่างตัวไหนบ้างไหม
-            (be.bet_type = 'run' AND bi.bet_style = 'ล่าง' AND EXISTS (
-                SELECT 1 FROM jsonb_array_elements_text(lr.winning_numbers->'2bottom') x WHERE x LIKE '%' || bi.bet_number || '%'
-            ))
-        )
-    `;
+    // --- 4. Logic การตรวจรางวัล (ใช้ JSONB Operator @> เพื่อความแม่นยำทั้งหวยและหุ้น) ---
+    const winningLogic = `(
+        (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ตรง' AND lr.winning_numbers->'3top' @> to_jsonb(bi.bet_number::text)) OR
+        (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'โต๊ด' AND lr.winning_numbers->'3tote' @> to_jsonb(bi.bet_number::text)) OR
+        (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->'3bottom' @> to_jsonb(bi.bet_number::text)) OR
+        (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'บน' AND lr.winning_numbers->'2top' @> to_jsonb(bi.bet_number::text)) OR
+        (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->'2bottom' @> to_jsonb(bi.bet_number::text)) OR
+        (be.bet_type = 'run' AND bi.bet_style = 'บน' AND strpos(lr.winning_numbers->>'3top', bi.bet_number) > 0) OR
+        (be.bet_type = 'run' AND bi.bet_style = 'ล่าง' AND strpos(lr.winning_numbers->>'2bottom', bi.bet_number) > 0)
+    )`;
     if (derivedStatus === 'ถูกรางวัล') {
-        whereConditions.push(winningConditions);
+        whereConditions.push(winningLogic);
         whereConditions.push(`lr.status IN ('closed', 'manual_closed')`);
     }
     else if (derivedStatus === 'ไม่ถูกรางวัล') {
-        whereConditions.push(`NOT ${winningConditions}`);
+        whereConditions.push(`NOT ${winningLogic}`);
         whereConditions.push(`lr.status IN ('closed', 'manual_closed')`);
     }
-    else if (derivedStatus === 'รอประกาศผล' || derivedStatus === 'รอใส่ผลรางวัล') {
-        whereConditions.push(`lr.status NOT IN ('closed', 'manual_closed')`);
-    }
     const whereClause = whereConditions.join(' AND ');
-    const baseQuery = `FROM bet_items bi JOIN bill_entries be ON bi.bill_entry_id = be.id JOIN bills b ON be.bill_id = b.id JOIN lotto_rounds lr ON b.lotto_round_id = lr.id JOIN users u ON b.user_id = u.id WHERE ${whereClause}`;
+    const baseQuery = `FROM bet_items bi 
+                       JOIN bill_entries be ON bi.bill_entry_id = be.id 
+                       JOIN bills b ON be.bill_id = b.id 
+                       JOIN lotto_rounds lr ON b.lotto_round_id = lr.id 
+                       JOIN users u ON b.user_id = u.id 
+                       WHERE ${whereClause}`;
     try {
+        const isNewFrontend = req.query.limit && !isNaN(parseInt(req.query.limit, 10));
         if (isNewFrontend) {
-            // ✅ CASE 1: Frontend ใหม่ (ใช้ Pagination เต็มระบบ)
+            // ✅ สำหรับ Frontend ใหม่ที่รองรับการแบ่งหน้า
             const page = parseInt(req.query.page, 10) || 1;
             const limit = parseInt(req.query.limit, 10);
             const offset = (page - 1) * limit;
-            const countQuery = `SELECT COUNT(bi.id) as "total" ${baseQuery}`;
-            const dataQuery = `
-                SELECT bi.id, bi.bet_number, bi.price, bi.bet_style, bi.baht_per, bi.rate, bi.payout_amount AS "payoutAmount", 
-                       be.bet_type, bi.status, b.bill_ref AS "billRef", b.note, b.created_at AS "createdAt", 
-                       lr.name AS "lottoName", lr.cutoff_datetime AS "lottoDrawDate", lr.winning_numbers AS "winningNumbers", 
-                       lr.status AS "lottoRoundStatus", lr.id AS "lottoRoundId", u.username 
+            const countResult = yield db.query(`SELECT COUNT(bi.id) as "total" ${baseQuery}`, queryParams);
+            const dataResult = yield db.query(`
+                SELECT bi.*, b.bill_ref, u.username, lr.name as "lottoName", lr.cutoff_datetime as "lottoDrawDate", lr.winning_numbers
                 ${baseQuery} 
                 ORDER BY b.created_at DESC, bi.id ASC 
-                LIMIT $${paramIndex++} OFFSET $${paramIndex++};
-            `;
-            const [countResult, dataResult] = yield Promise.all([
-                db.query(countQuery, queryParams),
-                db.query(dataQuery, [...queryParams, limit, offset])
-            ]);
+                LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+            `, [...queryParams, limit, offset]);
             const totalItems = parseInt(countResult.rows[0].total, 10);
-            const totalPages = Math.ceil(totalItems / limit);
             res.json({
                 items: dataResult.rows,
-                pagination: { currentPage: page, totalPages, totalItems, limit }
+                pagination: { currentPage: page, totalPages: Math.ceil(totalItems / limit), totalItems, limit }
             });
         }
         else {
-            // ⚠️ CASE 2: Frontend เก่า (ยังไม่ส่ง limit)
-            // ✨ [แก้ไขจุดที่ 2] ต้องใส่ Safety Limit เพื่อกัน Server ตาย
-            const safetyLimit = 2000;
+            // ⚠️ สำหรับ Frontend ตัวเก่า (ระบบกันตาย)
+            const safetyLimit = 2000; // จะดึงมาแค่ 2000 รายการล่าสุดถ้าไม่มีการระบุ limit
             const originalQuery = `
-              SELECT
-                bi.id, bi.bet_number, bi.price, bi.bet_style, bi.baht_per,
-                bi.rate, bi.payout_amount AS "payoutAmount", be.bet_type, bi.status,
-                b.bill_ref AS "billRef", b.note, b.created_at AS "createdAt",
-                lr.name AS "lottoName", lr.cutoff_datetime AS "lottoDrawDate",
-                lr.winning_numbers AS "winningNumbers", lr.status AS "lottoRoundStatus",
-                lr.id AS "lottoRoundId", u.username
-              ${baseQuery}
-              ORDER BY b.created_at DESC, bi.id ASC
-              LIMIT $${paramIndex}; -- บังคับใส่ Limit ตรงนี้
+                SELECT bi.*, b.bill_ref, u.username, lr.name as "lottoName", lr.cutoff_datetime as "lottoDrawDate", lr.winning_numbers
+                ${baseQuery} 
+                ORDER BY b.created_at DESC, bi.id ASC 
+                LIMIT $${paramIndex}
             `;
-            // ส่ง safetyLimit เข้าไปเป็น parameter ตัวสุดท้าย
             const result = yield db.query(originalQuery, [...queryParams, safetyLimit]);
             res.json(result.rows);
         }
     }
     catch (err) {
-        console.error(`Error fetching prize check items:`, err);
-        res.status(500).json({ error: "Server error while fetching prize check items", details: err.message });
+        console.error(`Error:`, err);
+        res.status(500).json({ error: "Server Error", details: err.message });
     }
 }));
 app.get("/api/winning-report", isAuthenticated, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
