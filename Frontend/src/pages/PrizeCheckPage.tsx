@@ -1299,9 +1299,16 @@ const PrizeCheckPage: React.FC = () => {
 
   // 3. Trigger Fetch เมื่อกดค้นหา หรือเปลี่ยนหน้า
   useEffect(() => {
-     // เมื่อเปลี่ยน Filter หลัก ให้ reset ไปหน้า 1
-     fetchItems(1);
-  }, [startDate, endDate, status, filterUsername, derivedStatus]); 
+     fetchItems(1); 
+  }, [
+      startDate, 
+      endDate, 
+      status, 
+      filterUsername, 
+      derivedStatus, // ✅ สำคัญ: พอเปลี่ยนค่านี้ปุ๊บ สั่งโหลดหน้า 1 ใหม่ปั๊บ
+      selectedLottoName, 
+      billRef
+  ]);
   // หมายเหตุ: billRef, selectedLottoName, note รอให้กดปุ่ม "ค้นหา" ค่อยทำงานก็ได้ หรือจะใส่ใน dependency เพื่อ Realtime ก็ได้
   // แต่ในที่นี้จะผูกกับ Form Submit เพื่อ performance
 
@@ -1457,12 +1464,15 @@ const PrizeCheckPage: React.FC = () => {
             </div>
             <div>
               <label className="block mb-2 text-sm font-medium text-gray-700">สถานะผลลัพธ์</label>
-              <select value={derivedStatus} onChange={(e) => setDerivedStatus(e.target.value)} className="w-full p-2.5 bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg">
+              <select
+                value={derivedStatus}
+                onChange={(e) => setDerivedStatus(e.target.value)} // เปลี่ยนแค่ State เดี๋ยว useEffect จัดการต่อเอง
+                className="..."
+              >
                 <option value="">ทั้งหมด</option>
                 <option value="ถูกรางวัล">ถูกรางวัล</option>
                 <option value="ไม่ถูกรางวัล">ไม่ถูกรางวัล</option>
                 <option value="รอประกาศผล">รอประกาศผล</option>
-                <option value="รอใส่ผลรางวัล">รอใส่ผลรางวัล</option>
               </select>
             </div>
             <div>

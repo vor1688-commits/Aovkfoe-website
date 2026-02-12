@@ -2620,16 +2620,20 @@ app.get("/api/prize-check/all-items", isAuthenticated, (req, res) => __awaiter(v
             ))
         )
     `;
-    if (derivedStatus === 'ถูกรางวัล') {
-        whereConditions.push(winningConditions);
-        whereConditions.push(`lr.status IN ('closed', 'manual_closed')`);
-    }
-    else if (derivedStatus === 'ไม่ถูกรางวัล') {
-        whereConditions.push(`NOT ${winningConditions}`);
-        whereConditions.push(`lr.status IN ('closed', 'manual_closed')`);
-    }
-    else if (derivedStatus === 'รอประกาศผล' || derivedStatus === 'รอใส่ผลรางวัล') {
-        whereConditions.push(`lr.status NOT IN ('closed', 'manual_closed')`);
+    if (derivedStatus) {
+        if (derivedStatus === 'ถูกรางวัล') {
+            whereConditions.push(winningConditions);
+            whereConditions.push(`lr.status IN ('closed', 'manual_closed')`);
+        }
+        else if (derivedStatus === 'ไม่ถูกรางวัล') {
+            // ต้องกรองเอาเฉพาะที่ไม่ถูกรางวัลจริงๆ
+            whereConditions.push(`NOT ${winningConditions}`);
+            whereConditions.push(`lr.status IN ('closed', 'manual_closed')`);
+        }
+        else if (derivedStatus === 'รอประกาศผล' || derivedStatus === 'รอใส่ผลรางวัล') {
+            // ดึงเฉพาะบิลที่หวยยังไม่ปิดรับ หรือยังไม่ออกผล
+            whereConditions.push(`lr.status NOT IN ('closed', 'manual_closed')`);
+        }
     }
     const whereClause = whereConditions.join(' AND ');
     const baseQuery = `FROM bet_items bi JOIN bill_entries be ON bi.bill_entry_id = be.id JOIN bills b ON be.bill_id = b.id JOIN lotto_rounds lr ON b.lotto_round_id = lr.id JOIN users u ON b.user_id = u.id WHERE ${whereClause}`;
