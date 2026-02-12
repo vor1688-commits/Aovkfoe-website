@@ -166,6 +166,8 @@ const getBillStatus = (
 const PrizeCheckPage: React.FC = () => {
   const { user } = useAuth();
 
+  
+
   const [billUsers, setBillUsers] = useState<{ id: number, username: string }[]>([]);
   const [filterUsername, setFilterUsername] = useState(user?.username);
 
