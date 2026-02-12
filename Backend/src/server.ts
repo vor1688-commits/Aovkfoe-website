@@ -3050,8 +3050,8 @@ app.get("/api/prize-check/all-items", isAuthenticated, async (req: Request, res:
     let paramIndex = 1;
 
     // Filter วันที่
-    whereConditions.push(`b.created_at::date BETWEEN $${paramIndex++} AND $${paramIndex++}`);
-    queryParams.push(startDate, endDate);  
+    whereConditions.push(`b.created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`);
+    queryParams.push(startDate, `${endDate} 23:59:59`);
     
     
     // Filter User Permission
