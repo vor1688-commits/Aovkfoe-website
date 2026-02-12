@@ -1327,18 +1327,20 @@ const PrizeCheckPage: React.FC = () => {
   // ใช้กรองเพิ่มเติมสำหรับสิ่งที่ Backend ยังไม่รองรับ (เช่น Note, LottoType)
   // *ข้อควรระวัง: มันจะกรองเฉพาะ 200 รายการที่แสดงอยู่เท่านั้น*
   const displayedItems = useMemo(() => {
-    let items = [...masterItems];
+    let items = [...masterItems]; // masterItems คือ 200 รายการที่ Backend ส่งมา
 
-    // Filter Note (Client Side)
+    // Filter Note (Client Side) -> เก็บไว้
     if (note) {
       items = items.filter(item => item.note && item.note.toLowerCase().includes(note.toLowerCase()));
     }
 
-    // Filter LottoType (Client Side - หวย/หุ้น)
+    // Filter LottoType (Client Side) -> เก็บไว้
     if (lottoType) {
         if (lottoType === "หวย") items = items.filter(item => !item.lottoName.includes("หุ้น"));
         else if (lottoType === "หุ้น") items = items.filter(item => item.lottoName.includes("หุ้น"));
     }
+    
+    // ⚠️ ลบ derivedStatus ออกแล้วนะ เพราะ Backend ส่งมาให้ตรงเป๊ะแล้ว
 
     return items;
   }, [masterItems, note, lottoType]);

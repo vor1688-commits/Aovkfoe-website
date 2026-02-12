@@ -3158,14 +3158,29 @@ app.get("/api/prize-check/all-items", isAuthenticated, async (req: Request, res:
         )
     `;
 
-    if (derivedStatus === 'ถูกรางวัล') {
-        whereConditions.push(winningConditions);
-        whereConditions.push(`lr.status IN ('closed', 'manual_closed')`);
-    } else if (derivedStatus === 'ไม่ถูกรางวัล') {
-        whereConditions.push(`NOT ${winningConditions}`);
-        whereConditions.push(`lr.status IN ('closed', 'manual_closed')`);
-    } else if (derivedStatus === 'รอประกาศผล' || derivedStatus === 'รอใส่ผลรางวัล') {
-        whereConditions.push(`lr.status NOT IN ('closed', 'manual_closed')`);
+    if (derivedStatus) {
+        // 1. ถูกรางวัล: ปิดงวดแล้ว และ ตรงเงื่อนไข
+        if (derivedStatus === 'ถูกรางวัล') {
+            whereConditions.push(winningConditions);
+            whereConditions.push(`lr.status IN ('closed', 'manual_closed')`);
+        
+        // 2. ไม่ถูกรางวัล: ปิดงวดแล้ว และ ไม่ตรงเงื่อนไข และ **ต้องมีผลรางวัลใส่แล้ว**
+        } else if (derivedStatus === 'ไม่ถูกรางวัล') {
+            whereConditions.push(`NOT ${winningConditions}`);
+            whereConditions.push(`lr.status IN ('closed', 'manual_closed')`);
+            // เพิ่ม: ต้องไม่ใช่รายการที่ผลรางวัลว่างเปล่า (เช็คคร่าวๆ ว่า 3top ต้องไม่ว่าง หรือเช็คเทียบ default json)
+            // สมมติว่าถ้ายังไม่ใส่ผล ค่าจะเป็น default json ที่มี array ว่างๆ
+            whereConditions.push(`lr.winning_numbers::text != '{"2top": [], "3top": [], "3tote": [], "2bottom": [], "3bottom": []}'`);
+        
+        // 3. รอประกาศผล: หวยยังไม่ปิด (Active)
+        } else if (derivedStatus === 'รอประกาศผล') {
+            whereConditions.push(`lr.status NOT IN ('closed', 'manual_closed')`);
+        
+        // 4. รอใส่ผลรางวัล: หวยปิดแล้ว แต่ยังไม่มีเลขรางวัล (เลขรางวัลเป็นค่าว่าง)
+        } else if (derivedStatus === 'รอใส่ผลรางวัล') {
+            whereConditions.push(`lr.status IN ('closed', 'manual_closed')`);
+            whereConditions.push(`lr.winning_numbers::text = '{"2top": [], "3top": [], "3tote": [], "2bottom": [], "3bottom": []}'`);
+        }
     }
     
     const whereClause = whereConditions.join(' AND ');
