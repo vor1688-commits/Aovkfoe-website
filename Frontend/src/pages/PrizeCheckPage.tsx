@@ -1327,23 +1327,33 @@ const PrizeCheckPage: React.FC = () => {
   // ใช้กรองเพิ่มเติมสำหรับสิ่งที่ Backend ยังไม่รองรับ (เช่น Note, LottoType)
   // *ข้อควรระวัง: มันจะกรองเฉพาะ 200 รายการที่แสดงอยู่เท่านั้น*
   const displayedItems = useMemo(() => {
-    let items = [...masterItems]; // masterItems คือ 200 รายการที่ Backend ส่งมา
+    let items = [...masterItems]; 
 
-    // Filter Note (Client Side) -> เก็บไว้
+    // ✅ Filter Note (Client Side) -> เก็บไว้ได้ (ค้นหาเฉพาะในหน้า)
     if (note) {
       items = items.filter(item => item.note && item.note.toLowerCase().includes(note.toLowerCase()));
     }
 
-    // Filter LottoType (Client Side) -> เก็บไว้
+    // ✅ Filter LottoType (Client Side) -> เก็บไว้ได้
     if (lottoType) {
         if (lottoType === "หวย") items = items.filter(item => !item.lottoName.includes("หุ้น"));
         else if (lottoType === "หุ้น") items = items.filter(item => item.lottoName.includes("หุ้น"));
     }
-    
-    // ⚠️ ลบ derivedStatus ออกแล้วนะ เพราะ Backend ส่งมาให้ตรงเป๊ะแล้ว
+
+    // ❌❌❌ ลบท่อนนี้ทิ้งไปเลยครับ! อย่าให้เหลือ! ❌❌❌
+    /* if (derivedStatus) {
+       items = items.filter((item) => {
+          const { statusText } = getPrizeDetails(item, overrideWinningNumbers, manualLottoGroupKey);
+          return statusText === derivedStatus;
+       });
+    }
+    */
+   
+    // ถ้ามี filter อื่นๆ ที่เช็คว่า "ถูกรางวัล" หรือ "ไม่ถูกรางวัล" ในนี้ ลบออกให้หมดครับ
+    // เราจะเชื่อข้อมูลจาก masterItems ที่ Backend ส่งมา 100%
 
     return items;
-  }, [masterItems, note, lottoType]);
+}, [masterItems, note, lottoType]); // เอา derivedStatus ออกจาก dependency ด้วย
 
   const groupedItems = useMemo(() => {
     return displayedItems.reduce((acc, item) => {
