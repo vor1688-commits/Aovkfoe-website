@@ -2509,6 +2509,43 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, (req, res) => __
 //         res.status(500).json({ error: "Server error while fetching prize check items", details: err.message });
 //     }
 // });
+app.get("/api/prize-check/lotto-names", isAuthenticated, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const loggedInUser = req.user;
+    const { startDate, endDate } = req.query;
+    if (!startDate || !endDate) {
+        return res.status(400).json({ error: 'Please provide startDate and endDate.' });
+    }
+    try {
+        const queryParams = [];
+        const whereConditions = [];
+        let paramIndex = 1;
+        // 1. Filter วันที่
+        whereConditions.push(`b.created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`);
+        queryParams.push(startDate, `${endDate} 23:59:59`);
+        // 2. Filter User (Admin เห็นชื่อหวยทั้งหมด, User เห็นเฉพาะหวยที่ตัวเองแทง)
+        if (loggedInUser.role !== 'owner' && loggedInUser.role !== 'admin') {
+            whereConditions.push(`b.user_id = $${paramIndex++}`);
+            queryParams.push(loggedInUser.id);
+        }
+        const whereClause = whereConditions.join(' AND ');
+        // Query เฉพาะชื่อหวยที่ไม่ซ้ำกัน (DISTINCT)
+        const sql = `
+            SELECT DISTINCT lr.name
+            FROM bills b
+            JOIN lotto_rounds lr ON b.lotto_round_id = lr.id
+            WHERE ${whereClause}
+            ORDER BY lr.name ASC
+        `;
+        const result = yield db.query(sql, queryParams);
+        // ส่งกลับเป็น Array ของ String: ["หวยรัฐบาล", "ฮานอย", ...]
+        const names = result.rows.map((row) => row.name);
+        res.json(names);
+    }
+    catch (err) {
+        console.error("Error fetching lotto names:", err);
+        res.status(500).json({ error: "Server error" });
+    }
+}));
 app.get("/api/prize-check/all-items", isAuthenticated, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const loggedInUser = req.user;
     // 1. ตรวจสอบว่า Frontend ส่ง limit มาไหม? (เช็คว่าเป็น Frontend ใหม่หรือเก่า)

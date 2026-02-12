@@ -1220,6 +1220,26 @@ const PrizeCheckPage: React.FC = () => {
   }, [user]);
 
   // 2. Fetch Items with Pagination
+
+  useEffect(() => {
+    const fetchLottoNames = async () => {
+        try {
+            const params = new URLSearchParams();
+            params.append('startDate', startDate);
+            params.append('endDate', endDate);
+            
+            // เรียก API ตัวใหม่ที่เราเพิ่งสร้าง
+            const response = await api.get<string[]>(`/api/prize-check/lotto-names?${params.toString()}`);
+            
+            setLottoNamesList(response.data);
+        } catch (error) {
+            console.error("Failed to fetch lotto names", error);
+        }
+    };
+
+    fetchLottoNames();
+  }, [startDate, endDate]);
+
   const fetchItems = useCallback(async (page: number) => {
     setIsLoading(true);
     
@@ -1259,8 +1279,8 @@ const PrizeCheckPage: React.FC = () => {
 
             // อัปเดตรายชื่อหวยสำหรับ Dropdown (อาจจะไม่ครบทั้งหมดถ้ารายการเยอะ แต่ก็ดีกว่าไม่มี)
             // *ข้อแนะนำ: จริงๆ ควรมี API แยกเพื่อดึงรายชื่อหวยทั้งหมดในช่วงเวลานั้น*
-            const uniqueNames = [...new Set((response.data.items as PrizeCheckItem[]).map((item) => item.lottoName))].sort();
-            if (uniqueNames.length > 0) setLottoNamesList(prev => [...new Set([...prev, ...uniqueNames])].sort());
+            // const uniqueNames = [...new Set((response.data.items as PrizeCheckItem[]).map((item) => item.lottoName))].sort();
+            // if (uniqueNames.length > 0) setLottoNamesList(prev => [...new Set([...prev, ...uniqueNames])].sort());
 
         } else if (Array.isArray(response.data)) {
             // กรณี Backend ยังเป็นแบบเก่า หรือส่ง Array ล้วน (Fallback)
