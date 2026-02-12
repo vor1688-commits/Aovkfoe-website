@@ -3086,27 +3086,27 @@ app.get("/api/prize-check/all-items", isAuthenticated, async (req: Request, res:
     // ✨ [แก้ไขจุดที่ 1] เพิ่ม Logic เลขวิ่ง (Run) เข้าไปให้ครบ
     const winningConditions = `
         (
-            -- 1. เช็ค 3 ตัวบน / 6 กลับ (เช็คใน Array)
+            -- 1. [ตรง/3บน] เช็คว่าเลขที่แทง อยู่ในกลุ่มรางวัล 3 ตัวบนหรือไม่
             (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ตรง' AND lr.winning_numbers->'3top' @> to_jsonb(bi.bet_number::text)) OR
             
-            -- 2. เช็ค 3 ตัวโต๊ด (เช็คใน Array)
+            -- 2. [โต๊ด] เช็คว่าเลขที่แทง อยู่ในกลุ่มรางวัลเลขสลับ (ที่ระบบเจนไว้ให้) หรือไม่
             (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'โต๊ด' AND lr.winning_numbers->'3tote' @> to_jsonb(bi.bet_number::text)) OR
             
-            -- 3. เช็ค 3 ตัวล่าง (เช็คใน Array)
+            -- 3. [3ล่าง] เช็คว่าเลขที่แทง อยู่ในกลุ่มรางวัล 3 ตัวล่าง (รองรับทั้งหวยหุ้นและหวยรัฐที่มีหลายรางวัล)
             (be.bet_type IN ('3d', '6d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->'3bottom' @> to_jsonb(bi.bet_number::text)) OR
 
-            -- 4. เช็ค 2 ตัวบน / 19 ประตูบน (เช็คใน Array)
+            -- 4. [2บน] เช็คว่าเลขที่แทง อยู่ในกลุ่มรางวัล 2 ตัวบนหรือไม่
             (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'บน' AND lr.winning_numbers->'2top' @> to_jsonb(bi.bet_number::text)) OR
             
-            -- 5. เช็ค 2 ตัวล่าง / 19 ประตูล่าง (เช็คใน Array)
+            -- 5. [2ล่าง] เช็คว่าเลขที่แทง อยู่ในกลุ่มรางวัล 2 ตัวล่างหรือไม่
             (be.bet_type IN ('2d', '19d') AND bi.bet_style = 'ล่าง' AND lr.winning_numbers->'2bottom' @> to_jsonb(bi.bet_number::text)) OR
             
-            -- 6. เช็คเลขวิ่งบน (ตรวจสอบว่าเลขที่แทง มีปรากฏอยู่ในเลข 3 ตัวบนตัวไหนซักตัวไหม)
+            -- 6. [วิ่งบน] เช็คว่าตัวเลขที่แทง (1 หลัก) ปรากฏอยู่ในเลข 3 ตัวบนตัวไหนบ้างไหม
             (be.bet_type = 'run' AND bi.bet_style = 'บน' AND EXISTS (
                 SELECT 1 FROM jsonb_array_elements_text(lr.winning_numbers->'3top') x WHERE x LIKE '%' || bi.bet_number || '%'
             )) OR
             
-            -- 7. เช็คเลขวิ่งล่าง (ตรวจสอบว่าเลขที่แทง มีปรากฏอยู่ในเลข 2 ตัวล่างตัวไหนซักตัวไหม)
+            -- 7. [วิ่งล่าง] เช็คว่าตัวเลขที่แทง (1 หลัก) ปรากฏอยู่ในเลข 2 ตัวล่างตัวไหนบ้างไหม
             (be.bet_type = 'run' AND bi.bet_style = 'ล่าง' AND EXISTS (
                 SELECT 1 FROM jsonb_array_elements_text(lr.winning_numbers->'2bottom') x WHERE x LIKE '%' || bi.bet_number || '%'
             ))
