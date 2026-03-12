@@ -2796,7 +2796,8 @@ app.get("/api/winning-report", isAuthenticated, (req, res) => __awaiter(void 0, 
 }));
 app.get('/api/filters/lotto-options', isAuthenticated, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const loggedInUser = req.user;
-    const { username } = req.query;
+    // 1. รับค่า startDate และ endDate เพิ่มเติม
+    const { username, startDate, endDate } = req.query;
     try {
         let query = `
             SELECT DISTINCT
@@ -2810,24 +2811,25 @@ app.get('/api/filters/lotto-options', isAuthenticated, (req, res) => __awaiter(v
         `;
         const queryParams = [];
         const whereClauses = [];
-        // --- UPDATED: เพิ่ม Logic การกรองตามสิทธิ์ ---
+        // 2. จัดการสิทธิ์การเข้าถึง (เหมือนเดิม)
         if (loggedInUser.role === 'owner' || loggedInUser.role === 'admin') {
-            // ถ้าเป็น Admin หรือ Owner จะสามารถกรองตาม username ที่เลือกได้
             if (username && typeof username === 'string' && username !== 'all') {
                 queryParams.push(username);
                 whereClauses.push(`u.username = $${queryParams.length}`);
             }
-            // ถ้าไม่ส่ง username มา หรือเป็น 'all' ก็จะแสดงของทุกคน
         }
         else {
-            // ถ้าเป็น user ทั่วไป จะแสดงเฉพาะข้อมูลของตัวเองเท่านั้น
             queryParams.push(loggedInUser.id);
             whereClauses.push(`b.user_id = $${queryParams.length}`);
+        }
+        // ✨ 3. [เพิ่มใหม่] เงื่อนไขการกรองวันที่ตามงวดหวย (cutoff_datetime)
+        if (startDate && endDate) {
+            whereClauses.push(`lr.cutoff_datetime BETWEEN $${queryParams.length + 1} AND $${queryParams.length + 2}`);
+            queryParams.push(startDate, `${endDate} 23:59:59`);
         }
         if (whereClauses.length > 0) {
             query += ` WHERE ${whereClauses.join(' AND ')}`;
         }
-        // --- สิ้นสุดการแก้ไข ---
         query += ` ORDER BY b.bet_name, lr.cutoff_datetime DESC`;
         const result = yield db.query(query, queryParams);
         const options = result.rows.reduce((acc, row) => {

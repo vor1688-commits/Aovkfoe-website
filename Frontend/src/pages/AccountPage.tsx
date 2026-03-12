@@ -178,7 +178,13 @@ const AccountPage: React.FC = () => {
         const summaryRequest = api.get<SummaryApiResponse>(`/api/financial-summary-fast-version`, { params: commonParams });
         const recentBillsRequest = api.get(`/api/bills`, { params: { ...commonParams, page: '1', limit: '20' } });
         const winningReportRequest = api.get(`/api/winning-report`, { params: { ...commonParams, page: '1', limit: '50' } });
-        const optionsRequest = api.get(`/api/filters/lotto-options`, { params: { username: usernameParam } });
+        const optionsRequest = api.get(`/api/filters/lotto-options`, { 
+            params: { 
+                username: usernameParam,
+                startDate: startDate, // 👈 เพิ่มการส่ง startDate
+                endDate: endDate      // 👈 เพิ่มการส่ง endDate
+            } 
+        });
   
         try {
             const [summaryResponse, recentBillsResponse, winningReportResponse, optionsResponse] = await Promise.all([
