@@ -849,13 +849,11 @@ app.get('/api/bills', isAuthenticated, (req, res) => __awaiter(void 0, void 0, v
     }
     if (startDate) {
         queryParams.push(startDate);
-        whereConditions.push(`b.created_at::date >= $${queryParams.length}`);
+        whereConditions.push(`lr.cutoff_datetime >= $${queryParams.length}`);
     }
     if (endDate) {
-        const nextDay = new Date(endDate);
-        nextDay.setDate(nextDay.getDate() + 1);
-        queryParams.push(nextDay.toISOString().split('T')[0]);
-        whereConditions.push(`b.created_at < $${queryParams.length}`);
+        queryParams.push(`${endDate} 23:59:59`);
+        whereConditions.push(`lr.cutoff_datetime <= $${queryParams.length}`);
     }
     if (status && status !== 'all') {
         queryParams.push(status);
@@ -1856,8 +1854,8 @@ app.get("/api/prize-check/flat-list", (req, res) => __awaiter(void 0, void 0, vo
         let paramIndex = 1;
         // เพิ่มเงื่อนไขการกรองเข้าไปใน query
         if (startDate && endDate) {
-            query += ` AND b.created_at::date BETWEEN $${paramIndex++} AND $${paramIndex++}`;
-            queryParams.push(startDate, endDate);
+            query += ` AND lr.cutoff_datetime BETWEEN $${paramIndex++} AND $${paramIndex++}`;
+            queryParams.push(startDate, `${endDate} 23:59:59`);
         }
         if (billRef) {
             query += ` AND b.bill_ref ILIKE $${paramIndex++}`;
@@ -2040,8 +2038,8 @@ app.get("/api/bills/grouped", (req, res) => __awaiter(void 0, void 0, void 0, fu
         let paramIndex = 1;
         // สร้างเงื่อนไข WHERE แบบไดนามิกเหมือนเดิม
         if (startDate && endDate) {
-            whereClauses.push(`b.created_at::date BETWEEN $${paramIndex++} AND $${paramIndex++}`);
-            queryParams.push(startDate, endDate);
+            whereClauses.push(`lr.cutoff_datetime BETWEEN $${paramIndex++} AND $${paramIndex++}`);
+            queryParams.push(startDate, `${endDate} 23:59:59`);
         }
         if (billRef) {
             whereClauses.push(`b.bill_ref ILIKE $${paramIndex++}`);
@@ -2084,7 +2082,7 @@ app.get("/api/financial-summary", isAuthenticated, (req, res) => __awaiter(void 
             queryParams.push(lottoDate);
         }
         else {
-            whereConditions.push(`b.created_at BETWEEN $${queryParams.length + 1} AND $${queryParams.length + 2}`);
+            whereConditions.push(`lr.cutoff_datetime BETWEEN $${queryParams.length + 1} AND $${queryParams.length + 2}`);
             queryParams.push(startDate, `${endDate} 23:59:59`);
         }
         if (loggedInUser.role === 'owner' || loggedInUser.role === 'admin') {
@@ -2238,11 +2236,11 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, (req, res) => __
             betConditions.push(`lr.cutoff_datetime::date = $${betParams.length + 1}`);
             betParams.push(lottoDate);
             // ยังคงใช้ created_at เพื่อจำกัดขอบเขตของบิล
-            betConditions.push(`b.created_at BETWEEN $${betParams.length + 1} AND $${betParams.length + 2}`);
+            betConditions.push(`lr.cutoff_datetime BETWEEN $${betParams.length + 1} AND $${betParams.length + 2}`);
             betParams.push(startDate, `${endDate} 23:59:59`);
         }
         else {
-            betConditions.push(`b.created_at BETWEEN $${betParams.length + 1} AND $${betParams.length + 2}`);
+            betConditions.push(`lr.cutoff_datetime BETWEEN $${betParams.length + 1} AND $${betParams.length + 2}`);
             betParams.push(startDate, `${endDate} 23:59:59`);
         }
         // (...เงื่อนไข user, lottoName, status เหมือนเดิม...)
@@ -2720,7 +2718,7 @@ app.get("/api/winning-report", isAuthenticated, (req, res) => __awaiter(void 0, 
             queryParams.push(lottoDate);
         }
         else {
-            conditions.push(`b.created_at BETWEEN $${queryParams.length + 1} AND $${queryParams.length + 2}`);
+            conditions.push(`lr.cutoff_datetime BETWEEN $${queryParams.length + 1} AND $${queryParams.length + 2}`);
             queryParams.push(startDate, `${endDate} 23:59:59`);
         }
         if (loggedInUser.role === 'owner' || loggedInUser.role === 'admin') {

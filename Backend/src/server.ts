@@ -1034,13 +1034,11 @@ app.get('/api/bills', isAuthenticated, async (req: Request, res: Response) => {
     }
     if (startDate) {
         queryParams.push(startDate);
-        whereConditions.push(`b.created_at::date >= $${queryParams.length}`);
+        whereConditions.push(`lr.cutoff_datetime >= $${queryParams.length}`);
     }
-    if (endDate) {
-        const nextDay = new Date(endDate as string);
-        nextDay.setDate(nextDay.getDate() + 1);
-        queryParams.push(nextDay.toISOString().split('T')[0]);
-        whereConditions.push(`b.created_at < $${queryParams.length}`);
+    if (endDate) { 
+        queryParams.push(`${endDate} 23:59:59`);
+        whereConditions.push(`lr.cutoff_datetime <= $${queryParams.length}`);
     }
     if (status && status !== 'all') {
         queryParams.push(status);
@@ -2278,8 +2276,8 @@ app.get("/api/prize-check/flat-list", async (req: Request, res: Response) => {
 
     // เพิ่มเงื่อนไขการกรองเข้าไปใน query
     if (startDate && endDate) {
-      query += ` AND b.created_at::date BETWEEN $${paramIndex++} AND $${paramIndex++}`;
-      queryParams.push(startDate, endDate);
+      query += ` AND lr.cutoff_datetime BETWEEN $${paramIndex++} AND $${paramIndex++}`;
+      queryParams.push(startDate, `${endDate} 23:59:59`);
     }
     if (billRef) {
       query += ` AND b.bill_ref ILIKE $${paramIndex++}`;
@@ -2498,8 +2496,8 @@ app.get("/api/bills/grouped", async (req: Request, res: Response) => {
 
     // สร้างเงื่อนไข WHERE แบบไดนามิกเหมือนเดิม
     if (startDate && endDate) {
-      whereClauses.push(`b.created_at::date BETWEEN $${paramIndex++} AND $${paramIndex++}`);
-      queryParams.push(startDate, endDate);
+      whereClauses.push(`lr.cutoff_datetime BETWEEN $${paramIndex++} AND $${paramIndex++}`);
+      queryParams.push(startDate, `${endDate} 23:59:59`);
     }
     if (billRef) {
       whereClauses.push(`b.bill_ref ILIKE $${paramIndex++}`);
@@ -2548,7 +2546,7 @@ app.get("/api/financial-summary", isAuthenticated, async (req: Request, res: Res
             whereConditions.push(`lr.cutoff_datetime::date = $${queryParams.length + 1}`);
             queryParams.push(lottoDate as string);
         } else {
-            whereConditions.push(`b.created_at BETWEEN $${queryParams.length + 1} AND $${queryParams.length + 2}`);
+            whereConditions.push(`lr.cutoff_datetime BETWEEN $${queryParams.length + 1} AND $${queryParams.length + 2}`);
             queryParams.push(startDate, `${endDate} 23:59:59`);
         }
         if (loggedInUser.role === 'owner' || loggedInUser.role === 'admin') {
@@ -2714,10 +2712,10 @@ app.get("/api/financial-summary-fast-version", isAuthenticated, async (req: Requ
             betConditions.push(`lr.cutoff_datetime::date = $${betParams.length + 1}`);
             betParams.push(lottoDate);
             // ยังคงใช้ created_at เพื่อจำกัดขอบเขตของบิล
-            betConditions.push(`b.created_at BETWEEN $${betParams.length + 1} AND $${betParams.length + 2}`);
+            betConditions.push(`lr.cutoff_datetime BETWEEN $${betParams.length + 1} AND $${betParams.length + 2}`);
             betParams.push(startDate, `${endDate} 23:59:59`);
         } else {
-            betConditions.push(`b.created_at BETWEEN $${betParams.length + 1} AND $${betParams.length + 2}`);
+            betConditions.push(`lr.cutoff_datetime BETWEEN $${betParams.length + 1} AND $${betParams.length + 2}`);
             betParams.push(startDate, `${endDate} 23:59:59`);
         }
 
@@ -3272,7 +3270,7 @@ app.get("/api/winning-report", isAuthenticated, async (req: Request, res: Respon
             conditions.push(`lr.cutoff_datetime::date = $${queryParams.length + 1}`);
             queryParams.push(lottoDate as string);
         } else {
-            conditions.push(`b.created_at BETWEEN $${queryParams.length + 1} AND $${queryParams.length + 2}`);
+            conditions.push(`lr.cutoff_datetime BETWEEN $${queryParams.length + 1} AND $${queryParams.length + 2}`);
             queryParams.push(startDate as string, `${endDate as string} 23:59:59`);
         }
 
