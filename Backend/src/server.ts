@@ -3042,7 +3042,8 @@ app.get("/api/prize-check/lotto-names", isAuthenticated, async (req: Request, re
         let paramIndex = 1;
 
         // 1. Filter วันที่
-        whereConditions.push(`b.created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`);
+        // whereConditions.push(`b.created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`);
+        whereConditions.push(`lr.cutoff_datetime BETWEEN $${paramIndex++} AND $${paramIndex++}`);
         queryParams.push(startDate, `${endDate} 23:59:59`);
 
         // 2. Filter User (Admin เห็นชื่อหวยทั้งหมด, User เห็นเฉพาะหวยที่ตัวเองแทง)
@@ -3094,7 +3095,8 @@ app.get("/api/prize-check/all-items", isAuthenticated, async (req: Request, res:
     let paramIndex = 1;
 
     // Filter วันที่
-    whereConditions.push(`b.created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`);
+    // whereConditions.push(`b.created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`);
+    whereConditions.push(`lr.cutoff_datetime BETWEEN $${paramIndex++} AND $${paramIndex++}`);
     queryParams.push(startDate, `${endDate} 23:59:59`);
     
     

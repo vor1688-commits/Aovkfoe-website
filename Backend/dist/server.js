@@ -2520,7 +2520,8 @@ app.get("/api/prize-check/lotto-names", isAuthenticated, (req, res) => __awaiter
         const whereConditions = [];
         let paramIndex = 1;
         // 1. Filter วันที่
-        whereConditions.push(`b.created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`);
+        // whereConditions.push(`b.created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`);
+        whereConditions.push(`lr.cutoff_datetime BETWEEN $${paramIndex++} AND $${paramIndex++}`);
         queryParams.push(startDate, `${endDate} 23:59:59`);
         // 2. Filter User (Admin เห็นชื่อหวยทั้งหมด, User เห็นเฉพาะหวยที่ตัวเองแทง)
         if (loggedInUser.role !== 'owner' && loggedInUser.role !== 'admin') {
@@ -2560,7 +2561,8 @@ app.get("/api/prize-check/all-items", isAuthenticated, (req, res) => __awaiter(v
     const whereConditions = [];
     let paramIndex = 1;
     // Filter วันที่
-    whereConditions.push(`b.created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`);
+    // whereConditions.push(`b.created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`);
+    whereConditions.push(`lr.cutoff_datetime BETWEEN $${paramIndex++} AND $${paramIndex++}`);
     queryParams.push(startDate, `${endDate} 23:59:59`);
     // Filter User Permission
     if (loggedInUser.role === 'owner' || loggedInUser.role === 'admin') {
