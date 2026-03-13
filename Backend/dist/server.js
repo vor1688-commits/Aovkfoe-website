@@ -836,7 +836,7 @@ app.get("/api/users", isAuthenticated, isAdminOrOwner, (req, res) => __awaiter(v
 app.get('/api/bills', isAuthenticated, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const loggedInUser = req.user;
     const usePagination = req.query.limit && !isNaN(parseInt(req.query.limit, 10));
-    const { startDate, endDate, status, billRef, noteRef, username, lottoCategory, lottoName } = req.query;
+    const { startDate, endDate, status, billRef, noteRef, username, lottoCategory, lottoName, lottoDate } = req.query;
     const queryParams = [];
     const whereConditions = ['1=1'];
     if (loggedInUser.role === 'user') {
@@ -872,8 +872,12 @@ app.get('/api/bills', isAuthenticated, (req, res) => __awaiter(void 0, void 0, v
         whereConditions.push(`b.bet_name ILIKE $${queryParams.length}`);
     }
     if (lottoName && lottoName !== 'all') {
-        whereConditions.push(`lr.name = $${queryParams.length + 1}`);
+        whereConditions.push(`b.bet_name = $${queryParams.length + 1}`);
         queryParams.push(lottoName);
+    }
+    if (lottoDate && lottoDate !== 'all') {
+        whereConditions.push(`lr.cutoff_datetime::date = $${queryParams.length + 1}`);
+        queryParams.push(lottoDate);
     }
     const whereClause = whereConditions.join(' AND ');
     try {

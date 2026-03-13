@@ -736,7 +736,7 @@ const AccountPage: React.FC = () => {
                                         <tr><td colSpan={user?.role === 'admin' || user?.role === 'owner' ? 10 : 9} className="text-center py-10 text-gray-500 italic">ไม่มีบิลล่าสุด</td></tr>
                                     )}
                                 </tbody>
-                </table>
+                        </table>
                 </div>
                 {recentBillsTotalPages > 1 && (
                     <div className="flex items-center justify-end mt-4">
