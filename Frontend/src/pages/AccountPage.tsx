@@ -235,14 +235,26 @@ const AccountPage: React.FC = () => {
     }, [fetchDashboardData, user, selectedUser]);
   
     const handleRecentBillsPageChange = async (newPage: number) => {
-      const params = { startDate, endDate, status, username: selectedUser === "all" ? "" : selectedUser, page: newPage.toString(), limit: '20' };
-      const res = await api.get(`/api/bills`, { params });
-      setRecentBills(res.data.bills || []);
-      setRecentBillsPage(res.data.pagination?.currentPage || 1);
-    };
+        const params = { 
+            startDate, endDate, status, 
+            username: selectedUser === "all" ? "" : selectedUser, 
+            lottoName: selectedLottoName === "all" ? "" : selectedLottoName, // 👈 ขาดตัวนี้
+            lottoDate: selectedDate === "all" ? "" : selectedDate, // 👈 ขาดตัวนี้
+            page: newPage.toString(), limit: '20' 
+        };
+        const res = await api.get(`/api/bills`, { params });
+        setRecentBills(res.data.bills || []);
+        setRecentBillsPage(res.data.pagination?.currentPage || 1);
+        };
     
     const handleWinningItemsPageChange = async (newPage: number) => {
-      const params = { startDate, endDate, username: selectedUser === "all" ? "" : selectedUser, page: newPage.toString(), limit: '50' };
+      const params = { 
+            startDate, endDate, 
+            username: selectedUser === "all" ? "" : selectedUser, 
+            lottoName: selectedLottoName === "all" ? "" : selectedLottoName, // 👈 ขาดตัวนี้
+            lottoDate: selectedDate === "all" ? "" : selectedDate, // 👈 ขาดตัวนี้
+            page: newPage.toString(), limit: '50' 
+        };
       const res = await api.get(`/api/winning-report`, { params });
       const rawWinningItems: WinningItem[] = res.data.items || [];
       const grouped = rawWinningItems.reduce((acc: Record<string, GroupedWinningItem>, item: WinningItem) => {
