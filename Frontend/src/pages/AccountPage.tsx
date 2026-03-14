@@ -121,40 +121,40 @@ const AccountPage: React.FC = () => {
     
     // เพิ่ม useEffect บล็อกนี้เข้าไปใน Component AccountPage ของคุณ
 
-    useEffect(() => {
-        // ฟังก์ชันนี้จะทำงานเมื่อ state `summaryData` มีข้อมูลแล้ว
-        // และยังไม่ได้โหลดข้อมูลเสริม (breakdownData) มาก่อน
-        if (summaryData && !breakdownData) {
+    // useEffect(() => {
+    //     // ฟังก์ชันนี้จะทำงานเมื่อ state `summaryData` มีข้อมูลแล้ว
+    //     // และยังไม่ได้โหลดข้อมูลเสริม (breakdownData) มาก่อน
+    //     if (summaryData && !breakdownData) {
 
-            // สร้าง object `params` สำหรับส่งไปกับ API request
-            // โดยใช้ logic เดียวกับในฟังก์ชัน fetchDashboardData
-            const usernameParam = selectedUser === "all" ? "" : selectedUser;
-            const params = {
-                startDate,
-                endDate,
-                status,
-                username: usernameParam,
-                lottoName: selectedLottoName === "all" ? "" : selectedLottoName,
-                lottoDate: selectedDate === "all" ? "" : selectedDate
-            };
+    //         // สร้าง object `params` สำหรับส่งไปกับ API request
+    //         // โดยใช้ logic เดียวกับในฟังก์ชัน fetchDashboardData
+    //         const usernameParam = selectedUser === "all" ? "" : selectedUser;
+    //         const params = {
+    //             startDate,
+    //             endDate,
+    //             status,
+    //             username: usernameParam,
+    //             lottoName: selectedLottoName === "all" ? "" : selectedLottoName,
+    //             lottoDate: selectedDate === "all" ? "" : selectedDate
+    //         };
 
-            // ยิง API ขอข้อมูลเสริมสำหรับกราฟ
-            api.get('/api/summary/breakdown', { params })
-                .then(res => {
-                    // เมื่อได้ข้อมูลแล้ว ให้ set state
-                    setBreakdownData(res.data);
-                })
-                .catch(err => console.error("Failed to fetch breakdown data:", err));
+    //         // ยิง API ขอข้อมูลเสริมสำหรับกราฟ
+    //         api.get('/api/summary/breakdown', { params })
+    //             .then(res => {
+    //                 // เมื่อได้ข้อมูลแล้ว ให้ set state
+    //                 setBreakdownData(res.data);
+    //             })
+    //             .catch(err => console.error("Failed to fetch breakdown data:", err));
 
-            // ยิง API ขอข้อมูลเสริมสำหรับตารางสรุปเลข (ที่หนักที่สุด)
-            api.get('/api/summary/bet-items', { params })
-                .then(res => {
-                    // เมื่อได้ข้อมูลแล้ว ให้ set state
-                    setBetItemsSummary(res.data);
-                })
-                .catch(err => console.error("Failed to fetch bet items summary:", err));
-        }
-    }, [summaryData, breakdownData, selectedUser, startDate, endDate, status, selectedLottoName, selectedDate]);  
+    //         // ยิง API ขอข้อมูลเสริมสำหรับตารางสรุปเลข (ที่หนักที่สุด)
+    //         api.get('/api/summary/bet-items', { params })
+    //             .then(res => {
+    //                 // เมื่อได้ข้อมูลแล้ว ให้ set state
+    //                 setBetItemsSummary(res.data);
+    //             })
+    //             .catch(err => console.error("Failed to fetch bet items summary:", err));
+    //     }
+    // }, [summaryData, breakdownData, selectedUser, startDate, endDate, status, selectedLottoName, selectedDate]);  
 
 
 
@@ -238,8 +238,8 @@ const AccountPage: React.FC = () => {
         const params = { 
             startDate, endDate, status, 
             username: selectedUser === "all" ? "" : selectedUser, 
-            lottoName: selectedLottoName === "all" ? "" : selectedLottoName, // 👈 ขาดตัวนี้
-            lottoDate: selectedDate === "all" ? "" : selectedDate, // 👈 ขาดตัวนี้
+            lottoName: selectedLottoName === "all" ? "" : selectedLottoName,
+            lottoDate: selectedDate === "all" ? "" : selectedDate,
             page: newPage.toString(), limit: '20' 
         };
         const res = await api.get(`/api/bills`, { params });
@@ -251,8 +251,8 @@ const AccountPage: React.FC = () => {
       const params = { 
             startDate, endDate, 
             username: selectedUser === "all" ? "" : selectedUser, 
-            lottoName: selectedLottoName === "all" ? "" : selectedLottoName, // 👈 ขาดตัวนี้
-            lottoDate: selectedDate === "all" ? "" : selectedDate, // 👈 ขาดตัวนี้
+            lottoName: selectedLottoName === "all" ? "" : selectedLottoName,
+            lottoDate: selectedDate === "all" ? "" : selectedDate,
             page: newPage.toString(), limit: '50' 
         };
       const res = await api.get(`/api/winning-report`, { params });
