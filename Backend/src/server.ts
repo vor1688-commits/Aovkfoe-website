@@ -3213,10 +3213,9 @@ app.get('/api/filters/lotto-options', isAuthenticated, async (req, res) => {
             whereClauses.push(`b.user_id = $${queryParams.length}`);
         }
 
-        // ✨ 3. [เพิ่มใหม่] เงื่อนไขการกรองวันที่ตามงวดหวย (cutoff_datetime)
         if (startDate && endDate) {
-            whereClauses.push(`lr.cutoff_datetime BETWEEN $${queryParams.length + 1} AND $${queryParams.length + 2}`);
-            queryParams.push(startDate, `${endDate} 23:59:59`);
+            whereClauses.push(`b.created_at AT TIME ZONE 'Asia/Bangkok' BETWEEN $${queryParams.length + 1} AND $${queryParams.length + 2}`);
+            queryParams.push(`${startDate} 00:00:00`, `${endDate} 23:59:59`);
         }
 
         if (whereClauses.length > 0) {
