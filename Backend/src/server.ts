@@ -2860,8 +2860,8 @@ app.get("/api/prize-check/lotto-names", isAuthenticated, async (req: Request, re
 
         // 1. Filter วันที่
         // whereConditions.push(`b.created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`);
-        whereConditions.push(`lr.cutoff_datetime BETWEEN $${paramIndex++} AND $${paramIndex++}`);
-        queryParams.push(startDate, `${endDate} 23:59:59`);
+        whereConditions.push(`b.created_at AT TIME ZONE 'Asia/Bangkok' BETWEEN $1 AND $2`);
+        queryParams.push(`${startDate} 00:00:00`, `${endDate} 23:59:59`);
 
         // 2. Filter User (Admin เห็นชื่อหวยทั้งหมด, User เห็นเฉพาะหวยที่ตัวเองแทง)
         if (loggedInUser.role !== 'owner' && loggedInUser.role !== 'admin') {
